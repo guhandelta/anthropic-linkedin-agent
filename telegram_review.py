@@ -16,6 +16,7 @@ only ever be posted once. Only taps from TELEGRAM_CHAT_ID are accepted.
 Helper:  python telegram_review.py --find-chat-id
          (send any message to your bot first; prints your chat id)
 """
+from __future__ import annotations
 import json
 import os
 import sys

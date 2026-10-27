@@ -16,6 +16,7 @@ Run:  python agent.py              (full run, posts to LinkedIn)
       python agent.py --dry-run    (generates + reviews, saves to output/, does NOT post)
       python agent.py --topic "..."  (override the topic queue)
 """
+from __future__ import annotations
 import argparse
 import base64
 import json
