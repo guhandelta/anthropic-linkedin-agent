@@ -1,5 +1,5 @@
 anthropic
 python-dotenv
 pyyaml
-pillow
 requests
+cairosvg

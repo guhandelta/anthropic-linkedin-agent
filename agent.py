@@ -4,10 +4,11 @@ LinkedIn Post Agent
 Daily pipeline:
   1. Pick one allowed source at random (skipping sources used in the last few days)
   2. RESEARCH + WRITE: Claude browses ONLY that source for one fresh item and drafts the post,
-     an infographic spec (pie / stack / flow layout) and the sources it relied on
+     an infographic idea and the sources it relied on
   3. CHECK (code): length, emojis, garbled text, allowed domains, source dates, not already
-     posted, infographic structure. If the source has nothing fresh, the next source is tried
-  4. RENDER: infographic PNG drawn in code from the spec (exact labels, real shapes)
+     posted. If the source has nothing fresh, the next source is tried
+  4. DESIGN + RENDER: a designer call draws the infographic as SVG (any metaphor or scene);
+     code checks it for safety and legibility, then renders it to PNG
   5. REVIEW: several independent editorial/visual reviews plus one fact-check against the
      sources. All must pass, otherwise the writer retries with the reviewers' notes
   6. TELEGRAM: you approve or reject. Approve -> post once to LinkedIn, sources as first comment
@@ -34,7 +35,7 @@ import yaml
 from anthropic import Anthropic
 from dotenv import load_dotenv
 
-from infographic import infographic_checks, render_infographic
+from infographic import extract_svg, render_svg, svg_checks
 from linkedin import LinkedInClient
 from telegram_review import TelegramReviewer, get_status
 
@@ -138,25 +139,19 @@ Post rules:
 - Use {min_emoji} to {max_emoji} meaningful emojis, spread out (never two together, at most one
   per paragraph). Each must fit its sentence. Never decorative filler.
 
-Infographic rules: a fast visual summary of the post. Pick the layout that fits the post best:
-- "pie": 3 to 5 parts of one whole (for example, the parts of a system or the sections of a
-  checklist). Drawn as slices of a round object.
-- "stack": 3 to 5 layers or priorities. Each part has "value", its relative size (for example,
-  share of effort or order of importance). Drawn as a column of layers.
-- "flow": 3 to 5 ordered steps (what happens first, next, last). Drawn as boxes with arrows.
-Each part: "label" (24 characters or fewer), "detail" (70 characters or fewer, plain words),
-"icon" (optional, one emoji that fits the part), "value" (number, stack only).
-"title" 60 characters or fewer, "subtitle" 90 characters or fewer, "takeaway" 80 characters or fewer.
-No emojis in label or detail. Everything in the infographic must come from the post and its sources,
-and must name the same points, in the same order, as the post.
+Infographic idea: a creative picture that makes the post easy to understand and remember.
+Choose any visual form that fits: a metaphor or scene (a subway map for a pipeline, a kitchen for
+a workflow, a bento box for the parts of a system), a timeline, a map, a comparison, a character
+or object, a process, a chart. Describe it in "infographic_idea" in 2 to 4 sentences: the central
+metaphor or scene, the 3 to 6 points it shows and where each sits in the picture, and the one-line
+takeaway. The picture must illustrate the post's points, not decorate them. Everything in it must
+come from the post and its sources.
 
 Return ONLY JSON:
 {{"post": "...",
   "headline": "short name of the item",
   "sources": [{{"url": "...", "published": "YYYY-MM-DD", "claim": "the fact from this source the post relies on"}}],
-  "infographic": {{"title": "...", "subtitle": "...", "layout": "pie|stack|flow",
-                  "parts": [{{"label": "...", "detail": "...", "icon": "💡", "value": 1}}],
-                  "takeaway": "..."}}}}"""
+  "infographic_idea": "..."}}"""
 
 
 def write_draft(source: str, feedback: str | None, posted: set[str]) -> dict:
@@ -175,6 +170,46 @@ def write_draft(source: str, feedback: str | None, posted: set[str]) -> dict:
     return call_json(system, msg, tools=web_tools([source]), max_tokens=4000)
 
 
+DESIGNER_SYSTEM = """You are a creative information designer. You turn a LinkedIn post into one
+infographic drawn as an SVG, so it reads at a glance and is easy to remember.
+
+Freedom: use any visual form that fits the post: a metaphor or scene, a diagram, a map, a
+timeline, a comparison, a character, an object, a process or a chart. Do not default to boxes
+or pie charts. Make it delightful, but every element must carry meaning: a shape, colour or icon
+that stands for a point in the post.
+
+Technical rules (strict):
+- One <svg> root with xmlns="http://www.w3.org/2000/svg" and viewBox="0 0 1080 1350" (portrait).
+- Only basic SVG: rect, circle, ellipse, path, line, polyline, polygon, g, text, tspan, defs,
+  linearGradient, radialGradient, clipPath. No script, foreignObject, image or external links.
+- Draw icons and characters with shapes and paths. Do not use emoji characters.
+- Text: font-family="Helvetica, Arial, DejaVu Sans, sans-serif". Labels font-size 22 or larger,
+  title 52 to 64. Each label at most 24 characters; detail lines at most 70.
+- Escape & as &amp; and < as &lt;. Split long text into several <text> lines.
+- Layout: title at the top stating the takeaway in plain words; the drawing in the middle;
+  one short takeaway line near the bottom; a small footer "FOOTER_TEXT" at the very bottom.
+- Palette: a light background, dark text (#111827), grey secondary text (#4B5563), at most 5 accents.
+- 3 to 6 meaningful points, each clearly linked to its shape by position, a line or a label.
+- Every label and number must come from the post and its sources. Nothing invented.
+
+Return ONLY the SVG, starting with <svg and ending with </svg>. No explanation."""
+
+
+def design_svg(post: str, idea: str, headline: str, feedback: str | None, footer: str) -> str:
+    msg = f"Headline: {headline}\n\nPOST:\n{post}\n\nINFOGRAPHIC IDEA:\n{idea}"
+    if feedback:
+        msg += f"\n\nYour previous drawing was REJECTED. Fix these issues and redraw it:\n{feedback}"
+    resp = client.messages.create(
+        model=CFG["model"], max_tokens=8000,
+        system=DESIGNER_SYSTEM.replace("FOOTER_TEXT", footer),
+        messages=[{"role": "user", "content": msg}],
+    )
+    if resp.stop_reason == "max_tokens":
+        raise ValueError("The drawing was cut off; it must be simpler.")
+    text = "".join(b.text for b in resp.content if b.type == "text")
+    return extract_svg(text)
+
+
 # ---------------------------------------------------------------- reviewers
 REVIEWER_SYSTEM = """You are a strict senior editor for LinkedIn content. You receive the post,
 the sources it cites, and the rendered infographic image meant to accompany it.
@@ -185,8 +220,8 @@ Check ALL of these:
 2. sourced      - every factual claim is supported by a listed source; nothing added beyond them.
 3. on_topic     - the post is about the named item, and it is interesting to a working developer.
 4. image_text   - all text in the image is legible, correctly spelled, not cut off or overlapping.
-5. image_match  - the infographic shows the SAME points as the post, in the same order, using the
-                  layout as intended (pie = parts of one whole, stack = layers, flow = ordered steps).
+5. image_match  - the picture illustrates the post's main points accurately; its metaphor or scene
+                  makes each point easy to grasp; nothing unrelated or misleading in it.
 6. professional - appropriate for a professional audience; every emoji fits its sentence or point.
 
 Score each 1-5. Approve only if every score >= {min_score}.
@@ -294,7 +329,7 @@ def source_checks(sources: list, posted: set[str]) -> list[str]:
 
 
 # ---------------------------------------------------------------- approval + publish
-def publish_after_approval(headline, source, post, sources, spec, image_path):
+def publish_after_approval(headline, source, post, sources, image_path):
     """Both gates must pass: the AI reviewers (already done) AND you on Telegram."""
     draft_id = datetime.now().strftime("%Y%m%d") + "-" + uuid.uuid4().hex[:8]
     tg = TelegramReviewer(
@@ -313,7 +348,7 @@ def publish_after_approval(headline, source, post, sources, spec, image_path):
 
     try:
         li = LinkedInClient(os.environ["LINKEDIN_ACCESS_TOKEN"], CFG["linkedin"]["api_version"])
-        post_urn = li.post_with_image(post, image_path, alt_text=spec["title"])
+        post_urn = li.post_with_image(post, image_path, alt_text=headline)
     except Exception as e:  # noqa: BLE001
         tg.mark_failed(draft_id, message_id, str(e))
         raise
@@ -324,7 +359,7 @@ def publish_after_approval(headline, source, post, sources, spec, image_path):
     tg.mark_posted(draft_id, message_id, post_urn)
     print("Posted:", post_urn)
     append_log({"date": datetime.now().isoformat(timespec="seconds"), "draft_id": draft_id,
-                "source_domain": source, "headline": headline, "topic": spec["title"],
+                "source_domain": source, "headline": headline,
                 "post_urn": post_urn, "chars": len(post), "sources": sources})
 
 
@@ -350,21 +385,36 @@ def run(source_arg: str | None, dry_run: bool):
             feedback = None  # the next attempt uses a different source
             continue
 
-        post, spec = draft["post"].strip(), draft["infographic"]
+        post, idea = draft["post"].strip(), draft.get("infographic_idea", "")
         headline = draft.get("headline", source)
         sources = draft.get("sources", [])
-        issues = hard_checks(post) + source_checks(sources, posted) + infographic_checks(spec)
+        issues = hard_checks(post) + source_checks(sources, posted)
+        if not idea:
+            issues.append("Describe an infographic idea.")
         if issues:
             print("Checks failed:", issues)
             feedback = "\n".join(issues)
             continue
 
         image_path = out_dir / f"infographic_{attempt}.png"
-        try:
-            render_infographic(spec, image_path, CFG["infographic"])
-        except ValueError as e:
-            feedback = f"Infographic spec invalid: {e}"
-            print(feedback)
+        design_feedback, drawn = feedback, False
+        for _ in range(2):  # the designer gets two tries at a valid drawing
+            svg = design_svg(post, idea, headline, design_feedback, CFG["infographic"]["footer"])
+            svg_issues = svg_checks(svg)
+            if svg_issues:
+                design_feedback = "\n".join(svg_issues)
+                print("Drawing checks failed:", svg_issues)
+                continue
+            try:
+                render_svg(svg, image_path)
+                (out_dir / f"infographic_{attempt}.svg").write_text(svg)
+                drawn = True
+                break
+            except ValueError as e:
+                design_feedback = str(e)
+                print("Render failed:", e)
+        if not drawn:
+            feedback = design_feedback
             continue
 
         ok, issues, detail = review_all(headline, post, sources, image_path)
@@ -376,7 +426,7 @@ def run(source_arg: str | None, dry_run: bool):
                 print("Dry run: not sending to Telegram or LinkedIn.\n\n" + post)
                 print("\nSources:\n" + "\n".join(f"- {s['url']}" for s in sources))
                 return
-            publish_after_approval(headline, source, post, sources, spec, image_path)
+            publish_after_approval(headline, source, post, sources, image_path)
             return
         feedback = "\n".join(issues) or "Improve quality and image match."
         print("Rejected:\n" + feedback)
