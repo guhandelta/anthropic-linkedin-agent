@@ -1,0 +1,28 @@
+model: claude-sonnet-5-5
+
+author:
+  name: Guha
+  role: Senior Full Stack Developer (React, TypeScript, Next.js, Python, GenAI)
+  voice: >
+    Practical, clear and friendly. Shares hands-on lessons from building real products.
+    Explains concepts simply, avoids hype.
+
+post:
+  min_chars: 700       # your target range
+  max_chars: 1300      # LinkedIn allows 3000; ~1300 reads best on mobile
+  hashtags: 3
+
+review:
+  min_score: 4         # every review criterion must score >= 4 out of 5
+  max_attempts: 3      # rewrite up to 3 times, then skip the day (nothing posted)
+
+infographic:
+  bg: "#FFFFFF"
+  card: "#F2F5FA"
+  ink: "#111827"
+  muted: "#4B5563"
+  accent: "#0A66C2"
+  footer: "Guha | Full Stack & GenAI"
+
+linkedin:
+  api_version: "202510"   # YYYYMM; LinkedIn supports roughly the last 12 months
