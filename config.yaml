@@ -11,6 +11,8 @@ post:
   min_chars: 700       # your target range
   max_chars: 1300      # LinkedIn allows 3000; ~1300 reads best on mobile
   hashtags: 3
+  min_emojis: 3        # meaningful emojis sprinkled across the post
+  max_emojis: 7
 
 review:
   min_score: 4         # every review criterion must score >= 4 out of 5

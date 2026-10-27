@@ -24,6 +24,8 @@ from datetime import datetime
 from pathlib import Path
 
 import yaml
+
+EMOJI_RE = re.compile(r"[\u2600-\u27BF\U0001F300-\U0001FAFF]")
 from anthropic import Anthropic
 from dotenv import load_dotenv
 
@@ -84,18 +86,21 @@ Post rules:
 - Short paragraphs, concrete facts and practical takeaways. No filler, no buzzword soup,
   no invented statistics, quotes or sources. If you are not sure a fact is true, leave it out.
 - End with a question or call to discussion, then {hashtag_count} relevant hashtags.
-- No emojis unless they add meaning (max 3).
+- Use {min_emoji} to {max_emoji} meaningful emojis, sprinkled sporadically (never two in a row,
+  at most one per paragraph). Each must fit its sentence, e.g. 🚀 hook, 💡 insight, ⚙️ how-to,
+  ✅ takeaway, ⚠️ pitfall, 👉 call to action, 🤔 question. Never decorative filler.
 
 Infographic rules:
 - It must summarise the SAME key points the post makes, in the same order.
 - title <= 60 chars, subtitle <= 90 chars, 3 to 5 points.
 - Each point: heading <= 32 chars, detail <= 90 chars. Plain words, no markdown.
 - takeaway <= 80 chars.
+- Each point gets one "icon": a single emoji that matches that point.
 
 Return ONLY JSON:
 {{"post": "...",
   "infographic": {{"title": "...", "subtitle": "...",
-                  "points": [{{"heading": "...", "detail": "..."}}],
+                  "points": [{{"icon": "💡", "heading": "...", "detail": "..."}}],
                   "takeaway": "..."}}}}"""
 
 
@@ -105,6 +110,7 @@ def write_draft(topic: str, feedback: str | None) -> dict:
         author=a["name"], author_role=a["role"], voice=a["voice"],
         min_chars=CFG["post"]["min_chars"], max_chars=CFG["post"]["max_chars"],
         hashtag_count=CFG["post"]["hashtags"],
+        min_emoji=CFG["post"]["min_emojis"], max_emoji=CFG["post"]["max_emojis"],
     )
     msg = f"Topic: {topic}"
     if feedback:
@@ -123,7 +129,8 @@ Check ALL of these and be strict:
 3. on_topic     - the post is clearly about the given topic.
 4. image_text   - all text in the image is legible, correctly spelled, not cut off or overlapping.
 5. image_match  - the infographic summarises the SAME points as the post (no unrelated content).
-6. professional - appropriate for a professional audience.
+6. professional - appropriate for a professional audience; every emoji/icon fits its
+                  sentence or point (no random or excessive emojis).
 
 Score each 1-5. Approve only if every score >= {min_score}.
 Return ONLY JSON:
@@ -160,7 +167,13 @@ def hard_checks(post: str) -> list[str]:
         issues.append("LinkedIn hard limit is 3000 characters.")
     if re.search(r"(\b\w+\b)(\s+\1\b){2,}", post, re.I):
         issues.append("Repeated words detected.")
-    if re.search(r"[^\x00-\x7F\u00C0-\u024F\u2010-\u2027\u2190-\u21FF\u2600-\u27BF\U0001F300-\U0001FAFF]{4,}", post):
+    emojis = len(EMOJI_RE.findall(post))
+    lo, hi = CFG["post"]["min_emojis"], CFG["post"]["max_emojis"]
+    if not lo <= emojis <= hi:
+        issues.append(f"Use {lo}-{hi} meaningful emojis spread across the post (found {emojis}).")
+    if re.search(r"[\u2600-\u27BF\U0001F300-\U0001FAFF]\uFE0F?\s*[\u2600-\u27BF\U0001F300-\U0001FAFF]", post):
+        issues.append("Do not put emojis next to each other; spread them out.")
+    if re.search(r"[^\x00-\x7F\u00C0-\u024F\u2010-\u2027\u2190-\u21FF\u2600-\u27BF\uFE0F\u200D\U0001F300-\U0001FAFF]{4,}", post):
         issues.append("Unexpected character sequences (possible garbled text).")
     if "{" in post or "}" in post or "**" in post:
         issues.append("Remove JSON/markdown artifacts from the post.")

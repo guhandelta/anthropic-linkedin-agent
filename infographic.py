@@ -3,7 +3,6 @@
 Drawing the text ourselves (instead of using an image-generation model) guarantees
 every word in the image is spelled correctly and matches the post.
 """
-import textwrap
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -21,6 +20,27 @@ def _font(size, bold=False):
         except OSError:
             continue
     return ImageFont.load_default(size)
+
+
+EMOJI_FONTS = [("NotoColorEmoji.ttf", 109),
+               ("/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf", 109),
+               ("/System/Library/Fonts/Apple Color Emoji.ttc", 160)]
+
+
+def _emoji(char: str, px: int):
+    """Render a colour emoji as an RGBA image `px` wide, or None if no emoji font."""
+    for name, native in EMOJI_FONTS:
+        try:
+            font = ImageFont.truetype(name, native)
+        except OSError:
+            continue
+        canvas = Image.new("RGBA", (native * 2, native * 2), (0, 0, 0, 0))
+        ImageDraw.Draw(canvas).text((native // 2, native // 2), char, font=font, embedded_color=True)
+        box = canvas.getbbox()
+        if not box:
+            return None
+        return canvas.crop(box).resize((px, px), Image.LANCZOS)
+    return None
 
 
 def _wrap(draw, text, font, max_w):
@@ -67,10 +87,14 @@ def render_infographic(spec: dict, path: Path, style: dict):
         tw = d.textlength(num, font=_font(36, True))
         d.text((cx - tw / 2, cy - 22), num, font=_font(36, True), fill=bg)
 
+        icon = _emoji(p.get("icon", ""), 56) if p.get("icon") else None
+        if icon:
+            img.paste(icon, (W - PAD - 30 - 56, y + 22), icon)
+
         tx = PAD + 130
-        d.text((tx, y + 26), p["heading"], font=_font(36, True), fill=ink)
+        d.text((tx, y + 26), p["heading"], font=_font(36, True), fill=ink)  # heading <= 32 chars
         ty = y + 76
-        for line in _wrap(d, p["detail"], _font(28), W - PAD - tx - 30)[:3]:
+        for line in _wrap(d, p["detail"], _font(28), W - PAD - tx - 110)[:3]:  # leave room for the icon
             d.text((tx, ty), line, font=_font(28), fill=muted)
             ty += 36
         y += card_h + 20
