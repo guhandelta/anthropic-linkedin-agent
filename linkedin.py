@@ -42,6 +42,17 @@ class LinkedInClient:
             text = text.replace(ch, "\\" + ch)
         return text
 
+    def comment(self, post_urn: str, text: str) -> None:
+        """Add a comment under a post, used for the source list."""
+        from urllib.parse import quote
+        r = requests.post(
+            f"https://api.linkedin.com/rest/socialActions/{quote(post_urn, safe='')}/comments",
+            headers=self.h,
+            json={"actor": self.author, "object": post_urn, "message": {"text": text[:1200]}},
+            timeout=30)
+        if r.status_code >= 400:
+            raise RuntimeError(f"Comment failed {r.status_code}: {r.text}")
+
     def post_with_image(self, text: str, image_path: Path, alt_text: str = "") -> str:
         image_urn = self.upload_image(image_path)
         # Keep hashtags clickable: escape everything, then restore "#word"

@@ -9,14 +9,16 @@ author:
 
 post:
   min_chars: 700       # your target range
-  max_chars: 1300      # LinkedIn allows 3000; ~1300 reads best on mobile
+  max_chars: 3000      # LinkedIn allows 3000; ~1300 reads best on mobile
   hashtags: 3
   min_emojis: 3        # meaningful emojis sprinkled across the post
   max_emojis: 7
 
 review:
   min_score: 4         # every review criterion must score >= 4 out of 5
-  max_attempts: 3      # rewrite up to 3 times, then skip the day (nothing posted)
+  max_attempts: 3
+  passes: 3            # independent editorial reviews, all must pass, plus one fact-check
+  # rewrite up to 3 times, then skip the day (nothing posted)
 
 infographic:
   bg: "#FFFFFF"
@@ -32,3 +34,175 @@ linkedin:
 telegram:
   timeout_hours: 3          # wait this long for your Approve/Reject, then skip the day
   remind_every_minutes: 20  # ping you on Telegram until you answer
+
+research:
+  search_tool: web_search_20250305   # Anthropic web search tool version
+  pick: random             # random theme each day
+  max_age_days: 7          # only items published in the last 7 days
+  skip_recent_days: 3      # don't reuse a theme posted in the last 3 days
+  must_cite: true          # every factual claim must come from a source it read
+  allowed_domains:         # the only sites it may cite
+    - react.dev
+    - nextjs.org
+    - typescriptlang.org
+    - nodejs.org
+    - python.org
+    - openai.com
+    - anthropic.com
+    - developers.googleblog.com
+    - devblogs.microsoft.com
+    - blog.cloudflare.com
+    - github.blog
+    - nvd.nist.gov
+    - arxiv.org
+    - vuejs.org
+    - svelte.dev
+    - angular.dev
+    - python.org
+    - fastapi.tiangolo.com
+    - flask.palletsprojects.com
+    - djangoproject.com
+    - expressjs.com
+    - deno.com
+    - bun.sh
+    - developer.mozilla.org
+    - owasp.org
+    - portswigger.net
+    - huggingface.co
+    - langchain.com
+    - openai.com
+    - anthropic.com
+    - web.dev
+    - developer.chrome.com
+    - developer.mozilla.org
+    - frontendmasters.com
+    - smashingmagazine.com
+    - css-tricks.com
+    - nngroup.com
+    - interaction-design.org
+    - lawsofux.com
+    - uxdesign.cc
+    - theskinsfactory.com
+    - wireflow.co
+    - builder.io
+    - deeplearning.ai
+    - crewai.com
+    - llamaindex.ai
+    - mistral.ai
+    - github.blog
+    - agenta.ai
+    - diagrid.io
+    - huggingface.co
+    - langchain.com
+    - openai.com
+    - anthropic.com
+    - aws.amazon.com/blogs/machine-learning
+    - cloud.google.com/blog/products/ai-machine-learning
+    - owasp.org
+    - portswigger.net
+    - cisa.gov
+    - nist.gov
+    - thehackernews.com
+    - darkreading.com
+    - snyk.io
+    - nebulasafetech.com
+    - klytechstudio.com
+    - armorcode.com
+    - cyberlabsservices.com
+    - radware.com
+    - blog.intellibron.io
+    - fastapi.tiangolo.com
+    - djangoproject.com
+    - flask.palletsprojects.com
+    - pydantic.dev
+    - sqlalchemy.org
+    - expressjs.com
+    - nodejs.org
+    - deno.com
+    - bun.sh
+    - nestjs.com
+    - swagger.io
+    - openapis.org
+    - graphql.org
+    - restfulapi.net
+    - leetcode.com
+    - hackerrank.com
+    - neetcode.io
+    - geeksforgeeks.org
+    - stackoverflow.com
+    - freecodecamp.org
+    - dev.to
+    - saasui.design #
+    - ui-patterns.com #
+    - mobbin.design #
+    - designvault.io #
+    - checklist.design #
+    - refero.design #
+    - stacksorted.com #
+    - pageflows.com #
+    - pttrns.com #
+    - landingfolio.com #
+    - uigarage.net #
+    - component.gallery #
+    - m3.material.io #
+    - dribbble.com #
+    - behance.net #
+    - greatfrontend.com #
+    - techinterview.net #
+    - namastedev.com #
+    - ashishgogula.in #
+    - preparefrontend.com #
+    - bytebytego.com
+    - github.com/greatfrontend #
+    - yellow.ai #
+    - databricks.com #
+    - ibm.com #
+    - aisera.com #
+    - c3.ai #
+    - evidentlyai.com #
+    - kore.ai #
+    - nvidia.com #
+    - towardsdatascience.com
+    - jenkins.io
+    - aws.amazon.com
+    - azure.microsoft.com
+    - cloud.google.com
+    - docker.com
+    - kubernetes.io
+    - hashicorp.com
+    - terraform.io
+    - circleci.com
+    - gitlab.com
+    - javascript.info
+    - realpython.com
+    - testdriven.io
+    - fullstackpython.com
+    - piccalil.li
+    - joshwcomeau.com
+    - ishadeed.com
+    - moderncss.dev
+    - kevinpowell.co
+    - smacss.com
+    - frontendmentor.io
+    - patterns.dev
+    - vercel.com
+    - netlify.com
+    - remix.run
+    - astro.build
+    - gatsbyjs.com
+    - mui.com
+    - tailwindcss.com
+    - getbootstrap.com
+    - bulma.io
+    - unocss.dev
+    - panda-css.com
+    - ui.shadcn.com
+    - daisyui.com
+    - chakra-ui.com
+    - radix-ui.com
+    - mantine.dev
+    - ant.design
+    - solidjs.com
+    - qwik.dev
+    - preactjs.com
+    - alpinejs.dev
