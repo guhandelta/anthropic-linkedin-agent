@@ -1,0 +1,39 @@
+name: Daily LinkedIn post
+
+on:
+  schedule:
+    - cron: "17 13 * * *"   # 13:17 UTC = 9:17 AM New York (EDT); adjust as you like
+  workflow_dispatch:         # lets you run it manually from the Actions tab
+
+permissions:
+  contents: write            # to commit posted.json back
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get install -y fonts-dejavu-core
+      - run: pip install -r requirements.txt
+      - name: Run agent
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+        run: python agent.py
+      - name: Save outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: output
+          path: output/
+      - name: Commit post log
+        if: success()
+        run: |
+          git config user.name "linkedin-agent"
+          git config user.email "agent@users.noreply.github.com"
+          git add posted.json
+          git commit -m "Log daily post" || echo "nothing to commit"
+          git push
