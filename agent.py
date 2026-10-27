@@ -8,7 +8,9 @@ Daily pipeline:
   4. REVIEWER: a separate Claude call checks the post text AND looks at the rendered image
                -> meaningful? accurate? no gibberish? image matches the post?
   5. If rejected: feed the reviewer's notes back to the writer and retry (max N times)
-  6. If approved: upload the image + publish the post on LinkedIn, log it in posted.json
+  6. TELEGRAM: send the approved draft to you with [Approve & Post] / [Reject] buttons,
+               remind every 20 min, give up after 3 h (nothing posted)
+  7. If YOU approve: upload the image + publish on LinkedIn ONCE, button -> "Posted"
 
 Run:  python agent.py              (full run, posts to LinkedIn)
       python agent.py --dry-run    (generates + reviews, saves to output/, does NOT post)
@@ -20,6 +22,7 @@ import json
 import os
 import re
 import sys
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -31,6 +34,7 @@ from dotenv import load_dotenv
 
 from infographic import render_infographic
 from linkedin import LinkedInClient
+from telegram_review import TelegramReviewer, get_status
 
 ROOT = Path(__file__).parent
 load_dotenv(ROOT / ".env")
@@ -180,6 +184,35 @@ def hard_checks(post: str) -> list[str]:
     return issues
 
 
+# ---------------------------------------------------------------- approval + publish
+def publish_after_approval(topic: str, post: str, spec: dict, image_path: Path):
+    """Both gates must pass: the AI reviewer (already done) AND you on Telegram."""
+    draft_id = datetime.now().strftime("%Y%m%d") + "-" + uuid.uuid4().hex[:8]  # fixed for this draft
+    tg = TelegramReviewer(
+        os.environ["TELEGRAM_BOT_TOKEN"], os.environ["TELEGRAM_CHAT_ID"],
+        timeout_s=CFG["telegram"]["timeout_hours"] * 3600,
+        remind_every_s=CFG["telegram"]["remind_every_minutes"] * 60,
+    )
+    message_id = tg.send_draft(draft_id, topic, post, image_path)
+    print(f"Sent draft {draft_id} to Telegram; waiting for your decision…")
+
+    decision = tg.wait_for_decision(draft_id, message_id)
+    print("Decision:", decision)
+    if decision != "approved" or get_status(draft_id) != "approved":
+        return  # rejected or expired: nothing is posted
+
+    try:
+        li = LinkedInClient(os.environ["LINKEDIN_ACCESS_TOKEN"], CFG["linkedin"]["api_version"])
+        post_urn = li.post_with_image(post, image_path, alt_text=spec["title"])
+    except Exception as e:  # noqa: BLE001
+        tg.mark_failed(draft_id, message_id, str(e))
+        raise
+    tg.mark_posted(draft_id, message_id, post_urn)
+    print("Posted:", post_urn)
+    append_log({"date": datetime.now().isoformat(timespec="seconds"), "draft_id": draft_id,
+                "topic": topic, "post_urn": post_urn, "chars": len(post)})
+
+
 # ---------------------------------------------------------------- main
 def run(topic: str | None, dry_run: bool):
     topic = topic or next_topic()
@@ -213,13 +246,9 @@ def run(topic: str | None, dry_run: bool):
             (out_dir / "review.json").write_text(json.dumps(verdict, indent=2))
             print(f"\nAPPROVED ({len(post)} chars). Saved to {out_dir}")
             if dry_run:
-                print("Dry run: not posting.\n\n" + post)
+                print("Dry run: not sending to Telegram or LinkedIn.\n\n" + post)
                 return
-            li = LinkedInClient(os.environ["LINKEDIN_ACCESS_TOKEN"], CFG["linkedin"]["api_version"])
-            post_urn = li.post_with_image(post, image_path, alt_text=spec["title"])
-            print("Posted:", post_urn)
-            append_log({"date": datetime.now().isoformat(timespec="seconds"),
-                        "topic": topic, "post_urn": post_urn, "chars": len(post)})
+            publish_after_approval(topic, post, spec, image_path)
             return
         feedback = "\n".join(verdict.get("issues", [])) or "Improve quality and image match."
         print("Rejected:", feedback)

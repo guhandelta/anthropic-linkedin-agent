@@ -11,6 +11,7 @@ permissions:
 jobs:
   post:
     runs-on: ubuntu-latest
+    timeout-minutes: 240     # writing + up to 3 h waiting for your Telegram approval
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -22,6 +23,8 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python agent.py
       - name: Save outputs
         if: always()
@@ -34,6 +37,6 @@ jobs:
         run: |
           git config user.name "linkedin-agent"
           git config user.email "agent@users.noreply.github.com"
-          git add posted.json
+          git add posted.json state/
           git commit -m "Log daily post" || echo "nothing to commit"
           git push

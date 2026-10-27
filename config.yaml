@@ -28,3 +28,7 @@ infographic:
 
 linkedin:
   api_version: "202510"   # YYYYMM; LinkedIn supports roughly the last 12 months
+
+telegram:
+  timeout_hours: 3          # wait this long for your Approve/Reject, then skip the day
+  remind_every_minutes: 20  # ping you on Telegram until you answer
