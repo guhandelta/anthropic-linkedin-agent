@@ -16,9 +16,8 @@ post:
 
 review:
   min_score: 4         # every review criterion must score >= 4 out of 5
-  max_attempts: 3
+  max_attempts: 3      # each attempt uses a different source; after 3, nothing is posted
   passes: 3            # independent editorial reviews, all must pass, plus one fact-check
-  # rewrite up to 3 times, then skip the day (nothing posted)
 
 infographic:
   bg: "#FFFFFF"
@@ -37,172 +36,50 @@ telegram:
 
 research:
   search_tool: web_search_20250305   # Anthropic web search tool version
-  pick: random             # random theme each day
-  max_age_days: 7          # only items published in the last 7 days
-  skip_recent_days: 3      # don't reuse a theme posted in the last 3 days
-  must_cite: true          # every factual claim must come from a source it read
-  allowed_domains:         # the only sites it may cite
+  pick: random_source       # each run browses one allowed source chosen at random
+  max_age_days: 7           # only items published in the last 7 days
+  skip_recent_days: 3       # don't use the same source again within 3 days
+  must_cite: true           # every factual claim must come from a source it read
+  allowed_domains:          # domains only (no paths). Official vendors, standards and advisories
+    # Web frameworks and languages
     - react.dev
     - nextjs.org
     - typescriptlang.org
     - nodejs.org
     - python.org
+    - fastapi.tiangolo.com
+    - flask.palletsprojects.com
+    - djangoproject.com
+    - pydantic.dev
+    - expressjs.com
+    - deno.com
+    - bun.sh
+    - vuejs.org
+    - svelte.dev
+    - angular.dev
+    - tailwindcss.com
+    # Web platform
+    - developer.mozilla.org
+    - web.dev
+    - developer.chrome.com
+    # AI vendors and research
     - openai.com
     - anthropic.com
+    - huggingface.co
+    - langchain.com
+    - deeplearning.ai
+    - arxiv.org
+    # Cloud, infrastructure and release notes
     - developers.googleblog.com
     - devblogs.microsoft.com
     - blog.cloudflare.com
     - github.blog
-    - nvd.nist.gov
-    - arxiv.org
-    - vuejs.org
-    - svelte.dev
-    - angular.dev
-    - python.org
-    - fastapi.tiangolo.com
-    - flask.palletsprojects.com
-    - djangoproject.com
-    - expressjs.com
-    - deno.com
-    - bun.sh
-    - developer.mozilla.org
-    - owasp.org
-    - portswigger.net
-    - huggingface.co
-    - langchain.com
-    - openai.com
-    - anthropic.com
-    - web.dev
-    - developer.chrome.com
-    - developer.mozilla.org
-    - frontendmasters.com
-    - smashingmagazine.com
-    - css-tricks.com
-    - nngroup.com
-    - interaction-design.org
-    - lawsofux.com
-    - uxdesign.cc
-    - theskinsfactory.com
-    - wireflow.co
-    - builder.io
-    - deeplearning.ai
-    - crewai.com
-    - llamaindex.ai
-    - mistral.ai
-    - github.blog
-    - agenta.ai
-    - diagrid.io
-    - huggingface.co
-    - langchain.com
-    - openai.com
-    - anthropic.com
-    - aws.amazon.com/blogs/machine-learning
-    - cloud.google.com/blog/products/ai-machine-learning
-    - owasp.org
-    - portswigger.net
-    - cisa.gov
-    - nist.gov
-    - thehackernews.com
-    - darkreading.com
-    - snyk.io
-    - nebulasafetech.com
-    - klytechstudio.com
-    - armorcode.com
-    - cyberlabsservices.com
-    - radware.com
-    - blog.intellibron.io
-    - fastapi.tiangolo.com
-    - djangoproject.com
-    - flask.palletsprojects.com
-    - pydantic.dev
-    - sqlalchemy.org
-    - expressjs.com
-    - nodejs.org
-    - deno.com
-    - bun.sh
-    - nestjs.com
-    - swagger.io
-    - openapis.org
-    - graphql.org
-    - restfulapi.net
-    - leetcode.com
-    - hackerrank.com
-    - neetcode.io
-    - geeksforgeeks.org
-    - stackoverflow.com
-    - freecodecamp.org
-    - dev.to
-    - saasui.design #
-    - ui-patterns.com #
-    - mobbin.design #
-    - designvault.io #
-    - checklist.design #
-    - refero.design #
-    - stacksorted.com #
-    - pageflows.com #
-    - pttrns.com #
-    - landingfolio.com #
-    - uigarage.net #
-    - component.gallery #
-    - m3.material.io #
-    - dribbble.com #
-    - behance.net #
-    - greatfrontend.com #
-    - techinterview.net #
-    - namastedev.com #
-    - ashishgogula.in #
-    - preparefrontend.com #
-    - bytebytego.com
-    - github.com/greatfrontend #
-    - yellow.ai #
-    - databricks.com #
-    - ibm.com #
-    - aisera.com #
-    - c3.ai #
-    - evidentlyai.com #
-    - kore.ai #
-    - nvidia.com #
-    - towardsdatascience.com
-    - jenkins.io
     - aws.amazon.com
-    - azure.microsoft.com
     - cloud.google.com
     - docker.com
     - kubernetes.io
-    - hashicorp.com
-    - terraform.io
-    - circleci.com
-    - gitlab.com
-    - javascript.info
-    - realpython.com
-    - testdriven.io
-    - fullstackpython.com
-    - piccalil.li
-    - joshwcomeau.com
-    - ishadeed.com
-    - moderncss.dev
-    - kevinpowell.co
-    - smacss.com
-    - frontendmentor.io
-    - patterns.dev
-    - vercel.com
-    - netlify.com
-    - remix.run
-    - astro.build
-    - gatsbyjs.com
-    - mui.com
-    - tailwindcss.com
-    - getbootstrap.com
-    - bulma.io
-    - unocss.dev
-    - panda-css.com
-    - ui.shadcn.com
-    - daisyui.com
-    - chakra-ui.com
-    - radix-ui.com
-    - mantine.dev
-    - ant.design
-    - solidjs.com
-    - qwik.dev
-    - preactjs.com
-    - alpinejs.dev
+    # Security advisories and standards
+    - owasp.org
+    - nvd.nist.gov
+    - cisa.gov
+    - portswigger.net
