@@ -124,10 +124,17 @@ class TelegramReviewer:
 
     def send_draft(self, draft_id: str, topic: str, post: str, image_path: Path) -> int:
         self._skip_old_updates()
+        is_gif = image_path.suffix.lower() == ".gif"
+        caption = f"✨ Animated Infographic for review\n🆔 {draft_id}" if is_gif else f"🖼️ Infographic for today's draft\n🆔 {draft_id}"
         with open(image_path, "rb") as f:
-            self._call("sendPhoto", chat_id=self.chat_id,
-                       caption=f"🖼️ Infographic for today's draft\n🆔 {draft_id}",
-                       files={"photo": f})
+            if is_gif:
+                self._call("sendAnimation", chat_id=self.chat_id,
+                           caption=caption,
+                           files={"animation": f})
+            else:
+                self._call("sendPhoto", chat_id=self.chat_id,
+                           caption=caption,
+                           files={"photo": f})
         text = (f"📝 New LinkedIn draft for review\n📌 Topic: {topic}\n"
                 f"📏 {len(post)} characters\n🆔 {draft_id}\n\n{post}")
         msg = self._call("sendMessage", chat_id=self.chat_id, text=text[:4096],

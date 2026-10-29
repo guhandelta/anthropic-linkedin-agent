@@ -26,6 +26,7 @@ infographic:
   ink: "#111827"
   muted: "#4B5563"
   accent: "#0A66C2"
+  animated_gif: true       # Convert SVG into an animated GIF with streaming motion
   footer: "Guha | Full Stack & GenAI"
 
 linkedin:

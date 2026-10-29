@@ -22,8 +22,8 @@ def extract_svg(text: str) -> str:
     m = re.search(r"<svg\b.*</svg>", text, re.S)
     if not m:
         raise ValueError("Designer did not return an <svg> drawing.")
-    svg = m.group(0)
-    # Auto-escape unescaped ampersands (e.g. UX & UI -> UX &amp; UI)
+    # Clean &nbsp; into standard space and auto-escape unescaped ampersands
+    svg = svg.replace("&nbsp;", " ")
     svg = re.sub(r"&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)", "&amp;", svg)
     return svg
 
@@ -86,4 +86,76 @@ def render_svg(svg: str, path: Path) -> Path:
                          output_width=W, output_height=H)
     except Exception as e:  # noqa: BLE001
         raise ValueError(f"The drawing could not be rendered: {e}") from e
+    return path
+
+
+def render_svg_to_gif(svg: str, path: Path, n_frames: int = 12, fps: int = 12) -> Path:
+    """Renders a technical SVG infographic into a smooth, looping animated GIF with subtle motion."""
+    import math
+    import io
+    from PIL import Image
+
+    issues = svg_checks(svg)
+    if issues:
+        raise ValueError("; ".join(issues))
+
+    has_dasharray = "stroke-dasharray" in svg
+    frames = []
+    dash_period = 24
+
+    for i in range(n_frames):
+        phase = 2 * math.pi * (i / n_frames)
+        flow_offset = int((i / n_frames) * dash_period)
+        pulse_r_delta = 10 * (0.5 + 0.5 * math.sin(phase))
+        pulse_op = round(0.85 - 0.5 * (0.5 + 0.5 * math.sin(phase)), 2)
+
+        frame_svg = svg
+        if has_dasharray:
+            def _shift_dash(m):
+                tag = m.group(1)
+                attrs = m.group(2).rstrip()
+                is_self_closing = attrs.endswith("/")
+                if is_self_closing:
+                    attrs = attrs[:-1].rstrip()
+                if "stroke-dashoffset" in attrs:
+                    attrs = re.sub(r'stroke-dashoffset="[^"]*"', f'stroke-dashoffset="{flow_offset}"', attrs)
+                else:
+                    attrs += f' stroke-dashoffset="{flow_offset}"'
+                return f"<{tag} {attrs} />" if is_self_closing else f"<{tag} {attrs}>"
+            frame_svg = re.sub(r'<(path|line)\s+([^>]*stroke-dasharray="[^"]*"[^>]*)>', _shift_dash, frame_svg)
+        else:
+            # Auto-animate connector lines
+            def _add_stream(m):
+                tag = m.group(1)
+                attrs = m.group(2).rstrip()
+                is_self_closing = attrs.endswith("/")
+                if is_self_closing:
+                    attrs = attrs[:-1].rstrip()
+                if "stroke=" in attrs and ("L " in attrs or "x2=" in attrs) and "stroke-dasharray" not in attrs:
+                    attrs += f' stroke-dasharray="12 12" stroke-dashoffset="{flow_offset}"'
+                return f"<{tag} {attrs} />" if is_self_closing else f"<{tag} {attrs}>"
+            frame_svg = re.sub(r'<(path|line)\s+([^>]*)>', _add_stream, frame_svg, count=4)
+
+        if "{flow_offset}" in frame_svg:
+            frame_svg = frame_svg.replace("{flow_offset}", str(flow_offset))
+        if "{pulse_r}" in frame_svg:
+            frame_svg = frame_svg.replace("{pulse_r}", str(int(16 + pulse_r_delta)))
+        if "{pulse_op}" in frame_svg:
+            frame_svg = frame_svg.replace("{pulse_op}", str(pulse_op))
+
+        png_bytes = cairosvg.svg2png(bytestring=frame_svg.encode("utf-8"), output_width=W, output_height=H)
+        img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
+        resized = img.resize((720, 900), Image.Resampling.LANCZOS)
+        quantized = resized.quantize(colors=128, method=Image.Quantize.MEDIANCUT)
+        frames.append(quantized)
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    frames[0].save(
+        path,
+        save_all=True,
+        append_images=frames[1:],
+        duration=int(1000 / fps),
+        loop=0,
+        optimize=True,
+    )
     return path

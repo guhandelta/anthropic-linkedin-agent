@@ -38,7 +38,7 @@ from anthropic import Anthropic
 from openai import OpenAI
 from dotenv import load_dotenv
 
-from infographic import extract_svg, render_svg, svg_checks
+from infographic import extract_svg, render_svg, render_svg_to_gif, svg_checks
 from linkedin import LinkedInClient
 from linkedin_groups import post_to_groups
 from telegram_review import TelegramReviewer, get_status
@@ -285,7 +285,7 @@ def call_openai_json(system: str, content, tools: list | None = None, max_tokens
         return extract_json_object(fmt_resp.choices[0].message.content or "")
 
 
-def call_openai_svg(system: str, msg: str, max_tokens: int = 4000) -> str:
+def call_openai_svg(system: str, msg: str, max_tokens: int = 8000) -> str:
     """Ask OpenAI (fallback) to generate an SVG infographic."""
     if not openai_client:
         raise RuntimeError("Claude limit reached and OpenAI API key is not configured in .env.")
@@ -293,7 +293,7 @@ def call_openai_svg(system: str, msg: str, max_tokens: int = 4000) -> str:
     resp = openai_client.chat.completions.create(
         model=model_name,
         messages=[
-            {"role": "system", "content": system + "\nCRITICAL SVG RULES:\n- Absolutely NO emoji characters inside SVG text.\n- Do NOT combine lines in one <text> element. Use separate <text y='...'> elements for each line.\n- Keep every <text> element under 60 characters total.\n- Do NOT use HTML entities like &#8211; use plain hyphens or ASCII.\n- Escape raw & as &amp;."},
+            {"role": "system", "content": system + "\nCRITICAL SVG RULES:\n- Absolutely NO emoji characters inside SVG text.\n- Do NOT combine lines in one <text> element. Use separate <text y='...'> elements for each line.\n- Keep every <text> element under 65 characters total.\n- Do NOT use HTML entities like &#8211; use plain hyphens or ASCII.\n- Escape raw & as &amp;."},
             {"role": "user", "content": msg}
         ],
         max_tokens=max_tokens,
@@ -408,35 +408,78 @@ Return ONLY JSON:
 
 
 DESIGNER_SYSTEM = """You are an elite visual designer specializing in publication-grade technical infographics for LinkedIn.
-You turn a LinkedIn post into a clean, modern, high-contrast infographic drawn as pure SVG. It must look stunning, professional, and visually engaging at a glance on both mobile and desktop feeds.
+You turn complex software engineering concepts and LinkedIn posts into a multi-module, highly informative Bento Grid technical infographic drawn as pure SVG.
+The graphic must look sophisticated, dense with genuine technical value, beautifully balanced, and crystal clear on both mobile and desktop screens. It MUST NOT be a trivial, oversimplified icon-and-arrow diagram.
 
-Visual Style & Aesthetic Principles:
-- Premium Elevation: Do not draw plain flat lines or raw unstyled shapes. Use cards with rounded corners (rx="20" to rx="28"), crisp subtle borders (stroke="#E2E8F0" stroke-width="1.5"), and soft drop shadows (<filter id="cardShadow"><feDropShadow dx="0" dy="6" stdDeviation="12" flood-color="#0F172A" flood-opacity="0.06"/></filter>).
-- Background: A modern, subtle gradient background (e.g. #F8FAFC to #EEF2F6) rather than stark white.
-- Header Hierarchy:
-  1. Category pill badge at top (e.g. <rect rx="16" fill="#EFF6FF" stroke="#BFDBFE"/> with bold text #1D4ED8 "DEV RADAR" or "RELEASE BREAKDOWN").
-  2. Compelling Main Title (font-size: 52 to 58, font-weight: bold, fill: #0F172A).
-  3. Descriptive Subtitle (font-size: 24 to 28, fill: #475569) explaining the core takeaway in plain words.
-- Structured Content Architecture:
-  * Divide the visual body into clear sections using styled cards (e.g., side-by-side Before vs. After cards, a 3-step pipeline flow, or a feature architecture layout).
-  * Draw micro-illustrations using vector shapes: browser window header bars with 3 colored dots (red/amber/green), syntax-styled code cards with dark slate backgrounds (#0F172A), flow arrows with chevron heads, circular status badges with clean checkmarks or alert triangles.
-  * Use deliberate semantic accents: Emerald/Green (#10B981 / #059669) for new/improved/safe, Coral/Red (#EF4444 / #DC2626) for old/deprecated/risky, LinkedIn/Electric Blue (#0A66C2 / #2563EB) for active features, Amber (#F59E0B / #D97706) for watch-outs/caveats.
-- Callout / Pro-Tip Section:
-  * A dedicated bottom card (e.g. with an amber/blue accent bar on the left border) highlighting the practical developer takeaway or watch-out.
-- Signature Footer:
-  * A neat divider line (#E2E8F0) and footer text "FOOTER_TEXT" in #64748B at the very bottom.
+SPATIAL LAYOUT & VERTICAL BUDGETING (Strict Bounding Zones - NO OVERLAPPING):
+Total Canvas: viewBox="0 0 1080 1350" (portrait). Keep 60px outer padding (x: 60 to 1020).
+You MUST organize the visual content into 5 distinct vertical sections with explicit non-overlapping y-coordinates:
 
-Technical rules (strict):
-- One <svg> root with xmlns="http://www.w3.org/2000/svg" and viewBox="0 0 1080 1350" (portrait).
-- Supported tags: rect, circle, ellipse, path, line, polyline, polygon, g, text, tspan, defs, linearGradient, radialGradient, clipPath, filter, feDropShadow. No script, foreignObject, image or external links.
-- No emoji characters. Draw icons with shapes/paths (e.g. checkmark: <path d="M..."/>).
-- Text: font-family="Helvetica, Arial, DejaVu Sans, sans-serif". Minimum font-size 22 for all labels/captions/subtitles, 24-32 for card titles, 52-58 for main title. Never set any font-size below 22.
-- Spacing & Padding: Keep at least 60px canvas margin. Ensure text lines have at least 32-36px vertical spacing. Leave at least 30px bottom padding inside cards below the last text line so text never touches or crowds card borders.
-- Escape & as &amp; and < as &lt;. Split multi-line text into separate <text> elements with explicit y coordinates. Keep every text line under 60 characters (never exceed 80 characters per line) so text wraps cleanly on canvas.
-- Keep the SVG clean, well-structured, and concise (under 400 lines of SVG code) so it generates completely without truncation.
-- Every label, metric, and claim must be grounded in the post and its sources.
+1. ZONE 1: HERO HEADER (y: 40 to 230, height: 190)
+   - Category Pill Badge at top: <rect x="60" y="45" width="220" height="36" rx="18" fill="#EFF6FF" stroke="#BFDBFE"/> with text at x="170" y="69" text-anchor="middle" font-size="22" font-weight="bold" fill="#1D4ED8" (e.g. "ARCHITECTURE DEEP DIVE", "SYSTEM DESIGN", "TECH RADAR").
+   - Main Title: 2 lines maximum, font-size 46-52, font-weight: bold, fill: #0F172A. First line at y="125", second line at y="175". Maximum 32 characters per line.
+   - Descriptive Subtitle: font-size 24, fill: #475569 at y="220". Explains the architectural impact or bottom line in plain English (max 55 characters).
 
-Return ONLY the SVG, starting with <svg and ending with </svg>. No explanation."""
+2. ZONE 2: HIGH-DENSITY COMPARATIVE ARCHITECTURE GRID (y: 250 to 670, height: 420)
+   - Render TWO structured comparison cards side-by-side:
+     * LEFT CARD ("Traditional / Anti-Pattern" or "Before"): x="60", y="250", width="460", height="420", rx="24", fill="#FFFFFF", stroke="#E2E8F0".
+       - Header badge: <rect x="85" y="275" width="190" height="36" rx="18" fill="#FEF2F2" stroke="#FECACA"/> with text at x="180" y="300" text-anchor="middle" font-size="22" font-weight="bold" fill="#DC2626" (e.g. "LEGACY PATTERN").
+       - Card title at x="85" y="350", font-size="28", font-weight="bold", fill="#0F172A".
+       - 3-4 structured bullet items or architectural specs with explicit vertical spacing (y: 395, 450, 505, 560).
+       - Metric highlight card at bottom of card (y: 590 to 650) highlighting the bottleneck (e.g., "Latency: 450ms | Memory: High").
+     * RIGHT CARD ("Modern Solution / Architecture" or "After"): x="560", y="250", width="460", height="420", rx="24", fill="#FFFFFF", stroke="#BFDBFE" stroke-width="2".
+       - Header badge: <rect x="585" y="275" width="210" height="36" rx="18" fill="#ECFDF5" stroke="#A7F3D0"/> with text at x="690" y="300" text-anchor="middle" font-size="22" font-weight="bold" fill="#059669" (e.g. "OPTIMIZED PATTERN").
+       - Card title at x="585" y="350", font-size="28", font-weight="bold", fill="#0F172A".
+       - 3-4 structured bullet items or specs with explicit vertical spacing (y: 395, 450, 505, 560).
+       - Metric highlight card at bottom (y: 590 to 650) highlighting the win (e.g., "Latency: 28ms (-93%) | Zero GC").
+
+3. ZONE 3: EXECUTION PIPELINE / INTERACTIVE DATA FLOW (y: 690 to 1050, height: 360)
+   - A full-width technical flow card: x="60", y="690", width="960", height="360", rx="24", fill="#FFFFFF", stroke="#E2E8F0".
+   - Section Title at x="90", y="735", font-size="26", font-weight="bold", fill="#0F172A" (e.g. "DATA FLOW & EXECUTION PIPELINE").
+   - 3 interconnected pipeline stages placed horizontally:
+     * Stage 1 Box: x="90", y="770", width="250", height="240", rx="18", fill="#F8FAFC", stroke="#CBD5E1".
+       - Number badge: <circle cx="125" cy="805" r="18" fill="#1E293B"/> with text "1" in white.
+       - Title at x="155" y="813" (font-size 22, bold). 3 concise description lines (y: 860, 895, 930).
+     * Stage 2 Box (Active Processing): x="415", y="770", width="250", height="240", rx="18", fill="#EFF6FF", stroke="#93C5FD".
+       - Number badge: <circle cx="450" cy="805" r="18" fill="#2563EB"/> with text "2" in white.
+       - Pulsing Radar Ring: <circle cx="450" cy="805" r="{pulse_r}" fill="none" stroke="#3B82F6" stroke-width="2" opacity="{pulse_op}"/>
+       - Title at x="480" y="813" (font-size 22, bold). 3 concise description lines (y: 860, 895, 930).
+     * Stage 3 Box: x="740", y="770", width="250", height="240", rx="18", fill="#F8FAFC", stroke="#CBD5E1".
+       - Number badge: <circle cx="775" cy="805" r="18" fill="#059669"/> with text "3" in white.
+       - Title at x="805" y="813" (font-size 22, bold). 3 concise description lines (y: 860, 895, 930).
+   - Animated Motion Connectors (Flow Streams):
+     * Connector between Stage 1 and Stage 2: <line x1="340" y1="890" x2="415" y2="890" stroke="#3B82F6" stroke-width="4" stroke-dasharray="10 10"/>
+     * Connector between Stage 2 and Stage 3: <line x1="665" y1="890" x2="740" y2="890" stroke="#3B82F6" stroke-width="4" stroke-dasharray="10 10"/>
+     * Note: Connector lines with stroke-dasharray="10 10" are AUTOMATICALLY CONVERTED INTO ANIMATED FLOWING STREAMS in the animated GIF!
+
+4. ZONE 4: ARCHITECTURAL PRO-TIP & KEY TAKEAWAY (y: 1070 to 1240, height: 170)
+   - Highlight Card: x="60", y="1070", width="960", height="170", rx="24", fill="#FEFCE8", stroke="#FEF08A".
+   - Left Accent Bar: <rect x="60" y="1070" width="8" height="170" rx="4" fill="#EAB308"/>.
+   - Badge at x="95" y="1110": <rect x="95" y="1090" width="160" height="30" rx="15" fill="#FEF08A"/> with text "PRO-TIP // ADVICE" in #854D0E font-size 22 font-weight bold.
+   - 2 impactful takeaway lines at x="95", y="1155" and y="1195" (font-size: 24, font-weight: 500, fill: #713F12, max 65 chars per line).
+
+5. ZONE 5: FOOTER (y: 1260 to 1310)
+   - Divider line: <line x1="60" y1="1265" x2="1020" y2="1265" stroke="#E2E8F0" stroke-width="1.5"/>
+   - Signature text: <text x="60" y="1298" font-size="22" fill="#64748B">FOOTER_TEXT</text>
+
+CRITICAL SPACING & COLLISION RULES (Never Violate):
+- NO TEXT OVERLAPS: Never place two <text> tags at the same or adjacent y-coordinates without separated x bounds.
+- LINE LENGTH LIMITS:
+  * Half-width cards (width 460): max 34 characters per line.
+  * Pipeline boxes (width 250): max 20 characters per line.
+  * Full-width cards (width 960): max 65 characters per line.
+- LINE SPACING: Always leave at least 32-38px vertical spacing between consecutive text lines.
+- CARD PADDING: Keep text at least 25px away from card borders.
+- VALID SVG & SAFE TAGS:
+  * Only one <svg> root with viewBox="0 0 1080 1350".
+  * Supported tags: rect, circle, ellipse, path, line, polyline, polygon, g, text, tspan, defs, linearGradient, radialGradient, clipPath, filter, feDropShadow.
+  * NO <script>, <foreignObject>, <img>, or <animate> tags. (Motion is composited via frame generation).
+  * NO emoji characters. Draw icons and indicators with shapes or clean paths.
+  * Text font-family="Helvetica, Arial, DejaVu Sans, sans-serif". Minimum font-size 22 for all text.
+  * Escape & as &amp; and < as &lt;.
+- Ground every claim, term, and metric strictly in the provided post content.
+
+Return ONLY the SVG, starting with <svg and ending with </svg>. No markdown explanation, no wrapping code fences."""
 
 
 def design_svg(post: str, idea: str, headline: str, feedback: str | None, footer: str) -> str:
@@ -464,7 +507,7 @@ def design_svg(post: str, idea: str, headline: str, feedback: str | None, footer
             else:
                 raise
 
-    return call_openai_svg(sys_prompt, msg)
+    return call_openai_svg(sys_prompt, msg, max_tokens=8000)
 
 
 # ---------------------------------------------------------------- reviewers
@@ -729,10 +772,10 @@ def handle_direct_post(post_text: str, custom_image_path: Path | None = None, ge
             remind_every_s=CFG["telegram"]["remind_every_minutes"] * 60,
         )
 
-    image_path = custom_image_path
+    media_path = custom_image_path
     headline = "Direct Submission"
 
-    if generate_infographic and not image_path:
+    if generate_infographic and not media_path:
         print("\n[Direct Post] Extracting visual idea & designing infographic...")
         if tg and tracker_id:
             tg.update_progress(tracker_id, f"🎨 [1/2] Auto-designing infographic layout for direct post ({len(post_text)} chars)...")
@@ -748,15 +791,22 @@ def handle_direct_post(post_text: str, custom_image_path: Path | None = None, ge
             image_path = out_dir / "direct_infographic.png"
             render_svg(svg, image_path)
             (out_dir / "direct_infographic.svg").write_text(svg)
+            gif_path = out_dir / "direct_infographic.gif"
+            try:
+                render_svg_to_gif(svg, gif_path)
+                media_path = gif_path
+            except Exception as e:
+                print(f"Animated GIF generation failed ({e}), using static PNG.")
+                media_path = image_path
         except Exception as e:
             print(f"Infographic design for direct post failed: {e}. Falling back to text-only.")
-            image_path = None
+            media_path = None
 
     if tg and tracker_id:
         tg.update_progress(tracker_id, "✅ [2/2] Post prepared! Delivering draft below for your consent...")
 
-    if image_path and Path(image_path).exists():
-        message_id = tg.send_draft(draft_id, headline, post_text, Path(image_path))
+    if media_path and Path(media_path).exists():
+        message_id = tg.send_draft(draft_id, headline, post_text, Path(media_path))
     else:
         message_id = tg.send_text_draft(draft_id, headline, post_text)
 
@@ -768,7 +818,7 @@ def handle_direct_post(post_text: str, custom_image_path: Path | None = None, ge
     if action == "approved":
         publish_to_linkedin_and_groups(
             post=post_text,
-            image_path=image_path,
+            image_path=media_path,
             headline=headline,
             sources=[],
             draft_id=draft_id,
@@ -902,6 +952,7 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
             tg.update_progress(tracker_id, f"✍️ [2/4] Drafted post ({len(post)} chars). Designing visual infographic...")
 
         image_path = out_dir / f"infographic_{attempt}.png"
+        media_path = image_path
         design_feedback, drawn = feedback, False
         for _ in range(2):  # the designer gets two tries at a valid drawing
             try:
@@ -918,6 +969,13 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
             try:
                 render_svg(svg, image_path)
                 (out_dir / f"infographic_{attempt}.svg").write_text(svg)
+                gif_path = image_path.with_suffix(".gif")
+                try:
+                    render_svg_to_gif(svg, gif_path)
+                    media_path = gif_path
+                except Exception as e:
+                    print(f"Animated GIF generation failed ({e}), using static PNG.")
+                    media_path = image_path
                 drawn = True
                 break
             except ValueError as e:
@@ -944,7 +1002,7 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
                 print("\nSources:\n" + "\n".join(f"- {s['url']}" for s in sources))
                 return
 
-            res = publish_after_approval(headline, current_source, post, sources, image_path, tg=tg)
+            res = publish_after_approval(headline, current_source, post, sources, media_path, tg=tg)
             status = res.get("status")
             if status == "posted":
                 return
