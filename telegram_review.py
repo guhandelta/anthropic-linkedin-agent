@@ -76,8 +76,17 @@ class TelegramReviewer:
 
     def _set_button(self, message_id: int, text: str, draft_id: str):
         # Telegram can't grey out a button; an inert "noop" button is the standard way.
-        self._call("editMessageReplyMarkup", chat_id=self.chat_id, message_id=message_id,
-                   reply_markup=self._buttons([(text, f"noop:{draft_id}")]))
+        try:
+            self._call("editMessageReplyMarkup", chat_id=self.chat_id, message_id=message_id,
+                       reply_markup=self._buttons([(text, f"noop:{draft_id}")]))
+        except Exception:
+            pass
+
+    def _answer_cq(self, cq_id: str, text: str):
+        try:
+            self._call("answerCallbackQuery", callback_query_id=cq_id, text=text)
+        except Exception:
+            pass
 
     def _skip_old_updates(self):
         """Ignore taps made before this draft was sent."""
@@ -107,16 +116,22 @@ class TelegramReviewer:
             now = time.time()
             if now - start >= self.timeout_s:
                 self._set_button(message_id, "⌛ Expired — not posted", draft_id)
-                self._call("sendMessage", chat_id=self.chat_id,
-                           reply_to_message_id=message_id,
-                           text="⌛ No answer within 3 hours, so this draft was NOT posted.")
+                try:
+                    self._call("sendMessage", chat_id=self.chat_id,
+                               reply_to_message_id=message_id,
+                               text="⌛ No answer within 3 hours, so this draft was NOT posted.")
+                except Exception:
+                    pass
                 set_status(draft_id, "expired")
                 return "expired"
             if now >= next_ping:
                 left = int((self.timeout_s - (now - start)) // 60)
-                self._call("sendMessage", chat_id=self.chat_id, reply_to_message_id=message_id,
-                           text=f"⏰ Reminder: today's LinkedIn draft is waiting for you. "
-                                f"Tap Approve or Reject above ({left} min left).")
+                try:
+                    self._call("sendMessage", chat_id=self.chat_id, reply_to_message_id=message_id,
+                               text=f"⏰ Reminder: today's LinkedIn draft is waiting for you. "
+                                    f"Tap Approve or Reject above ({left} min left).")
+                except Exception:
+                    pass
                 next_ping += self.remind_every_s
 
             wait = int(max(1, min(50, next_ping - time.time(), self.timeout_s - (time.time() - start))))
@@ -133,21 +148,20 @@ class TelegramReviewer:
         if not cq:
             return None
         if str(cq["from"]["id"]) != self.chat_id and str(cq["message"]["chat"]["id"]) != self.chat_id:
-            self._call("answerCallbackQuery", callback_query_id=cq["id"], text="Not authorised.")
+            self._answer_cq(cq["id"], text="Not authorised.")
             return None
         action, _, cb_draft = cq.get("data", "").partition(":")
         if cb_draft != draft_id or action == "noop" or get_status(draft_id) != "pending":
-            self._call("answerCallbackQuery", callback_query_id=cq["id"],
-                       text="This draft is already handled. 👍")
+            self._answer_cq(cq["id"], text="This draft is already handled. 👍")
             return None
         if action == "approve":
             set_status(draft_id, "approved")          # lock before posting: no double post
-            self._call("answerCallbackQuery", callback_query_id=cq["id"], text="🚀 Posting to LinkedIn…")
+            self._answer_cq(cq["id"], text="🚀 Posting to LinkedIn…")
             self._set_button(message_id, "⏳ Posting…", draft_id)
             return "approved"
         if action == "reject":
             set_status(draft_id, "rejected")
-            self._call("answerCallbackQuery", callback_query_id=cq["id"], text="Rejected. Nothing will be posted.")
+            self._answer_cq(cq["id"], text="Rejected. Nothing will be posted.")
             self._set_button(message_id, "❌ Rejected — not posted", draft_id)
             return "rejected"
         return None

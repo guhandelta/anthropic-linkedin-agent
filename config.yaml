@@ -28,7 +28,7 @@ infographic:
   footer: "Guha | Full Stack & GenAI"
 
 linkedin:
-  api_version: "202510"   # YYYYMM; LinkedIn supports roughly the last 12 months
+  api_version: "202610"   # YYYYMM; LinkedIn supports roughly the last 12 months
 
 telegram:
   timeout_hours: 3          # wait this long for your Approve/Reject, then skip the day

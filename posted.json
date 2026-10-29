@@ -1,0 +1,16 @@
+[
+  {
+    "date": "2026-10-29T08:48:00",
+    "draft_id": "20261029-ec3e6540",
+    "source_domain": "developer.mozilla.org",
+    "headline": "Firefox 159: HTML sanitizing now happens during parsing",
+    "post_urn": "urn:li:share:7521554195536154624",
+    "chars": 1365,
+    "sources": [
+      {
+        "claim": "HTML sanitizer in Firefox 159 now sanitizes during parsing",
+        "url": "https://developer.mozilla.org/en-US/docs/Mozilla/Firefox/Releases/159"
+      }
+    ]
+  }
+]

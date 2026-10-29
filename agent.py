@@ -188,6 +188,7 @@ Technical rules (strict):
 - Escape & as &amp; and < as &lt;. Split long text into several <text> lines.
 - Layout: title at the top stating the takeaway in plain words; the drawing in the middle;
   one short takeaway line near the bottom; a small footer "FOOTER_TEXT" at the very bottom.
+- Keep the SVG concise, clean and focused. Avoid overly verbose paths or repetitive shapes so it generates completely without truncation.
 - Palette: a light background, dark text (#111827), grey secondary text (#4B5563), at most 5 accents.
 - 3 to 6 meaningful points, each clearly linked to its shape by position, a line or a label.
 - Every label and number must come from the post and its sources. Nothing invented.
@@ -200,7 +201,7 @@ def design_svg(post: str, idea: str, headline: str, feedback: str | None, footer
     if feedback:
         msg += f"\n\nYour previous drawing was REJECTED. Fix these issues and redraw it:\n{feedback}"
     resp = client.messages.create(
-        model=CFG["model"], max_tokens=8000,
+        model=CFG["model"], max_tokens=12000,
         system=DESIGNER_SYSTEM.replace("FOOTER_TEXT", footer),
         messages=[{"role": "user", "content": msg}],
     )
@@ -371,22 +372,26 @@ def run(source_arg: str | None, dry_run: bool):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     feedback, tried = None, set()
+    current_source = source_arg
     for attempt in range(1, CFG["review"]["max_attempts"] + 1):
-        source = source_arg or pick_source(log, exclude=tried)
-        if not source:
+        if not current_source or not feedback:
+            current_source = source_arg or pick_source(log, exclude=tried)
+            feedback = None
+        if not current_source:
             print("No source available today: all were used recently or already tried.")
             sys.exit(0)
-        tried.add(source)
-        print(f"\n--- Attempt {attempt}: browsing {source} ---")
+        tried.add(current_source)
+        action_verb = "revising draft on" if feedback else "browsing"
+        print(f"\n--- Attempt {attempt}: {action_verb} {current_source} ---")
 
-        draft = write_draft(source, feedback, posted)
+        draft = write_draft(current_source, feedback, posted)
         if draft.get("no_item"):
             print("Nothing fresh on this source:", draft.get("reason"))
-            feedback = None  # the next attempt uses a different source
+            current_source, feedback = None, None
             continue
 
         post, idea = draft["post"].strip(), draft.get("infographic_idea", "")
-        headline = draft.get("headline", source)
+        headline = draft.get("headline", current_source)
         sources = draft.get("sources", [])
         issues = hard_checks(post) + source_checks(sources, posted)
         if not idea:
@@ -399,7 +404,12 @@ def run(source_arg: str | None, dry_run: bool):
         image_path = out_dir / f"infographic_{attempt}.png"
         design_feedback, drawn = feedback, False
         for _ in range(2):  # the designer gets two tries at a valid drawing
-            svg = design_svg(post, idea, headline, design_feedback, CFG["infographic"]["footer"])
+            try:
+                svg = design_svg(post, idea, headline, design_feedback, CFG["infographic"]["footer"])
+            except ValueError as e:
+                design_feedback = f"{e} Make the drawing simpler with fewer lines and paths."
+                print("Drawing generation failed:", e)
+                continue
             svg_issues = svg_checks(svg)
             if svg_issues:
                 design_feedback = "\n".join(svg_issues)
@@ -426,7 +436,7 @@ def run(source_arg: str | None, dry_run: bool):
                 print("Dry run: not sending to Telegram or LinkedIn.\n\n" + post)
                 print("\nSources:\n" + "\n".join(f"- {s['url']}" for s in sources))
                 return
-            publish_after_approval(headline, source, post, sources, image_path)
+            publish_after_approval(headline, current_source, post, sources, image_path)
             return
         feedback = "\n".join(issues) or "Improve quality and image match."
         print("Rejected:\n" + feedback)
