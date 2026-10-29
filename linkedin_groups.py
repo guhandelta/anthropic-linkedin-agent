@@ -94,9 +94,11 @@ def post_to_single_group(page, group_url: str, text: str, image_path: Path | Non
     # 1. Click "Start a post" button
     start_selectors = [
         "button:has-text('Start a post')",
+        "button:has-text('Start a public post')",
+        "button:has-text('Start a')",
+        "div[data-placeholder*='Start a']",
         "button.share-box-feed-entry__trigger",
-        "div[data-placeholder='Start a post']",
-        "button[aria-label*='Start a post']",
+        "button[aria-label*='Start a']",
     ]
     started = False
     for sel in start_selectors:
@@ -110,39 +112,25 @@ def post_to_single_group(page, group_url: str, text: str, image_path: Path | Non
         print(f"  ⚠️ Could not find 'Start a post' button on {group_url} (are you a member of this group?)")
         return False
 
-    page.wait_for_timeout(2000)
+    page.wait_for_timeout(2500)
 
     # 2. Upload image if provided
     if image_path and image_path.exists():
-        media_selectors = [
-            "input[type='file'][accept*='image']",
-            "input[type='file']",
-        ]
-        uploaded = False
-        for m_sel in media_selectors:
-            f_input = page.locator(m_sel).first
-            if f_input.count() > 0:
-                f_input.set_input_files(str(image_path))
-                uploaded = True
-                break
-
-        if not uploaded:
-            # Try clicking the "Add media" icon to reveal file picker
-            add_media_btn = page.locator("button[aria-label*='Add media'], button[aria-label*='media']").first
-            if add_media_btn.is_visible():
-                with page.expect_file_chooser() as fc_info:
-                    add_media_btn.click()
+        media_btn = page.locator("button[aria-label*='Add media' i], button[aria-label*='photo' i]").first
+        if media_btn.is_visible():
+            try:
+                with page.expect_file_chooser(timeout=7000) as fc_info:
+                    media_btn.click()
                 file_chooser = fc_info.value
-                file_chooser.set_files(str(image_path))
-                uploaded = True
-
-        if uploaded:
-            page.wait_for_timeout(2500)
-            # Click "Next" on the media modal
-            next_btn = page.locator("button:has-text('Next'), button.share-box-footer__primary-btn").first
-            if next_btn.is_visible():
-                next_btn.click()
-                page.wait_for_timeout(1500)
+                file_chooser.set_files(str(image_path.resolve()))
+                page.wait_for_timeout(3000)
+                # Click "Next" on the media preview modal
+                next_btn = page.locator("button:has-text('Next'), button.share-box-footer__primary-btn").first
+                if next_btn.is_visible():
+                    next_btn.click()
+                    page.wait_for_timeout(2000)
+            except Exception as e:
+                print(f"  ⚠️ Warning: Image attachment failed: {e}")
 
     # 3. Enter post text into the editor textbox
     editor = page.locator("div[role='textbox'], div[contenteditable='true']").first
@@ -151,15 +139,24 @@ def post_to_single_group(page, group_url: str, text: str, image_path: Path | Non
     editor.fill(text)
     page.wait_for_timeout(1500)
 
-    # 4. Click "Post" button
-    post_btn = page.locator("button:has-text('Post'), button.share-actions__primary-action").first
-    if post_btn.is_visible() and post_btn.is_enabled():
-        post_btn.click()
-        page.wait_for_timeout(5000)
-        print(f"  ✅ Successfully posted to {group_url}")
-        return True
+    # 4. Click the actual "Post" primary submit button (NOT the top audience dropdown button)
+    submit_btn = page.locator("button.share-actions__primary-action").first
+    if submit_btn.is_visible() and submit_btn.is_enabled():
+        submit_btn.click()
+        try:
+            # Wait for composer modal to close
+            submit_btn.wait_for(state="hidden", timeout=15000)
+            page.wait_for_timeout(3000)
+            print(f"  ✅ Successfully posted to {group_url}")
+            return True
+        except Exception:
+            if submit_btn.is_visible():
+                print(f"  ⚠️ Submission dialog stayed open on {group_url}")
+                return False
+            print(f"  ✅ Successfully posted to {group_url}")
+            return True
 
-    print(f"  ⚠️ 'Post' button not enabled on {group_url}")
+    print(f"  ⚠️ 'Post' submit button was not enabled on {group_url}")
     return False
 
 

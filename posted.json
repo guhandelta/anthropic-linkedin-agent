@@ -12,5 +12,20 @@
         "url": "https://developer.mozilla.org/en-US/docs/Mozilla/Firefox/Releases/159"
       }
     ]
+  },
+  {
+    "date": "2026-10-29T14:59:55",
+    "draft_id": "20261029-edc34d26",
+    "source_domain": "v0.app/docs/pre-installed-agents",
+    "headline": "Micro-interaction in UI from the perspective of UX design an",
+    "post_urn": "urn:li:share:7521645827442851840",
+    "chars": 2206,
+    "sources": [
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web",
+        "published": "2024-01-01",
+        "claim": "Industry best practices and guidelines"
+      }
+    ]
   }
 ]
