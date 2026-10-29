@@ -22,6 +22,7 @@ def extract_svg(text: str) -> str:
     m = re.search(r"<svg\b.*</svg>", text, re.S)
     if not m:
         raise ValueError("Designer did not return an <svg> drawing.")
+    svg = m.group(0)
     # Clean &nbsp; into standard space and auto-escape unescaped ampersands
     svg = svg.replace("&nbsp;", " ")
     svg = re.sub(r"&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)", "&amp;", svg)
@@ -58,8 +59,10 @@ def svg_checks(svg: str) -> list[str]:
                 issues.append(f"External reference not allowed: {value[:60]}")
         if tag in ("text", "tspan"):
             fs = el.get("font-size", "")
-            if re.fullmatch(r"\d+(\.\d+)?", fs) and float(fs) < MIN_FONT:
-                issues.append(f"Text too small (font-size {fs}; minimum {MIN_FONT}).")
+            text_val = "".join(el.itertext()).strip()
+            min_allowed = 14 if len(text_val) <= 3 else MIN_FONT
+            if re.fullmatch(r"\d+(\.\d+)?", fs) and float(fs) < min_allowed:
+                issues.append(f"Text too small (font-size {fs}; minimum {min_allowed}): {text_val[:30]}")
 
     texts = []
     for el in root.iter():
@@ -99,43 +102,48 @@ def render_svg_to_gif(svg: str, path: Path, n_frames: int = 12, fps: int = 12) -
     if issues:
         raise ValueError("; ".join(issues))
 
-    has_dasharray = "stroke-dasharray" in svg
+    # Auto-convert solid connector lines/paths into dashed streams if not already dashed
+    # (Exclude card rectangles and container boxes, target lines, polylines, and connector paths)
+    def _ensure_dashed(m):
+        tag = m.group(1)
+        attrs = m.group(2).rstrip()
+        is_self_closing = attrs.endswith("/")
+        if is_self_closing:
+            attrs = attrs[:-1].rstrip()
+        # If it's a stroked path/line/polyline with no dasharray, make it dashed so it animates
+        if "stroke=" in attrs and "stroke-dasharray" not in attrs and not attrs.startswith("rect"):
+            attrs += ' stroke-dasharray="10 10"'
+        return f"<{tag} {attrs} />" if is_self_closing else f"<{tag} {attrs}>"
+
+    base_svg = re.sub(r'<(line|polyline|path)\s+([^>]*(?:x1=|d="M|points=)[^>]*)>', _ensure_dashed, svg)
+
     frames = []
-    dash_period = 24
+    dash_period = 20  # 20 matches 10+10 and loops seamlessly
 
     for i in range(n_frames):
         phase = 2 * math.pi * (i / n_frames)
         flow_offset = int((i / n_frames) * dash_period)
-        pulse_r_delta = 10 * (0.5 + 0.5 * math.sin(phase))
-        pulse_op = round(0.85 - 0.5 * (0.5 + 0.5 * math.sin(phase)), 2)
+        pulse_r_delta = 8 * (0.5 + 0.5 * math.sin(phase))
+        pulse_op = round(0.85 - 0.45 * (0.5 + 0.5 * math.sin(phase)), 2)
 
-        frame_svg = svg
-        if has_dasharray:
-            def _shift_dash(m):
-                tag = m.group(1)
-                attrs = m.group(2).rstrip()
-                is_self_closing = attrs.endswith("/")
-                if is_self_closing:
-                    attrs = attrs[:-1].rstrip()
-                if "stroke-dashoffset" in attrs:
-                    attrs = re.sub(r'stroke-dashoffset="[^"]*"', f'stroke-dashoffset="{flow_offset}"', attrs)
-                else:
-                    attrs += f' stroke-dashoffset="{flow_offset}"'
-                return f"<{tag} {attrs} />" if is_self_closing else f"<{tag} {attrs}>"
-            frame_svg = re.sub(r'<(path|line)\s+([^>]*stroke-dasharray="[^"]*"[^>]*)>', _shift_dash, frame_svg)
-        else:
-            # Auto-animate connector lines
-            def _add_stream(m):
-                tag = m.group(1)
-                attrs = m.group(2).rstrip()
-                is_self_closing = attrs.endswith("/")
-                if is_self_closing:
-                    attrs = attrs[:-1].rstrip()
-                if "stroke=" in attrs and ("L " in attrs or "x2=" in attrs) and "stroke-dasharray" not in attrs:
-                    attrs += f' stroke-dasharray="12 12" stroke-dashoffset="{flow_offset}"'
-                return f"<{tag} {attrs} />" if is_self_closing else f"<{tag} {attrs}>"
-            frame_svg = re.sub(r'<(path|line)\s+([^>]*)>', _add_stream, frame_svg, count=4)
+        frame_svg = base_svg
 
+        # Shift dashoffset on all dashed connector lines, paths, and polylines
+        def _shift_dash(m):
+            tag = m.group(1)
+            attrs = m.group(2).rstrip()
+            is_self_closing = attrs.endswith("/")
+            if is_self_closing:
+                attrs = attrs[:-1].rstrip()
+            if "stroke-dashoffset" in attrs:
+                attrs = re.sub(r'stroke-dashoffset="[^"]*"', f'stroke-dashoffset="{flow_offset}"', attrs)
+            else:
+                attrs += f' stroke-dashoffset="{flow_offset}"'
+            return f"<{tag} {attrs} />" if is_self_closing else f"<{tag} {attrs}>"
+
+        frame_svg = re.sub(r'<(path|line|polyline)\s+([^>]*stroke-dasharray="[^"]*"[^>]*)>', _shift_dash, frame_svg)
+
+        # Dynamic placeholder substitutions
         if "{flow_offset}" in frame_svg:
             frame_svg = frame_svg.replace("{flow_offset}", str(flow_offset))
         if "{pulse_r}" in frame_svg:
