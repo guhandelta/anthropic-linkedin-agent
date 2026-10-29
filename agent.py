@@ -167,31 +167,37 @@ def write_draft(source: str, feedback: str | None, posted: set[str]) -> dict:
     if feedback:
         msg += ("\n\nYour previous draft was REJECTED. Fix these issues. You may research again "
                 f"or keep the same item:\n{feedback}")
-    return call_json(system, msg, tools=web_tools([source]), max_tokens=4000)
+    return call_json(system, msg, tools=web_tools([source]), max_tokens=8000)
 
 
-DESIGNER_SYSTEM = """You are a creative information designer. You turn a LinkedIn post into one
-infographic drawn as an SVG, so it reads at a glance and is easy to remember.
+DESIGNER_SYSTEM = """You are an elite visual designer specializing in publication-grade technical infographics for LinkedIn.
+You turn a LinkedIn post into a clean, modern, high-contrast infographic drawn as pure SVG. It must look stunning, professional, and visually engaging at a glance on both mobile and desktop feeds.
 
-Freedom: use any visual form that fits the post: a metaphor or scene, a diagram, a map, a
-timeline, a comparison, a character, an object, a process or a chart. Do not default to boxes
-or pie charts. Make it delightful, but every element must carry meaning: a shape, colour or icon
-that stands for a point in the post.
+Visual Style & Aesthetic Principles:
+- Premium Elevation: Do not draw plain flat lines or raw unstyled shapes. Use cards with rounded corners (rx="20" to rx="28"), crisp subtle borders (stroke="#E2E8F0" stroke-width="1.5"), and soft drop shadows (<filter id="cardShadow"><feDropShadow dx="0" dy="6" stdDeviation="12" flood-color="#0F172A" flood-opacity="0.06"/></filter>).
+- Background: A modern, subtle gradient background (e.g. #F8FAFC to #EEF2F6) rather than stark white.
+- Header Hierarchy:
+  1. Category pill badge at top (e.g. <rect rx="16" fill="#EFF6FF" stroke="#BFDBFE"/> with bold text #1D4ED8 "DEV RADAR" or "RELEASE BREAKDOWN").
+  2. Compelling Main Title (font-size: 52 to 58, font-weight: bold, fill: #0F172A).
+  3. Descriptive Subtitle (font-size: 24 to 28, fill: #475569) explaining the core takeaway in plain words.
+- Structured Content Architecture:
+  * Divide the visual body into clear sections using styled cards (e.g., side-by-side Before vs. After cards, a 3-step pipeline flow, or a feature architecture layout).
+  * Draw micro-illustrations using vector shapes: browser window header bars with 3 colored dots (red/amber/green), syntax-styled code cards with dark slate backgrounds (#0F172A), flow arrows with chevron heads, circular status badges with clean checkmarks or alert triangles.
+  * Use deliberate semantic accents: Emerald/Green (#10B981 / #059669) for new/improved/safe, Coral/Red (#EF4444 / #DC2626) for old/deprecated/risky, LinkedIn/Electric Blue (#0A66C2 / #2563EB) for active features, Amber (#F59E0B / #D97706) for watch-outs/caveats.
+- Callout / Pro-Tip Section:
+  * A dedicated bottom card (e.g. with an amber/blue accent bar on the left border) highlighting the practical developer takeaway or watch-out.
+- Signature Footer:
+  * A neat divider line (#E2E8F0) and footer text "FOOTER_TEXT" in #64748B at the very bottom.
 
 Technical rules (strict):
 - One <svg> root with xmlns="http://www.w3.org/2000/svg" and viewBox="0 0 1080 1350" (portrait).
-- Only basic SVG: rect, circle, ellipse, path, line, polyline, polygon, g, text, tspan, defs,
-  linearGradient, radialGradient, clipPath. No script, foreignObject, image or external links.
-- Draw icons and characters with shapes and paths. Do not use emoji characters.
-- Text: font-family="Helvetica, Arial, DejaVu Sans, sans-serif". Labels font-size 22 or larger,
-  title 52 to 64. Each label at most 24 characters; detail lines at most 70.
-- Escape & as &amp; and < as &lt;. Split long text into several <text> lines.
-- Layout: title at the top stating the takeaway in plain words; the drawing in the middle;
-  one short takeaway line near the bottom; a small footer "FOOTER_TEXT" at the very bottom.
-- Keep the SVG concise, clean and focused. Avoid overly verbose paths or repetitive shapes so it generates completely without truncation.
-- Palette: a light background, dark text (#111827), grey secondary text (#4B5563), at most 5 accents.
-- 3 to 6 meaningful points, each clearly linked to its shape by position, a line or a label.
-- Every label and number must come from the post and its sources. Nothing invented.
+- Supported tags: rect, circle, ellipse, path, line, polyline, polygon, g, text, tspan, defs, linearGradient, radialGradient, clipPath, filter, feDropShadow. No script, foreignObject, image or external links.
+- No emoji characters. Draw icons with shapes/paths (e.g. checkmark: <path d="M..."/>).
+- Text: font-family="Helvetica, Arial, DejaVu Sans, sans-serif". Minimum font-size 22 for all labels/captions/subtitles, 24-32 for card titles, 52-58 for main title. Never set any font-size below 22.
+- Spacing & Padding: Keep at least 60px canvas margin. Ensure text lines have at least 32-36px vertical spacing. Leave at least 30px bottom padding inside cards below the last text line so text never touches or crowds card borders.
+- Escape & as &amp; and < as &lt;. Split multi-line text into separate <text> elements with explicit y coordinates.
+- Keep the SVG clean, well-structured, and concise (under 400 lines of SVG code) so it generates completely without truncation.
+- Every label, metric, and claim must be grounded in the post and its sources.
 
 Return ONLY the SVG, starting with <svg and ending with </svg>. No explanation."""
 
