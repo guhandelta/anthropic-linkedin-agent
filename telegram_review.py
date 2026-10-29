@@ -368,20 +368,67 @@ class TelegramReviewer:
 
         return {"action": "rejected"}
 
-    def listen_for_commands(self, on_topic_callback, on_direct_callback, on_daily_callback=None, poll_interval_s: int = 5):
-        """Polls for incoming /topic, /direct, photos, or manual prompts from user."""
+    @staticmethod
+    def _main_menu_keyboard():
+        return {
+            "keyboard": [
+                [{"text": "✍️ Post from Topic"}, {"text": "📝 Direct Post"}],
+                [{"text": "💡 Suggest Topics"}, {"text": "🚀 Run Daily Post"}],
+                [{"text": "📊 Status & History"}, {"text": "❓ Help & Commands"}]
+            ],
+            "resize_keyboard": True,
+            "is_persistent": True
+        }
+
+    def set_bot_commands(self):
+        """Registers native Telegram bot commands for the menu button."""
+        commands = [
+            {"command": "topic", "description": "Research & draft post on a topic"},
+            {"command": "direct", "description": "Provide post text directly to publish"},
+            {"command": "suggest", "description": "Get 3 fresh topic ideas from allowed sources"},
+            {"command": "daily", "description": "Run today's automated post discovery"},
+            {"command": "status", "description": "Check recent posts and draft status"},
+            {"command": "help", "description": "Show interactive action guide"}
+        ]
+        try:
+            return self._call("setMyCommands", commands=commands)
+        except Exception as e:
+            print(f"Warning: could not register setMyCommands: {e}")
+            return None
+
+    def listen_for_commands(
+        self,
+        on_topic_callback,
+        on_direct_callback,
+        on_daily_callback=None,
+        on_suggest_callback=None,
+        on_status_callback=None,
+        poll_interval_s: int = 5,
+    ):
+        """Polls for incoming /topic, /direct, menu button actions, photos, or manual prompts."""
         self._skip_old_updates()
-        print(f"Listening on Telegram for commands from chat {self.chat_id}...")
+        self.set_bot_commands()
+        print(f"Listening on Telegram for actions & commands from chat {self.chat_id}...")
+
         help_text = (
-            "🤖 **LinkedIn Agent is live!**\n\n"
-            "Here is what you can send:\n"
-            "• `/topic <topic>`: Research, draft post + infographic, get consent -> post to Wall & all groups\n"
-            "• `/direct <post text>`: Provide your own post. Choose auto-infographic or text-only, get consent -> post to Wall & all groups\n"
-            "• **Send any photo with a caption**: Posts your photo + caption to Wall & all groups\n"
-            "• `/daily`: Run today's automated post from allowed_domains\n"
-            "• Or simply paste your post or type any topic!"
+            "🤖 **LinkedIn Agent Action Center**\n\n"
+            "Use the quick action buttons below or type commands:\n\n"
+            "• **✍️ Post from Topic** (`/topic <topic>`)\n"
+            "  Researches topic, writes post, generates infographic, asks for your consent -> posts to Wall & all groups.\n\n"
+            "• **📝 Direct Post** (`/direct <text>`)\n"
+            "  Provide your own post text. Choose auto-infographic or text-only -> posts to Wall & all groups.\n\n"
+            "• **💡 Suggest Topics** (`/suggest`)\n"
+            "  Discovers 3 trending topics from allowed domains for you to pick from.\n\n"
+            "• **🚀 Run Daily Post** (`/daily`)\n"
+            "  Runs today's automatic topic discovery from allowed_domains.\n\n"
+            "• **📸 Send Photo with Caption**\n"
+            "  Attach any image with a caption to publish both directly.\n\n"
+            "• **📊 Status & History** (`/status`)\n"
+            "  Inspect recent posts and configuration."
         )
-        self._call("sendMessage", chat_id=self.chat_id, text=help_text)
+        self._call("sendMessage", chat_id=self.chat_id, text=help_text, reply_markup=self._main_menu_keyboard())
+
+        user_state = None  # None | "waiting_for_topic" | "waiting_for_direct"
 
         while True:
             params = {"timeout": 30, "allowed_updates": ["message"]}
@@ -409,13 +456,34 @@ class TelegramReviewer:
                 text = (msg.get("text") or msg.get("caption") or "").strip()
                 photos = msg.get("photo")
 
-                if text in ("/start", "/help"):
-                    self._call("sendMessage", chat_id=self.chat_id, text=help_text)
+                # Action Button: Help / Start
+                if text in ("/start", "/help", "❓ Help & Commands"):
+                    user_state = None
+                    self._call("sendMessage", chat_id=self.chat_id, text=help_text, reply_markup=self._main_menu_keyboard())
                     continue
 
-                if text == "/daily":
-                    self._call("sendMessage", chat_id=self.chat_id,
-                               text="🚀 Triggering today's automated post discovery from allowed_domains...")
+                # Action Button: Status
+                if text in ("/status", "📊 Status & History"):
+                    user_state = None
+                    status_report = on_status_callback() if on_status_callback else "Agent is active and ready."
+                    self._call("sendMessage", chat_id=self.chat_id, text=status_report, reply_markup=self._main_menu_keyboard())
+                    continue
+
+                # Action Button: Suggest Topics
+                if text in ("/suggest", "💡 Suggest Topics"):
+                    user_state = None
+                    self._call("sendMessage", chat_id=self.chat_id, text="🔍 Scanning allowed domains for 3 fresh topic ideas...")
+                    if on_suggest_callback:
+                        try:
+                            on_suggest_callback()
+                        except Exception as e:
+                            self._call("sendMessage", chat_id=self.chat_id, text=f"⚠️ Error: {str(e)[:1000]}")
+                    continue
+
+                # Action Button: Run Daily Post
+                if text in ("/daily", "🚀 Run Daily Post"):
+                    user_state = None
+                    self._call("sendMessage", chat_id=self.chat_id, text="🚀 Triggering today's automated post discovery from allowed_domains...")
                     if on_daily_callback:
                         try:
                             on_daily_callback()
@@ -423,9 +491,23 @@ class TelegramReviewer:
                             self._call("sendMessage", chat_id=self.chat_id, text=f"⚠️ Error: {str(e)[:1000]}")
                     continue
 
-                # Case 1: Photo uploaded with caption
+                # Action Button: Post from Topic prompt
+                if text in ("✍️ Post from Topic", "/topic"):
+                    user_state = "waiting_for_topic"
+                    self._call("sendMessage", chat_id=self.chat_id,
+                               text="✍️ **Post from Topic**\n\nPlease send the topic title, concept, or article link you'd like to post about:")
+                    continue
+
+                # Action Button: Direct Post prompt
+                if text in ("📝 Direct Post", "/direct", "/publish"):
+                    user_state = "waiting_for_direct"
+                    self._call("sendMessage", chat_id=self.chat_id,
+                               text="📝 **Direct Post**\n\nPlease send your post text (or send a photo with a caption) to publish to your Wall and all groups:")
+                    continue
+
+                # Case: Photo uploaded with caption
                 if photos:
-                    from pathlib import Path
+                    user_state = None
                     uploads_dir = Path(__file__).parent / "output" / "telegram_uploads"
                     img_path = uploads_dir / f"upload_{int(time.time())}.png"
                     try:
@@ -440,7 +522,28 @@ class TelegramReviewer:
                 if not text:
                     continue
 
-                # Case 2: Explicit /topic command
+                # State: User was prompted for topic
+                if user_state == "waiting_for_topic":
+                    user_state = None
+                    self._call("sendMessage", chat_id=self.chat_id,
+                               text=f"🎯 Researching & drafting on topic:\n'{text}'\nI will send the draft + infographic for your approval.")
+                    try:
+                        on_topic_callback(text)
+                    except Exception as e:
+                        self._call("sendMessage", chat_id=self.chat_id, text=f"⚠️ Error: {str(e)[:1000]}")
+                    continue
+
+                # State: User was prompted for direct post text
+                if user_state == "waiting_for_direct":
+                    user_state = None
+                    choice = self.prompt_direct_choice(text)
+                    if choice == "infographic":
+                        on_direct_callback(text, custom_image_path=None, generate_infographic=True)
+                    elif choice == "text_only":
+                        on_direct_callback(text, custom_image_path=None, generate_infographic=False)
+                    continue
+
+                # Command: /topic <topic text>
                 if text.startswith(("/topic ", "/idea ", "/draft ")):
                     topic = text.split(" ", 1)[1].strip()
                     self._call("sendMessage", chat_id=self.chat_id,
@@ -451,7 +554,7 @@ class TelegramReviewer:
                         self._call("sendMessage", chat_id=self.chat_id, text=f"⚠️ Error: {str(e)[:1000]}")
                     continue
 
-                # Case 3: Explicit /direct or /publish command
+                # Command: /direct <post text>
                 if text.startswith(("/direct ", "/publish ")):
                     direct_text = text.split(" ", 1)[1].strip()
                     choice = self.prompt_direct_choice(direct_text)
@@ -461,8 +564,7 @@ class TelegramReviewer:
                         on_direct_callback(direct_text, custom_image_path=None, generate_infographic=False)
                     continue
 
-                # Case 4: Free-form text
-                # If long (>=80 chars), treat as direct post; else treat as topic
+                # Fallback Free-form text:
                 if len(text) >= 80:
                     choice = self.prompt_direct_choice(text)
                     if choice == "infographic":

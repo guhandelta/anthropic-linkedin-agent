@@ -654,6 +654,26 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
     print("\nAll attempts completed.")
 
 
+
+def get_agent_status_text() -> str:
+    log = load_log()
+    lines = ["📊 **LinkedIn Agent Status & History**\n"]
+    if not log:
+        lines.append("No posts recorded in posted.json yet.")
+    else:
+        lines.append(f"Total posts published: **{len(log)}**")
+        lines.append("\n**Recent Posts:**")
+        for item in reversed(log[-3:]):
+            dt = item.get("date", "")[:10]
+            hl = item.get("headline", "Post")
+            src = item.get("source_domain", "")
+            lines.append(f"• **{dt}**: {hl} ({src})")
+    target_groups = CFG.get("linkedin", {}).get("target_groups", [])
+    lines.append(f"\nTarget LinkedIn Groups: **{len(target_groups)}**")
+    lines.append(f"Allowed Source URLs: **{len(SOURCES)}**")
+    return "\n".join(lines)
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", help="browse this allowed domain instead of picking one")
@@ -662,10 +682,15 @@ if __name__ == "__main__":
     ap.add_argument("--image", help="path to image to accompany direct post")
     ap.add_argument("--no-image", action="store_true", help="skip generating infographic for direct post")
     ap.add_argument("--listen", action="store_true", help="run Telegram listener for /topic, /direct, or photos")
+    ap.add_argument("--setup-bot", action="store_true", help="configure Telegram bot command menu and profile")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
-    if args.listen:
+    if args.setup_bot:
+        tg = TelegramReviewer(os.environ["TELEGRAM_BOT_TOKEN"], os.environ["TELEGRAM_CHAT_ID"])
+        res = tg.set_bot_commands()
+        print("Telegram bot menu commands configured:", res)
+    elif args.listen:
         tg = TelegramReviewer(
             os.environ["TELEGRAM_BOT_TOKEN"], os.environ["TELEGRAM_CHAT_ID"],
             timeout_s=CFG["telegram"]["timeout_hours"] * 3600,
@@ -680,10 +705,18 @@ if __name__ == "__main__":
         def on_telegram_daily():
             run(source_arg=None, dry_run=False)
 
+        def on_telegram_suggest():
+            suggestions = suggest_topics(count=3)
+            choice = tg.choose_topic("suggest-" + uuid.uuid4().hex[:6], suggestions)
+            if choice.get("action") == "new_topic":
+                run(source_arg=choice.get("source"), dry_run=False, topic_arg=choice.get("topic"))
+
         tg.listen_for_commands(
             on_topic_callback=on_telegram_topic,
             on_direct_callback=on_telegram_direct,
             on_daily_callback=on_telegram_daily,
+            on_suggest_callback=on_telegram_suggest,
+            on_status_callback=get_agent_status_text,
         )
     elif args.direct:
         img = Path(args.image) if args.image else None
