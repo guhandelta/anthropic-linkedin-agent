@@ -381,7 +381,7 @@ class TelegramReviewer:
         }
 
     def set_bot_commands(self):
-        """Registers native Telegram bot commands for the menu button."""
+        """Registers native Telegram bot commands for the menu button across scopes."""
         commands = [
             {"command": "topic", "description": "Research & draft post on a topic"},
             {"command": "direct", "description": "Provide post text directly to publish"},
@@ -391,7 +391,17 @@ class TelegramReviewer:
             {"command": "help", "description": "Show interactive action guide"}
         ]
         try:
-            return self._call("setMyCommands", commands=commands)
+            # Register for default scope
+            self._call("setMyCommands", commands=commands)
+            # Register for all private chats scope (ensures 1-on-1 chats display them)
+            self._call("setMyCommands", commands=commands, scope={"type": "all_private_chats"})
+            # Register specifically for this user's chat
+            if self.chat_id:
+                try:
+                    self._call("setMyCommands", commands=commands, scope={"type": "chat", "chat_id": int(self.chat_id)})
+                except Exception:
+                    pass
+            return True
         except Exception as e:
             print(f"Warning: could not register setMyCommands: {e}")
             return None
