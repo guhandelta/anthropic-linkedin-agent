@@ -51,7 +51,6 @@ research:
   skip_recent_days: 3       # don't use the same source again within 3 days
   must_cite: true           # every factual claim must come from a source it read
   allowed_domains:          # official vendors, standards, advisories, blogs and changelogs
-    # AI, LLMs & ML
     - openai.com/news/
     - anthropic.com/news
     - huggingface.co/blog
@@ -68,8 +67,6 @@ research:
     - enpitech.dev/blog
     - v0.dev/docs
     - v0.app/changelog
-
-    # Frontend Frameworks, UI & Design
     - react.dev/blog
     - nextjs.org/blog
     - svelte.dev/blog
@@ -92,8 +89,6 @@ research:
     - hoverstat.es/
     - micro-frontends.org/
     - martinfowler.com/tags/micro-frontends.html
-
-    # Backend, Python & Runtimes
     - devblogs.microsoft.com/typescript/
     - fastapi.tiangolo.com/release-notes/
     - docs.pydantic.dev/latest/changelog/
@@ -101,8 +96,6 @@ research:
     - djangoproject.com/weblog/
     - github.com/bottlepy/bottle/releases
     - seaborn.pydata.org/whatsnew/index.html
-
-    # Cloud, DevOps & Web Standards
     - cloud.google.com/blog/
     - aws.amazon.com/blogs/aws/
     - azure.microsoft.com/en-us/blog/
@@ -114,8 +107,6 @@ research:
     - developer.mozilla.org/en-US/blog/
     - httpwg.org/specs/
     - httpwg.org/work-in-progress/
-
-    # Security & Advisories
     - owasp.org/blog/
     - nvd.nist.gov/general/news
     - nvd.nist.gov/vuln/data-feeds
