@@ -81,7 +81,6 @@ research:
     - nextjs.org/blog
     - svelte.dev/blog
     - solidjs.com/blog
-    - builder.io/blog
     - tailwindcss.com/blog
     - bulma.io/blog/
     - github.com/jgthms/bulma/releases
@@ -122,3 +121,11 @@ research:
     - nvd.nist.gov/vuln/data-feeds
     - cisa.gov/news-events/news
     - portswigger.net/research
+    - kiro.dev/docs/
+    - magicpath.ai/documentation/getting-started/introduction
+    - builder.io/c/docs/intro
+    - builder.io/blog
+    - builder.io/guides
+    - builder.io/compare
+    - builder.io/customer-stories
+    - builder.io/blog/v0-alternatives
