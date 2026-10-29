@@ -55,7 +55,8 @@ research:
     - openai.com/news/
     - anthropic.com/news
     - huggingface.co/blog
-    - huggingface.co/models
+    - huggingface.co/models?sort=trending
+    - huggingface.co/papers
     - aiprofitboardroom.com/blog/
     - geotoolbox.ai/blog
     - deeplearning.ai/the-batch/
@@ -65,7 +66,10 @@ research:
     - daily.dev/tags/generative-ui
     - thesys.dev/blogs
     - enpitech.dev/blog
-    - v0.dev/docs/model-picker
+    - v0.dev/docs
+    - v0.app/changelog
+
+    # Frontend Frameworks, UI & Design
     - react.dev/blog
     - nextjs.org/blog
     - svelte.dev/blog
@@ -78,15 +82,18 @@ research:
     - material.io/blog/
     - blog.getbootstrap.com/
     - radix-ui.com/blog
-    - ui.shadcn.com/
+    - ui.shadcn.com/docs/changelog
     - tanstack.com/blog
     - releasebot.io/updates/tanstack
     - tympanus.net/codrops/
-    - threejs.org/
+    - threejs.org/docs/
+    - github.com/mrdoob/three.js/releases
     - godly.website/
     - hoverstat.es/
     - micro-frontends.org/
     - martinfowler.com/tags/micro-frontends.html
+
+    # Backend, Python & Runtimes
     - devblogs.microsoft.com/typescript/
     - fastapi.tiangolo.com/release-notes/
     - docs.pydantic.dev/latest/changelog/
@@ -94,6 +101,8 @@ research:
     - djangoproject.com/weblog/
     - github.com/bottlepy/bottle/releases
     - seaborn.pydata.org/whatsnew/index.html
+
+    # Cloud, DevOps & Web Standards
     - cloud.google.com/blog/
     - aws.amazon.com/blogs/aws/
     - azure.microsoft.com/en-us/blog/
@@ -103,7 +112,10 @@ research:
     - kubernetes.io/blog/
     - web.dev/blog
     - developer.mozilla.org/en-US/blog/
-    - httpwg.org/
+    - httpwg.org/specs/
+    - httpwg.org/work-in-progress/
+
+    # Security & Advisories
     - owasp.org/blog/
     - nvd.nist.gov/general/news
     - nvd.nist.gov/vuln/data-feeds
