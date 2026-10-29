@@ -363,21 +363,25 @@ Return ONLY JSON:
 def write_draft(source: str, feedback: str | None, posted: set[str], topic: str | None = None) -> dict:
     a = CFG["author"]
     search_domain = domain_for_source(source)
+    source_label = f"{source} and developer web resources" if topic else source
+    max_age_days = 365 if topic else RS["max_age_days"]
     system = WRITER_SYSTEM.format(
-        author=a["name"], author_role=a["role"], voice=a["voice"], source=source,
-        max_age=RS["max_age_days"], posted=", ".join(sorted(posted)) or "none",
+        author=a["name"], author_role=a["role"], voice=a["voice"], source=source_label,
+        max_age=max_age_days, posted=", ".join(sorted(posted)) or "none",
         min_chars=CFG["post"]["min_chars"], max_chars=CFG["post"]["max_chars"],
         hashtag_count=CFG["post"]["hashtags"],
         min_emoji=CFG["post"]["min_emojis"], max_emoji=CFG["post"]["max_emojis"],
     )
     if topic:
-        msg = f"Research the topic '{topic}' using {source} and write the post."
+        msg = f"Research the topic '{topic}' using authoritative developer articles, tutorials, or documentation, and write the post."
+        tool_domains = [search_domain, "web.dev", "developer.mozilla.org", "react.dev", "nextjs.org", "builder.io"]
     else:
         msg = f"Browse {source} and write the post."
+        tool_domains = [search_domain]
     if feedback:
         msg += ("\n\nYour previous draft was REJECTED. Fix these issues. You may research again "
                 f"or keep the same item:\n{feedback}")
-    return call_json(system, msg, tools=web_tools([search_domain]), max_tokens=8000)
+    return call_json(system, msg, tools=web_tools(list(dict.fromkeys(tool_domains))), max_tokens=8000)
 
 
 DESIGNER_SYSTEM = """You are an elite visual designer specializing in publication-grade technical infographics for LinkedIn.
@@ -537,22 +541,41 @@ def hard_checks(post: str) -> list[str]:
     return issues
 
 
-def source_checks(sources: list, posted: set[str]) -> list[str]:
+def clamp_emojis(post: str, min_e: int = 3, max_e: int = 6) -> str:
+    """Ensures emoji count is within LinkedIn guidelines and prevents adjacent emojis."""
+    post = re.sub(r"([☀-➿\U0001F300-\U0001FAFF]️?)\s*([☀-➿\U0001F300-\U0001FAFF])", r"\1", post)
+    emojis = list(EMOJI_RE.finditer(post))
+    if len(emojis) > max_e:
+        chars = list(post)
+        for m in emojis[max_e:]:
+            for i in range(m.start(), m.end()):
+                chars[i] = ""
+        post = "".join(chars)
+    elif len(emojis) < min_e:
+        default_emojis = ["💡", "🚀", "📌"]
+        needed = min_e - len(emojis)
+        for i in range(needed):
+            post += f" {default_emojis[i % len(default_emojis)]}"
+    return post
+
+
+def source_checks(sources: list, posted: set[str], is_custom_topic: bool = False) -> list[str]:
     issues = []
     if not sources:
         issues.append("No sources listed. Every fact must cite a source you actually read.")
     cutoff = date.today() - timedelta(days=RS["max_age_days"])
     for s in sources:
         url = s.get("url", "")
-        if not domain_allowed(url):
+        if not is_custom_topic and not domain_allowed(url):
             issues.append(f"Source is not on the allowed list: {url}")
         if url in posted:
             issues.append(f"Already posted before: {url}")
-        try:
-            if date.fromisoformat(s.get("published", "")) < cutoff:
-                issues.append(f"Source is older than {RS['max_age_days']} days: {url}")
-        except ValueError:
-            issues.append(f"Missing or invalid published date (YYYY-MM-DD) for: {url}")
+        if not is_custom_topic:
+            try:
+                if date.fromisoformat(s.get("published", "")) < cutoff:
+                    issues.append(f"Source is older than {RS['max_age_days']} days: {url}")
+            except ValueError:
+                issues.append(f"Missing or invalid published date (YYYY-MM-DD) for: {url}")
     return issues
 
 
@@ -819,15 +842,17 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
             current_source, feedback = None, None
             continue
 
-        post = draft["post"].strip().replace("**", "").replace("__", "")
+        post = clamp_emojis(draft["post"].strip().replace("**", "").replace("__", ""))
         idea = draft.get("infographic_idea", "")
         headline = draft.get("headline", current_topic or current_source)
         sources = draft.get("sources", [])
-        issues = hard_checks(post) + source_checks(sources, posted)
+        issues = hard_checks(post) + source_checks(sources, posted, is_custom_topic=bool(current_topic))
         if not idea:
             issues.append("Describe an infographic idea.")
         if issues:
             print("Checks failed:", issues)
+            if tg and tracker_id:
+                tg.update_progress(tracker_id, f"⚠️ [Attempt {attempt}/{CFG['review']['max_attempts']}] Refining draft: {issues[0][:60]}...")
             feedback = "\n".join(issues)
             continue
 
@@ -858,6 +883,8 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
                 print("Render failed:", e)
         if not drawn:
             feedback = design_feedback
+            if tg and tracker_id:
+                tg.update_progress(tracker_id, f"⚠️ [Attempt {attempt}/{CFG['review']['max_attempts']}] Refining visual design: {design_feedback[:60]}...")
             continue
 
         if tg and tracker_id:
@@ -899,8 +926,17 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
 
         feedback = "\n".join(issues) or "Improve quality and image match."
         print("Rejected:\n" + feedback)
+        if tg and tracker_id:
+            tg.update_progress(tracker_id, f"⚠️ [Attempt {attempt}/{CFG['review']['max_attempts']}] Editorial reviewer requested changes: {feedback[:60]}...")
 
     print("\nAll attempts completed.")
+    if tg and tracker_id:
+        tg.update_progress(
+            tracker_id,
+            f"❌ Could not produce an approved draft for '{current_topic or current_source}' after {CFG['review']['max_attempts']} attempts.\n\n"
+            f"Last issue: {feedback[:150] if feedback else 'Checks could not be satisfied.'}\n\n"
+            "💡 Tip: Tap ✍️ Post from Topic to try another prompt or 📝 Direct Post to provide your own text directly."
+        )
 
 
 
