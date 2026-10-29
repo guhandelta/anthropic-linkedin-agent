@@ -610,7 +610,7 @@ def source_checks(sources: list, posted: set[str], is_custom_topic: bool = False
         url = s.get("url", "")
         if not is_custom_topic and not domain_allowed(url):
             issues.append(f"Source is not on the allowed list: {url}")
-        if url in posted:
+        if not is_custom_topic and url in posted:
             issues.append(f"Already posted before: {url}")
         if not is_custom_topic:
             try:
