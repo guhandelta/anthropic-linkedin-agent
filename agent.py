@@ -20,6 +20,7 @@ Run:  python agent.py                  (full run, asks you on Telegram, posts if
 from __future__ import annotations
 
 import argparse
+import ast
 import base64
 import json
 import os
@@ -32,7 +33,9 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import yaml
+import anthropic
 from anthropic import Anthropic
+from openai import OpenAI
 from dotenv import load_dotenv
 
 from infographic import extract_svg, render_svg, svg_checks
@@ -44,7 +47,17 @@ ROOT = Path(__file__).parent
 load_dotenv(ROOT / ".env")
 CFG = yaml.safe_load((ROOT / "config.yaml").read_text())
 RS = CFG["research"]
-client = Anthropic()
+
+# Primary LLM (Claude)
+anthropic_client = Anthropic()
+
+# Fallback LLM (OpenAI - supports both OPENAI_API_KEY and OPEN_AI_API_KEY)
+openai_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("OPEN_AI_API_KEY")
+if openai_key and not os.environ.get("OPENAI_API_KEY"):
+    os.environ["OPENAI_API_KEY"] = openai_key
+openai_client = OpenAI(api_key=openai_key) if openai_key else None
+
+ACTIVE_LLM_PROVIDER = "anthropic"  # "anthropic" | "openai"
 
 EMOJI_RE = re.compile(r"[☀-➿\U0001F300-\U0001FAFF]")
 
@@ -109,7 +122,93 @@ def web_tools(domains: list[str], max_uses: int = 5) -> list:
              "max_uses": max_uses, "allowed_domains": domains}]
 
 
-def call_json(system: str, content, tools: list | None = None, max_tokens: int = 4000) -> dict:
+def is_claude_limit_error(e: Exception) -> bool:
+    """Returns True if the error indicates Claude rate limit, credit exhaustion, or service overload."""
+    if isinstance(e, (anthropic.RateLimitError, anthropic.APIStatusError)):
+        return True
+    err_str = str(e).lower()
+    limit_signatures = [
+        "rate_limit", "rate limit", "ratelimit", "overloaded",
+        "credit balance", "insufficient credits", "exceeded your current quota",
+        "exceeded", "quota", "too many requests", "429", "529", "capacity"
+    ]
+    if any(sig in err_str for sig in limit_signatures):
+        return True
+    if hasattr(e, "status_code") and getattr(e, "status_code") in (429, 529):
+        return True
+    return False
+
+
+def extract_json_object(text: str) -> dict:
+    """Robust JSON extractor supporting markdown code fences, embedded JSON objects, and single-quoted dictionaries."""
+    def try_parse(s: str) -> dict | None:
+        s = s.strip()
+        try:
+            return json.loads(s)
+        except Exception:
+            pass
+        try:
+            # Handle Python dict syntax (single quotes, True/False/None)
+            clean_py = s.replace("true", "True").replace("false", "False").replace("null", "None")
+            res = ast.literal_eval(clean_py)
+            if isinstance(res, dict):
+                return res
+        except Exception:
+            pass
+        return None
+
+    # 1. Code blocks ```json ... ```
+    for m in re.finditer(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.S):
+        parsed = try_parse(m.group(1))
+        if parsed is not None:
+            return parsed
+
+    # 2. Balanced braces extraction
+    start = text.find("{")
+    while start != -1:
+        depth = 0
+        in_string = False
+        quote_char = None
+        escape = False
+        for i in range(start, len(text)):
+            c = text[i]
+            if escape:
+                escape = False
+                continue
+            if c == "\\":
+                escape = True
+                continue
+            if c in ('"', "'"):
+                if not in_string:
+                    in_string = True
+                    quote_char = c
+                elif quote_char == c:
+                    in_string = False
+                    quote_char = None
+                continue
+            if not in_string:
+                if c == '{':
+                    depth += 1
+                elif c == '}':
+                    depth -= 1
+                    if depth == 0:
+                        parsed = try_parse(text[start:i+1])
+                        if parsed is not None:
+                            return parsed
+                        break
+        start = text.find("{", start + 1)
+
+    # 3. Fallback to greedy regex
+    m = re.search(r"\{.*\}", text, re.S)
+    if m:
+        parsed = try_parse(m.group(0))
+        if parsed is not None:
+            return parsed
+
+    raise ValueError(f"Could not parse valid JSON from model output:\n{text}")
+
+
+def call_anthropic_json(system: str, content, tools: list | None = None, max_tokens: int = 4000) -> dict:
     """Ask Claude for JSON. Resumes automatically if a server-side web search pauses the turn."""
     messages = [{"role": "user", "content": content}]
     for _ in range(6):
@@ -117,18 +216,106 @@ def call_json(system: str, content, tools: list | None = None, max_tokens: int =
                   "system": system, "messages": messages}
         if tools:
             kwargs["tools"] = tools
-        resp = client.messages.create(**kwargs)
+        resp = anthropic_client.messages.create(**kwargs)
         if resp.stop_reason == "max_tokens":
             raise ValueError("Model output was cut off. Increase max_tokens.")
         if resp.stop_reason == "pause_turn":
             messages.append({"role": "assistant", "content": resp.content})
             continue
         text = "".join(b.text for b in resp.content if b.type == "text")
-        match = re.search(r"\{.*\}", text, re.S)
-        if not match:
-            raise ValueError(f"Model did not return JSON:\n{text}")
-        return json.loads(match.group(0))
+        return extract_json_object(text)
     raise ValueError("Research did not finish after several search rounds.")
+
+
+def call_openai_json(system: str, content, tools: list | None = None, max_tokens: int = 4000) -> dict:
+    """Ask OpenAI (fallback) for JSON. Uses responses API when web search is requested; chat.completions otherwise."""
+    if not openai_client:
+        raise RuntimeError("Claude limit reached and OpenAI API key is not configured in .env.")
+    model_name = CFG.get("openai_fallback_model", "gpt-4o")
+
+    if tools:
+        domains = []
+        for t in tools:
+            if isinstance(t, dict) and "allowed_domains" in t:
+                domains.extend(t["allowed_domains"])
+        domain_instruction = f"\nAllowed research sources: {', '.join(domains)}. Ground your findings and facts strictly in these sources." if domains else ""
+        resp = openai_client.responses.create(
+            model=model_name,
+            instructions=system + domain_instruction,
+            input=content if isinstance(content, str) else json.dumps(content, ensure_ascii=False),
+            tools=[{"type": "web_search_preview"}],
+        )
+        text = resp.output_text
+    else:
+        messages = [{"role": "system", "content": system}]
+        if isinstance(content, list):
+            user_parts = []
+            for item in content:
+                if item.get("type") == "text":
+                    user_parts.append({"type": "text", "text": item["text"]})
+                elif item.get("type") == "image":
+                    b64 = item["source"]["data"]
+                    media_type = item["source"].get("media_type", "image/png")
+                    user_parts.append({"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{b64}"}})
+            messages.append({"role": "user", "content": user_parts})
+        else:
+            messages.append({"role": "user", "content": str(content)})
+
+        resp = openai_client.chat.completions.create(
+            model=model_name,
+            messages=messages,
+            response_format={"type": "json_object"},
+            max_tokens=max_tokens,
+        )
+        text = resp.choices[0].message.content or ""
+
+    try:
+        return extract_json_object(text)
+    except Exception:
+        # Self-healing fallback: ask model to format output into requested JSON schema
+        fmt_resp = openai_client.chat.completions.create(
+            model=model_name,
+            messages=[
+                {"role": "system", "content": "You are a JSON formatting assistant. Convert the text into valid JSON adhering strictly to these instructions:\n" + system},
+                {"role": "user", "content": text}
+            ],
+            response_format={"type": "json_object"},
+            max_tokens=max_tokens,
+        )
+        return extract_json_object(fmt_resp.choices[0].message.content or "")
+
+
+def call_openai_svg(system: str, msg: str, max_tokens: int = 4000) -> str:
+    """Ask OpenAI (fallback) to generate an SVG infographic."""
+    if not openai_client:
+        raise RuntimeError("Claude limit reached and OpenAI API key is not configured in .env.")
+    model_name = CFG.get("openai_fallback_model", "gpt-4o")
+    resp = openai_client.chat.completions.create(
+        model=model_name,
+        messages=[
+            {"role": "system", "content": system + "\nCRITICAL: Absolutely NO emoji characters inside SVG text. Draw shapes or use plain words."},
+            {"role": "user", "content": msg}
+        ],
+        max_tokens=max_tokens,
+    )
+    text = resp.choices[0].message.content or ""
+    return EMOJI_RE.sub("", extract_svg(text))
+
+
+def call_json(system: str, content, tools: list | None = None, max_tokens: int = 4000) -> dict:
+    """Routes JSON generation to Claude, automatically falling back to OpenAI if Claude limit is reached."""
+    global ACTIVE_LLM_PROVIDER
+    if ACTIVE_LLM_PROVIDER == "anthropic":
+        try:
+            return call_anthropic_json(system, content, tools=tools, max_tokens=max_tokens)
+        except Exception as e:
+            if openai_client and is_claude_limit_error(e):
+                print(f"\n⚠️ [LLM Fallback] Claude limit reached ({e}). Switching to OpenAI ({CFG.get('openai_fallback_model', 'gpt-4o')})...\n")
+                ACTIVE_LLM_PROVIDER = "openai"
+            else:
+                raise
+
+    return call_openai_json(system, content, tools=tools, max_tokens=max_tokens)
 
 
 # ---------------------------------------------------------------- writer (research + write)
@@ -156,6 +343,7 @@ Post rules:
 - End with a question that invites discussion, then {hashtag_count} relevant hashtags.
 - Use {min_emoji} to {max_emoji} meaningful emojis, spread out (never two together, at most one
   per paragraph). Each must fit its sentence. Never decorative filler.
+- Plain text only: do NOT use markdown bold (**) or italics (*). LinkedIn does not support markdown asterisks.
 
 Infographic idea: a creative picture that makes the post easy to understand and remember.
 Choose any visual form that fits: a metaphor or scene (a subway map for a pipeline, a kitchen for
@@ -217,7 +405,7 @@ Technical rules (strict):
 - No emoji characters. Draw icons with shapes/paths (e.g. checkmark: <path d="M..."/>).
 - Text: font-family="Helvetica, Arial, DejaVu Sans, sans-serif". Minimum font-size 22 for all labels/captions/subtitles, 24-32 for card titles, 52-58 for main title. Never set any font-size below 22.
 - Spacing & Padding: Keep at least 60px canvas margin. Ensure text lines have at least 32-36px vertical spacing. Leave at least 30px bottom padding inside cards below the last text line so text never touches or crowds card borders.
-- Escape & as &amp; and < as &lt;. Split multi-line text into separate <text> elements with explicit y coordinates.
+- Escape & as &amp; and < as &lt;. Split multi-line text into separate <text> elements with explicit y coordinates. Keep every text line under 60 characters (never exceed 80 characters per line) so text wraps cleanly on canvas.
 - Keep the SVG clean, well-structured, and concise (under 400 lines of SVG code) so it generates completely without truncation.
 - Every label, metric, and claim must be grounded in the post and its sources.
 
@@ -225,18 +413,31 @@ Return ONLY the SVG, starting with <svg and ending with </svg>. No explanation."
 
 
 def design_svg(post: str, idea: str, headline: str, feedback: str | None, footer: str) -> str:
+    global ACTIVE_LLM_PROVIDER
     msg = f"Headline: {headline}\n\nPOST:\n{post}\n\nINFOGRAPHIC IDEA:\n{idea}"
     if feedback:
         msg += f"\n\nYour previous drawing was REJECTED. Fix these issues and redraw it:\n{feedback}"
-    resp = client.messages.create(
-        model=CFG["model"], max_tokens=12000,
-        system=DESIGNER_SYSTEM.replace("FOOTER_TEXT", footer),
-        messages=[{"role": "user", "content": msg}],
-    )
-    if resp.stop_reason == "max_tokens":
-        raise ValueError("The drawing was cut off; it must be simpler.")
-    text = "".join(b.text for b in resp.content if b.type == "text")
-    return extract_svg(text)
+    sys_prompt = DESIGNER_SYSTEM.replace("FOOTER_TEXT", footer)
+
+    if ACTIVE_LLM_PROVIDER == "anthropic":
+        try:
+            resp = anthropic_client.messages.create(
+                model=CFG["model"], max_tokens=12000,
+                system=sys_prompt,
+                messages=[{"role": "user", "content": msg}],
+            )
+            if resp.stop_reason == "max_tokens":
+                raise ValueError("The drawing was cut off; it must be simpler.")
+            text = "".join(b.text for b in resp.content if b.type == "text")
+            return extract_svg(text)
+        except Exception as e:
+            if openai_client and is_claude_limit_error(e):
+                print(f"\n⚠️ [LLM Fallback] Claude limit reached during SVG design ({e}). Switching to OpenAI ({CFG.get('openai_fallback_model', 'gpt-4o')})...\n")
+                ACTIVE_LLM_PROVIDER = "openai"
+            else:
+                raise
+
+    return call_openai_svg(sys_prompt, msg)
 
 
 # ---------------------------------------------------------------- reviewers
@@ -331,10 +532,8 @@ def hard_checks(post: str) -> list[str]:
         issues.append(f"Use {lo}-{hi} meaningful emojis spread across the post (found {emojis}).")
     if re.search(r"[☀-➿\U0001F300-\U0001FAFF]️?\s*[☀-➿\U0001F300-\U0001FAFF]", post):
         issues.append("Do not put emojis next to each other; spread them out.")
-    if re.search(r"[^\x00-\x7FÀ-ɏ‐-‧←-⇿☀-➿️‍\U0001F300-\U0001FAFF]{4,}", post):
-        issues.append("Unexpected character sequences (possible garbled text).")
-    if "{" in post or "}" in post or "**" in post:
-        issues.append("Remove JSON/markdown artifacts from the post.")
+    if re.search(r"^\s*\{.*\}\s*$", post, re.S) or '{"' in post or '"post":' in post:
+        issues.append("Remove raw JSON artifacts from the post text.")
     return issues
 
 
@@ -620,7 +819,8 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
             current_source, feedback = None, None
             continue
 
-        post, idea = draft["post"].strip(), draft.get("infographic_idea", "")
+        post = draft["post"].strip().replace("**", "").replace("__", "")
+        idea = draft.get("infographic_idea", "")
         headline = draft.get("headline", current_topic or current_source)
         sources = draft.get("sources", [])
         issues = hard_checks(post) + source_checks(sources, posted)
@@ -720,6 +920,12 @@ def get_agent_status_text() -> str:
     target_groups = CFG.get("linkedin", {}).get("target_groups", [])
     lines.append(f"\nTarget LinkedIn Groups: **{len(target_groups)}**")
     lines.append(f"Allowed Source URLs: **{len(SOURCES)}**")
+
+    openai_status = f"Ready ({CFG.get('openai_fallback_model', 'gpt-4o')})" if openai_client else "Not configured"
+    active_str = "OpenAI" if ACTIVE_LLM_PROVIDER == "openai" else "Claude"
+    lines.append(f"\n🧠 Primary LLM: **Claude ({CFG['model']})**")
+    lines.append(f"🔄 Fallback LLM: **OpenAI ({openai_status})**")
+    lines.append(f"⚡ Currently Active: **{active_str}**")
     return "\n".join(lines)
 
 
@@ -732,8 +938,16 @@ if __name__ == "__main__":
     ap.add_argument("--no-image", action="store_true", help="skip generating infographic for direct post")
     ap.add_argument("--listen", action="store_true", help="run Telegram listener for /topic, /direct, or photos")
     ap.add_argument("--setup-bot", action="store_true", help="configure Telegram bot command menu and profile")
+    ap.add_argument("--openai", action="store_true", help="force using OpenAI instead of Claude")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
+
+    if args.openai:
+        if not openai_client:
+            print("❌ Cannot use --openai: OPENAI_API_KEY (or OPEN_AI_API_KEY) is not set in .env")
+            sys.exit(1)
+        ACTIVE_LLM_PROVIDER = "openai"
+        print(f"⚡ Forced active LLM provider to OpenAI ({CFG.get('openai_fallback_model', 'gpt-4o')})")
 
     if args.setup_bot:
         tg = TelegramReviewer(os.environ["TELEGRAM_BOT_TOKEN"], os.environ["TELEGRAM_CHAT_ID"])

@@ -1,4 +1,5 @@
 model: claude-sonnet-5-5
+openai_fallback_model: gpt-4o
 
 author:
   name: Guha
