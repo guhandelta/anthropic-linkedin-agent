@@ -108,10 +108,19 @@ class TelegramReviewer:
         set_status(draft_id, "pending", topic=topic, message_id=msg["message_id"])
         return msg["message_id"]
 
-    def wait_for_decision(self, draft_id: str, message_id: int) -> str:
-        """Returns 'approved', 'rejected' or 'expired'."""
+    def wait_for_decision(self, draft_id: str, message_id: int) -> dict:
+        """Returns dict:
+        {'action': 'approved'}
+        {'action': 'revise', 'feedback': '...'}
+        {'action': 'suggest_topics'}
+        {'action': 'new_topic', 'topic': '...', 'source': '...'}
+        {'action': 'rejected'}
+        {'action': 'expired'}
+        """
         start = time.time()
         next_ping = start + self.remind_every_s
+        awaiting_feedback = False
+
         while True:
             now = time.time()
             if now - start >= self.timeout_s:
@@ -123,8 +132,9 @@ class TelegramReviewer:
                 except Exception:
                     pass
                 set_status(draft_id, "expired")
-                return "expired"
-            if now >= next_ping:
+                return {"action": "expired"}
+
+            if now >= next_ping and not awaiting_feedback:
                 left = int((self.timeout_s - (now - start)) // 60)
                 try:
                     self._call("sendMessage", chat_id=self.chat_id, reply_to_message_id=message_id,
@@ -134,37 +144,208 @@ class TelegramReviewer:
                     pass
                 next_ping += self.remind_every_s
 
-            wait = int(max(1, min(50, next_ping - time.time(), self.timeout_s - (time.time() - start))))
-            params = {"timeout": wait, "allowed_updates": ["callback_query"]}
+            wait = int(max(1, min(40, next_ping - time.time(), self.timeout_s - (time.time() - start))))
+            params = {"timeout": wait, "allowed_updates": ["callback_query", "message"]}
             if self.offset is not None:
                 params["offset"] = self.offset
+
             for up in self._call("getUpdates", **params):
                 self.offset = up["update_id"] + 1
-                decision = self._handle(up.get("callback_query"), draft_id, message_id)
-                if decision:
-                    return decision
 
-    def _handle(self, cq, draft_id, message_id):
-        if not cq:
-            return None
-        if str(cq["from"]["id"]) != self.chat_id and str(cq["message"]["chat"]["id"]) != self.chat_id:
-            self._answer_cq(cq["id"], text="Not authorised.")
-            return None
-        action, _, cb_draft = cq.get("data", "").partition(":")
-        if cb_draft != draft_id or action == "noop" or get_status(draft_id) != "pending":
-            self._answer_cq(cq["id"], text="This draft is already handled. 👍")
-            return None
-        if action == "approve":
-            set_status(draft_id, "approved")          # lock before posting: no double post
-            self._answer_cq(cq["id"], text="🚀 Posting to LinkedIn…")
-            self._set_button(message_id, "⏳ Posting…", draft_id)
-            return "approved"
-        if action == "reject":
-            set_status(draft_id, "rejected")
-            self._answer_cq(cq["id"], text="Rejected. Nothing will be posted.")
-            self._set_button(message_id, "❌ Rejected — not posted", draft_id)
-            return "rejected"
-        return None
+                # Handle text messages (e.g. revisions or manual topic command)
+                msg = up.get("message")
+                if msg:
+                    sender = str(msg.get("from", {}).get("id"))
+                    chat = str(msg.get("chat", {}).get("id"))
+                    text = (msg.get("text") or "").strip()
+
+                    if sender == self.chat_id or chat == self.chat_id:
+                        if text.startswith(("/topic ", "/post ")):
+                            custom_topic = text.split(" ", 1)[1].strip()
+                            self._call("sendMessage", chat_id=self.chat_id,
+                                       text=f"🎯 Understood! Switched to topic:\n'{custom_topic}'\nRegenerating draft...")
+                            return {"action": "new_topic", "topic": custom_topic, "source": None}
+
+                        if awaiting_feedback and text:
+                            self._call("sendMessage", chat_id=self.chat_id, reply_to_message_id=msg["message_id"],
+                                       text=f"✍️ Feedback received:\n\"{text}\"\n\nRegenerating post & infographic...")
+                            return {"action": "revise", "feedback": text}
+
+                # Handle button callbacks
+                cq = up.get("callback_query")
+                if not cq:
+                    continue
+
+                if str(cq["from"]["id"]) != self.chat_id and str(cq["message"]["chat"]["id"]) != self.chat_id:
+                    self._answer_cq(cq["id"], text="Not authorised.")
+                    continue
+
+                data = cq.get("data", "")
+                action, _, cb_draft = data.partition(":")
+
+                if action == "noop":
+                    self._answer_cq(cq["id"], text="This action is complete.")
+                    continue
+
+                if action == "approve" and cb_draft == draft_id:
+                    set_status(draft_id, "approved")
+                    self._answer_cq(cq["id"], text="🚀 Posting to LinkedIn & groups…")
+                    self._set_button(message_id, "⏳ Posting…", draft_id)
+                    return {"action": "approved"}
+
+                if action == "reject" and cb_draft == draft_id:
+                    self._answer_cq(cq["id"], text="Draft rejected.")
+                    self._set_button(message_id, "❌ Rejected", draft_id)
+                    keyboard = self._buttons(
+                        [("✍️ Revise with Corrections", f"opt_revise:{draft_id}")],
+                        [("💡 Suggest Topics from Allowed Domains", f"opt_suggest:{draft_id}")],
+                        [("⏹️ Skip Today", f"opt_skip:{draft_id}")]
+                    )
+                    self._call("sendMessage", chat_id=self.chat_id, reply_to_message_id=message_id,
+                               text="❌ Draft rejected. How would you like to proceed?",
+                               reply_markup=keyboard)
+                    continue
+
+                if action == "opt_revise" and cb_draft == draft_id:
+                    self._answer_cq(cq["id"], text="Awaiting your feedback...")
+                    awaiting_feedback = True
+                    self._call("sendMessage", chat_id=self.chat_id,
+                               text="✍️ Please send your corrections or notes as a reply message. The agent will rewrite the draft and redraw the infographic.")
+                    continue
+
+                if action == "opt_suggest" and cb_draft == draft_id:
+                    self._answer_cq(cq["id"], text="Generating suggestions...")
+                    self._call("sendMessage", chat_id=self.chat_id,
+                               text="🔍 Scanning allowed domains for fresh topic suggestions...")
+                    return {"action": "suggest_topics"}
+
+                if action == "opt_skip" and cb_draft == draft_id:
+                    set_status(draft_id, "rejected")
+                    self._answer_cq(cq["id"], text="Skipped.")
+                    self._call("sendMessage", chat_id=self.chat_id,
+                               text="⏹️ Skipped for today. Nothing will be posted.")
+                    return {"action": "rejected"}
+
+        return {"action": "rejected"}
+
+    def choose_topic(self, draft_id: str, topic_options: list[dict], timeout_s: int = 1800) -> dict:
+        """Presents topic options with buttons and waits for user choice or custom text reply."""
+        if not topic_options:
+            return {"action": "none"}
+
+        rows = []
+        summary_lines = ["💡 **Pick a topic from allowed domains:**\n"]
+        for idx, opt in enumerate(topic_options, 1):
+            t = opt.get("topic", "Topic")
+            s = opt.get("source", "")
+            summary_lines.append(f"{idx}. {t} (Source: {s})")
+            short_label = (f"{idx}. {t}")[:36]
+            rows.append([(short_label, f"pick_topic:{idx-1}:{draft_id}")])
+
+        rows.append([("✍️ Custom Topic (reply with text)", f"opt_custom:{draft_id}"),
+                     ("⏹️ Skip Today", f"opt_skip:{draft_id}")])
+
+        msg = self._call("sendMessage", chat_id=self.chat_id,
+                         text="\n".join(summary_lines),
+                         reply_markup=self._buttons(*rows))
+
+        start = time.time()
+        awaiting_custom = False
+
+        while time.time() - start < timeout_s:
+            wait = 30
+            params = {"timeout": wait, "allowed_updates": ["callback_query", "message"]}
+            if self.offset is not None:
+                params["offset"] = self.offset
+
+            for up in self._call("getUpdates", **params):
+                self.offset = up["update_id"] + 1
+
+                msg_obj = up.get("message")
+                if msg_obj:
+                    sender = str(msg_obj.get("from", {}).get("id"))
+                    text = (msg_obj.get("text") or "").strip()
+                    if sender == self.chat_id and text:
+                        if text.startswith(("/topic ", "/post ")):
+                            text = text.split(" ", 1)[1].strip()
+                        self._call("sendMessage", chat_id=self.chat_id,
+                                   text=f"🎯 Understood! Drafting on:\n'{text}'")
+                        return {"action": "new_topic", "topic": text, "source": None}
+
+                cq = up.get("callback_query")
+                if not cq:
+                    continue
+
+                data = cq.get("data", "")
+                action, _, rest = data.partition(":")
+
+                if action == "pick_topic":
+                    idx_str, _, cb_draft = rest.partition(":")
+                    idx = int(idx_str)
+                    chosen = topic_options[idx]
+                    self._answer_cq(cq["id"], text="Selected!")
+                    self._call("sendMessage", chat_id=self.chat_id,
+                               text=f"🎯 You selected:\n**{chosen['topic']}**\n(Source: {chosen.get('source')})\nDrafting post...")
+                    return {"action": "new_topic", "topic": chosen["topic"], "source": chosen.get("source")}
+
+                if action == "opt_custom":
+                    self._answer_cq(cq["id"], text="Type your custom topic...")
+                    awaiting_custom = True
+                    self._call("sendMessage", chat_id=self.chat_id,
+                               text="✍️ Reply to this message with your topic or article link.")
+                    continue
+
+                if action == "opt_skip":
+                    self._answer_cq(cq["id"], text="Skipped.")
+                    return {"action": "rejected"}
+
+        return {"action": "rejected"}
+
+    def listen_for_commands(self, on_topic_callback, poll_interval_s: int = 5):
+        """Polls for incoming `/post <topic>` or `/topic <topic>` commands from user."""
+        self._skip_old_updates()
+        print(f"Listening on Telegram for /post or /topic commands from chat {self.chat_id}...")
+        self._call("sendMessage", chat_id=self.chat_id,
+                   text="🤖 LinkedIn Agent is listening!\n\nCommands:\n- `/topic <your topic>`: Generate a post & infographic on this topic\n- `/post <your topic>`: Same as /topic\n- Send any link or headline to draft a post.")
+
+        while True:
+            params = {"timeout": 30, "allowed_updates": ["message"]}
+            if self.offset is not None:
+                params["offset"] = self.offset
+
+            for up in self._call("getUpdates", **params):
+                self.offset = up["update_id"] + 1
+                msg = up.get("message")
+                if not msg:
+                    continue
+
+                sender = str(msg.get("from", {}).get("id"))
+                chat = str(msg.get("chat", {}).get("id"))
+                if sender != self.chat_id and chat != self.chat_id:
+                    continue
+
+                text = (msg.get("text") or "").strip()
+                if not text:
+                    continue
+
+                topic = None
+                if text.startswith(("/topic ", "/post ")):
+                    topic = text.split(" ", 1)[1].strip()
+                elif text == "/start" or text == "/help":
+                    self._call("sendMessage", chat_id=self.chat_id,
+                               text="👋 Send `/topic <topic>` or `/post <topic>` to generate a new post & infographic. You'll review and approve before anything goes live!")
+                    continue
+                else:
+                    topic = text
+
+                if topic:
+                    self._call("sendMessage", chat_id=self.chat_id,
+                               text=f"🎯 Got it! Researching and drafting a post on:\n'{topic}'\nI'll send the draft and infographic here for your approval.")
+                    try:
+                        on_topic_callback(topic)
+                    except Exception as e:
+                        self._call("sendMessage", chat_id=self.chat_id,
+                                   text=f"⚠️ Error while generating post:\n{str(e)[:1000]}")
 
     def mark_posted(self, draft_id: str, message_id: int, post_urn: str):
         set_status(draft_id, "posted", post_urn=post_urn)

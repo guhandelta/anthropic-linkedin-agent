@@ -48,17 +48,28 @@ client = Anthropic()
 
 EMOJI_RE = re.compile(r"[☀-➿\U0001F300-\U0001FAFF]")
 
-# Clean allowlist: drop inline "# comments" and URL paths, remove duplicates
-ALLOWED = sorted({
-    d.split("#")[0].strip().split("/")[0].lower()
+# Clean sources list: retain subpaths from config.yaml (e.g. react.dev/blog)
+SOURCES = [
+    d.split("#")[0].strip().removeprefix("https://").removeprefix("http://").rstrip("/")
     for d in RS["allowed_domains"]
     if d.split("#")[0].strip()
-})
+]
+
+
+def domain_for_source(s: str) -> str:
+    """Extract clean domain name without paths for Anthropic web_search tool."""
+    return s.split("/")[0].lower().removeprefix("www.")
+
+
+ALLOWED = sorted({domain_for_source(s) for s in SOURCES})
 
 
 def domain_allowed(url: str) -> bool:
     host = urlparse(url).netloc.lower().removeprefix("www.")
-    return any(host == d or host.endswith("." + d) for d in ALLOWED)
+    for d in ALLOWED:
+        if host == d or host.endswith("." + d) or d.endswith("." + host):
+            return True
+    return False
 
 
 # ---------------------------------------------------------------- sources + log
@@ -78,7 +89,13 @@ def pick_source(log: list, exclude: set[str]) -> str | None:
     cutoff = date.today() - timedelta(days=RS["skip_recent_days"])
     recent = {p.get("source_domain") for p in log
               if date.fromisoformat(p["date"][:10]) >= cutoff}
-    options = [s for s in ALLOWED if s not in recent and s not in exclude]
+    recent_domains = {domain_for_source(s) for s in recent if s}
+    options = [
+        s for s in SOURCES
+        if s not in recent
+        and domain_for_source(s) not in recent_domains
+        and s not in exclude
+    ]
     return random.choice(options) if options else None
 
 
@@ -155,8 +172,9 @@ Return ONLY JSON:
   "infographic_idea": "..."}}"""
 
 
-def write_draft(source: str, feedback: str | None, posted: set[str]) -> dict:
+def write_draft(source: str, feedback: str | None, posted: set[str], topic: str | None = None) -> dict:
     a = CFG["author"]
+    search_domain = domain_for_source(source)
     system = WRITER_SYSTEM.format(
         author=a["name"], author_role=a["role"], voice=a["voice"], source=source,
         max_age=RS["max_age_days"], posted=", ".join(sorted(posted)) or "none",
@@ -164,11 +182,14 @@ def write_draft(source: str, feedback: str | None, posted: set[str]) -> dict:
         hashtag_count=CFG["post"]["hashtags"],
         min_emoji=CFG["post"]["min_emojis"], max_emoji=CFG["post"]["max_emojis"],
     )
-    msg = f"Browse {source} and write the post."
+    if topic:
+        msg = f"Research the topic '{topic}' using {source} and write the post."
+    else:
+        msg = f"Browse {source} and write the post."
     if feedback:
         msg += ("\n\nYour previous draft was REJECTED. Fix these issues. You may research again "
                 f"or keep the same item:\n{feedback}")
-    return call_json(system, msg, tools=web_tools([source]), max_tokens=8000)
+    return call_json(system, msg, tools=web_tools([search_domain]), max_tokens=8000)
 
 
 DESIGNER_SYSTEM = """You are an elite visual designer specializing in publication-grade technical infographics for LinkedIn.
@@ -268,7 +289,7 @@ def editorial_review(headline: str, post: str, sources: list, image_path: Path) 
 def fact_check(post: str, sources: list) -> dict:
     content = f"POST:\n{post}\n\nSOURCES:\n{json.dumps(sources, ensure_ascii=False)}"
     domains = sorted({urlparse(s.get("url", "")).netloc.removeprefix("www.") for s in sources} & set(ALLOWED))
-    result = call_json(FACT_SYSTEM, content, tools=web_tools(domains or ALLOWED, max_uses=8),
+    result = call_json(FACT_SYSTEM, content, tools=web_tools(domains or ALLOWED[:5], max_uses=8),
                        max_tokens=3000)
     result["approved"] = bool(result.get("approved"))
     return result
@@ -336,8 +357,30 @@ def source_checks(sources: list, posted: set[str]) -> list[str]:
     return issues
 
 
-# ---------------------------------------------------------------- approval + publish
-def publish_after_approval(headline, source, post, sources, image_path):
+# ---------------------------------------------------------------- suggestions & approval
+def suggest_topics(count: int = 3) -> list[dict]:
+    """Sample candidate topics from random allowed domains for user selection."""
+    sampled = random.sample(SOURCES, min(count * 2, len(SOURCES)))
+    suggestions = []
+    for s in sampled:
+        dom = domain_for_source(s)
+        try:
+            res = call_json(
+                system="You are a tech scout. Browse the given source for one recent (past 7 days) release, update, or developer headline.",
+                content=f"Find 1 fresh update or headline from {s}. Return JSON: {{\"topic\": \"Concise headline or feature name\", \"source\": \"{s}\"}}",
+                tools=web_tools([dom], max_uses=2),
+                max_tokens=1000,
+            )
+            if res.get("topic") and not res.get("no_item"):
+                suggestions.append({"topic": res["topic"], "source": s})
+                if len(suggestions) >= count:
+                    break
+        except Exception:
+            continue
+    return suggestions
+
+
+def publish_after_approval(headline, source, post, sources, image_path) -> dict:
     """Both gates must pass: the AI reviewers (already done) AND you on Telegram."""
     draft_id = datetime.now().strftime("%Y%m%d") + "-" + uuid.uuid4().hex[:8]
     tg = TelegramReviewer(
@@ -351,44 +394,61 @@ def publish_after_approval(headline, source, post, sources, image_path):
 
     decision = tg.wait_for_decision(draft_id, message_id)
     print("Decision:", decision)
-    if decision != "approved" or get_status(draft_id) != "approved":
-        return  # rejected or expired: nothing is posted
 
-    try:
-        li = LinkedInClient(os.environ["LINKEDIN_ACCESS_TOKEN"], CFG["linkedin"]["api_version"])
-        post_urn = li.post_with_image(post, image_path, alt_text=headline)
-    except Exception as e:  # noqa: BLE001
-        tg.mark_failed(draft_id, message_id, str(e))
-        raise
-    try:
-        li.comment(post_urn, "Sources:\n" + "\n".join(f"- {s['claim']}: {s['url']}" for s in sources))
-    except Exception as e:  # noqa: BLE001
-        print("Post is live, but the source comment failed:", e)
-    tg.mark_posted(draft_id, message_id, post_urn)
-    print("Posted:", post_urn)
-    append_log({"date": datetime.now().isoformat(timespec="seconds"), "draft_id": draft_id,
-                "source_domain": source, "headline": headline,
-                "post_urn": post_urn, "chars": len(post), "sources": sources})
+    action = decision if isinstance(decision, str) else decision.get("action")
 
-    target_groups = CFG.get("linkedin", {}).get("target_groups", [])
-    if target_groups:
-        delay = CFG.get("linkedin", {}).get("group_delay_seconds", 12)
-        print(f"\nPublishing to {len(target_groups)} LinkedIn groups...")
+    if action == "approved" and get_status(draft_id) == "approved":
         try:
-            group_res = post_to_groups(target_groups, post, image_path, delay_seconds=delay)
-            success_count = len(group_res.get("success", []))
-            if success_count > 0:
-                try:
-                    tg._call("sendMessage", chat_id=tg.chat_id, reply_to_message_id=message_id,
-                             text=f"📢 Also published to {success_count}/{len(target_groups)} LinkedIn groups!")
-                except Exception:
-                    pass
-        except Exception as e:
-            print("Group posting encountered an error:", e)
+            li = LinkedInClient(os.environ["LINKEDIN_ACCESS_TOKEN"], CFG["linkedin"]["api_version"])
+            post_urn = li.post_with_image(post, image_path, alt_text=headline)
+        except Exception as e:  # noqa: BLE001
+            tg.mark_failed(draft_id, message_id, str(e))
+            raise
+        try:
+            li.comment(post_urn, "Sources:\n" + "\n".join(f"- {s['claim']}: {s['url']}" for s in sources))
+        except Exception as e:  # noqa: BLE001
+            print("Post is live, but the source comment failed:", e)
+        tg.mark_posted(draft_id, message_id, post_urn)
+        print("Posted:", post_urn)
+        append_log({"date": datetime.now().isoformat(timespec="seconds"), "draft_id": draft_id,
+                    "source_domain": source, "headline": headline,
+                    "post_urn": post_urn, "chars": len(post), "sources": sources})
+
+        target_groups = CFG.get("linkedin", {}).get("target_groups", [])
+        if target_groups:
+            delay = CFG.get("linkedin", {}).get("group_delay_seconds", 12)
+            print(f"\nPublishing to {len(target_groups)} LinkedIn groups...")
+            try:
+                group_res = post_to_groups(target_groups, post, image_path, delay_seconds=delay)
+                success_count = len(group_res.get("success", []))
+                if success_count > 0:
+                    try:
+                        tg._call("sendMessage", chat_id=tg.chat_id, reply_to_message_id=message_id,
+                                 text=f"📢 Also published to {success_count}/{len(target_groups)} LinkedIn groups!")
+                    except Exception:
+                        pass
+            except Exception as e:
+                print("Group posting encountered an error:", e)
+        return {"status": "posted"}
+
+    elif action == "revise":
+        return {"status": "revise", "feedback": decision.get("feedback")}
+
+    elif action == "suggest_topics":
+        suggestions = suggest_topics(count=3)
+        choice = tg.choose_topic(draft_id, suggestions)
+        if choice.get("action") == "new_topic":
+            return {"status": "new_topic", "topic": choice.get("topic"), "source": choice.get("source")}
+        return {"status": "rejected"}
+
+    elif action == "new_topic":
+        return {"status": "new_topic", "topic": decision.get("topic"), "source": decision.get("source")}
+
+    return {"status": "rejected"}
 
 
 # ---------------------------------------------------------------- main
-def run(source_arg: str | None, dry_run: bool):
+def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | None = None):
     log = load_log()
     posted = posted_urls(log)
     out_dir = ROOT / "output" / datetime.now().strftime("%Y-%m-%d_%H%M")
@@ -396,25 +456,33 @@ def run(source_arg: str | None, dry_run: bool):
 
     feedback, tried = None, set()
     current_source = source_arg
+    current_topic = topic_arg
+
     for attempt in range(1, CFG["review"]["max_attempts"] + 1):
         if not current_source or not feedback:
-            current_source = source_arg or pick_source(log, exclude=tried)
+            if current_topic and not current_source:
+                current_source = source_arg or pick_source(log, exclude=tried) or SOURCES[0]
+            else:
+                current_source = source_arg or pick_source(log, exclude=tried)
             feedback = None
+
         if not current_source:
             print("No source available today: all were used recently or already tried.")
             sys.exit(0)
+
         tried.add(current_source)
         action_verb = "revising draft on" if feedback else "browsing"
-        print(f"\n--- Attempt {attempt}: {action_verb} {current_source} ---")
+        topic_info = f" (Topic: {current_topic})" if current_topic else ""
+        print(f"\n--- Attempt {attempt}: {action_verb} {current_source}{topic_info} ---")
 
-        draft = write_draft(current_source, feedback, posted)
+        draft = write_draft(current_source, feedback, posted, topic=current_topic)
         if draft.get("no_item"):
             print("Nothing fresh on this source:", draft.get("reason"))
             current_source, feedback = None, None
             continue
 
         post, idea = draft["post"].strip(), draft.get("infographic_idea", "")
-        headline = draft.get("headline", current_source)
+        headline = draft.get("headline", current_topic or current_source)
         sources = draft.get("sources", [])
         issues = hard_checks(post) + source_checks(sources, posted)
         if not idea:
@@ -459,18 +527,47 @@ def run(source_arg: str | None, dry_run: bool):
                 print("Dry run: not sending to Telegram or LinkedIn.\n\n" + post)
                 print("\nSources:\n" + "\n".join(f"- {s['url']}" for s in sources))
                 return
-            publish_after_approval(headline, current_source, post, sources, image_path)
-            return
+
+            res = publish_after_approval(headline, current_source, post, sources, image_path)
+            status = res.get("status")
+            if status == "posted":
+                return
+            elif status == "revise":
+                feedback = res.get("feedback")
+                print(f"\n[Telegram Feedback] User requested revisions: {feedback}")
+                continue
+            elif status == "new_topic":
+                current_topic = res.get("topic")
+                current_source = res.get("source") or current_source
+                feedback = None
+                print(f"\n[Telegram Topic Switch] User requested: {current_topic} (Source: {current_source})")
+                continue
+            else:
+                print("User declined or skipped post.")
+                return
+
         feedback = "\n".join(issues) or "Improve quality and image match."
         print("Rejected:\n" + feedback)
 
-    print("\nAll attempts rejected. Nothing was posted (quality gate held).")
-    sys.exit(1)
+    print("\nAll attempts completed.")
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", help="browse this allowed domain instead of picking one")
+    ap.add_argument("--topic", help="manually provide a topic instead of picking from source")
+    ap.add_argument("--listen", action="store_true", help="run Telegram listener for /topic or /post commands")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
-    run(args.source, args.dry_run)
+
+    if args.listen:
+        tg = TelegramReviewer(
+            os.environ["TELEGRAM_BOT_TOKEN"], os.environ["TELEGRAM_CHAT_ID"],
+            timeout_s=CFG["telegram"]["timeout_hours"] * 3600,
+            remind_every_s=CFG["telegram"]["remind_every_minutes"] * 60,
+        )
+        def on_telegram_topic(t: str):
+            run(source_arg=None, dry_run=False, topic_arg=t)
+        tg.listen_for_commands(on_telegram_topic)
+    else:
+        run(args.source, args.dry_run, topic_arg=args.topic)
