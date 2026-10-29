@@ -29,6 +29,16 @@ infographic:
 
 linkedin:
   api_version: "202610"   # YYYYMM; LinkedIn supports roughly the last 12 months
+  group_delay_seconds: 12 # delay between group posts to ensure human-like behavior
+  target_groups:
+    - https://www.linkedin.com/groups/715247/
+    - https://www.linkedin.com/groups/6744403/
+    - https://www.linkedin.com/groups/3746827/
+    - https://www.linkedin.com/groups/9078014/
+    - https://www.linkedin.com/groups/10447580/
+    - https://www.linkedin.com/groups/6519652/
+    - https://www.linkedin.com/groups/4314060/
+    - https://www.linkedin.com/groups/121615/
 
 telegram:
   timeout_hours: 3          # wait this long for your Approve/Reject, then skip the day

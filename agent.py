@@ -37,6 +37,7 @@ from dotenv import load_dotenv
 
 from infographic import extract_svg, render_svg, svg_checks
 from linkedin import LinkedInClient
+from linkedin_groups import post_to_groups
 from telegram_review import TelegramReviewer, get_status
 
 ROOT = Path(__file__).parent
@@ -368,6 +369,22 @@ def publish_after_approval(headline, source, post, sources, image_path):
     append_log({"date": datetime.now().isoformat(timespec="seconds"), "draft_id": draft_id,
                 "source_domain": source, "headline": headline,
                 "post_urn": post_urn, "chars": len(post), "sources": sources})
+
+    target_groups = CFG.get("linkedin", {}).get("target_groups", [])
+    if target_groups:
+        delay = CFG.get("linkedin", {}).get("group_delay_seconds", 12)
+        print(f"\nPublishing to {len(target_groups)} LinkedIn groups...")
+        try:
+            group_res = post_to_groups(target_groups, post, image_path, delay_seconds=delay)
+            success_count = len(group_res.get("success", []))
+            if success_count > 0:
+                try:
+                    tg._call("sendMessage", chat_id=tg.chat_id, reply_to_message_id=message_id,
+                             text=f"📢 Also published to {success_count}/{len(target_groups)} LinkedIn groups!")
+                except Exception:
+                    pass
+        except Exception as e:
+            print("Group posting encountered an error:", e)
 
 
 # ---------------------------------------------------------------- main
