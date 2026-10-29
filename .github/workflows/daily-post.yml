@@ -2,8 +2,17 @@ name: Daily LinkedIn post
 
 on:
   schedule:
-    - cron: "17 13 * * *"   # 13:17 UTC = 9:17 AM New York (EDT); adjust as you like
-  workflow_dispatch:         # lets you run it manually from the Actions tab
+    # Option A (Once a day): 9:15 AM EDT (13:15 UTC) Monday - Friday
+    - cron: "15 13 * * 1-5"
+    # Option B (Twice a day): Uncomment the line below for 9:15 AM & 5:15 PM EDT (13:15 & 21:15 UTC)
+    # - cron: "15 13,21 * * 1-5"
+
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: "Optional custom topic (leave empty for autonomous AI research)"
+        required: false
+        default: ""
 
 permissions:
   contents: write            # to commit posted.json back
@@ -11,7 +20,7 @@ permissions:
 jobs:
   post:
     runs-on: ubuntu-latest
-    timeout-minutes: 240     # writing + up to 3 h waiting for your Telegram approval
+    timeout-minutes: 240     # up to 4 hours waiting for your Telegram approval
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -23,11 +32,18 @@ jobs:
       - name: Run agent
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPEN_AI_API_KEY: ${{ secrets.OPEN_AI_API_KEY }}
           LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           LI_AT: ${{ secrets.LI_AT }}
-        run: python agent.py
+        run: |
+          if [ -n "${{ github.event.inputs.topic }}" ]; then
+            python agent.py --topic "${{ github.event.inputs.topic }}"
+          else
+            python agent.py
+          fi
       - name: Save outputs
         if: always()
         uses: actions/upload-artifact@v4
