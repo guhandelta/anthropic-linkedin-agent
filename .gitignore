@@ -5,4 +5,5 @@ output/
 state/
 browser_profile/
 *.pyc
+*.log
 .DS_Store

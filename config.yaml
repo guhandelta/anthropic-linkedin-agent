@@ -67,6 +67,16 @@ research:
     - enpitech.dev/blog
     - v0.dev/docs
     - v0.app/changelog
+    - v0.app/docs/model-picker
+    - v0.app/docs/databases
+    - v0.app/docs/snowflake
+    - v0.app/docs/shopify
+    - v0.app/docs/external-apis
+    - v0.app/docs/vercel-connect
+    - v0.app/docs/github
+    - v0.app/docs/MCP
+    - v0.app/docs/pre-installed-agents
+    - v0.app/docs/slack
     - react.dev/blog
     - nextjs.org/blog
     - svelte.dev/blog

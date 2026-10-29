@@ -429,9 +429,12 @@ class TelegramReviewer:
         poll_interval_s: int = 5,
     ):
         """Polls for incoming /topic, /direct, menu button actions, photos, or manual prompts."""
-        self._skip_old_updates()
+        try:
+            self._call("deleteWebhook", drop_pending_updates=False)
+        except Exception:
+            pass
         self.set_bot_commands()
-        print(f"Listening on Telegram for actions & commands from chat {self.chat_id}...")
+        print(f"🤖 Listening on Telegram for actions & commands from chat {self.chat_id}...")
 
         help_text = (
             "🤖 **LinkedIn Agent Action Center**\n\n"
@@ -454,7 +457,7 @@ class TelegramReviewer:
         user_state = None  # None | "waiting_for_topic" | "waiting_for_direct"
 
         while True:
-            params = {"timeout": 30, "allowed_updates": ["message"]}
+            params = {"timeout": 30, "allowed_updates": ["message", "callback_query"]}
             if self.offset is not None:
                 params["offset"] = self.offset
 
@@ -468,16 +471,23 @@ class TelegramReviewer:
             for up in updates:
                 self.offset = up["update_id"] + 1
                 msg = up.get("message")
+                cq = up.get("callback_query")
+                if cq:
+                    print(f"[Telegram] Received callback query: {cq.get('data')}")
+                    self._answer_cq(cq["id"], text="Received.")
+                    continue
                 if not msg:
                     continue
 
                 sender = str(msg.get("from", {}).get("id"))
                 chat = str(msg.get("chat", {}).get("id"))
                 if sender != self.chat_id and chat != self.chat_id:
+                    print(f"[Telegram] Ignoring message from unauthorized chat: {chat} (sender: {sender})")
                     continue
 
                 text = (msg.get("text") or msg.get("caption") or "").strip()
                 photos = msg.get("photo")
+                print(f"[Telegram] Received message: '{text}' (photos: {bool(photos)}) | state: {user_state}")
 
                 # Action Button: Help / Start
                 if text in ("/start", "/help", "❓ Help & Commands"):
