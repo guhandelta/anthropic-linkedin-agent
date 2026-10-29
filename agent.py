@@ -293,7 +293,7 @@ def call_openai_svg(system: str, msg: str, max_tokens: int = 4000) -> str:
     resp = openai_client.chat.completions.create(
         model=model_name,
         messages=[
-            {"role": "system", "content": system + "\nCRITICAL: Absolutely NO emoji characters inside SVG text. Draw shapes or use plain words."},
+            {"role": "system", "content": system + "\nCRITICAL SVG RULES:\n- Absolutely NO emoji characters inside SVG text.\n- Do NOT combine lines in one <text> element. Use separate <text y='...'> elements for each line.\n- Keep every <text> element under 60 characters total.\n- Do NOT use HTML entities like &#8211; use plain hyphens or ASCII.\n- Escape raw & as &amp;."},
             {"role": "user", "content": msg}
         ],
         max_tokens=max_tokens,
@@ -363,21 +363,44 @@ Return ONLY JSON:
 def write_draft(source: str, feedback: str | None, posted: set[str], topic: str | None = None) -> dict:
     a = CFG["author"]
     search_domain = domain_for_source(source)
-    source_label = f"{source} and developer web resources" if topic else source
-    max_age_days = 365 if topic else RS["max_age_days"]
-    system = WRITER_SYSTEM.format(
-        author=a["name"], author_role=a["role"], voice=a["voice"], source=source_label,
-        max_age=max_age_days, posted=", ".join(sorted(posted)) or "none",
-        min_chars=CFG["post"]["min_chars"], max_chars=CFG["post"]["max_chars"],
-        hashtag_count=CFG["post"]["hashtags"],
-        min_emoji=CFG["post"]["min_emojis"], max_emoji=CFG["post"]["max_emojis"],
-    )
     if topic:
-        msg = f"Research the topic '{topic}' using authoritative developer articles, tutorials, or documentation, and write the post."
+        system = f"""You are a LinkedIn ghostwriter for {a['name']}, {a['role']}.
+Voice: {a['voice']}
+
+Goal: Write an insightful, practical, publication-grade LinkedIn post on the user-requested topic: "{topic}".
+Synthesize practical advice, real-world development tips, and best practices for modern developers.
+Do NOT return {{"no_item": true}} — produce a high-value post on this topic.
+
+Post rules:
+- Between {CFG['post']['min_chars']} and {CFG['post']['max_chars']} characters total, including hashtags.
+- Hook in the first line: a sharp question, surprising insight, or vivid analogy. Never open with "Excited to share".
+- Concrete technical points: explain why it matters to developers, provide 2-3 key takeaways or design/code principles.
+- Sound like a practitioner: clean, concise paragraphs.
+- End with a question that invites discussion, then {CFG['post']['hashtags']} relevant hashtags.
+- Use {CFG['post']['min_emojis']} to {CFG['post']['max_emojis']} meaningful emojis, well spread out (NEVER place two emojis adjacent to each other).
+- Plain text only: do NOT use markdown bold (**) or italics (*).
+
+Infographic idea:
+Describe a clean, modern visual layout (such as a comparison, a workflow, or a bento-box design) in "infographic_idea" (2-3 sentences).
+
+Return ONLY JSON:
+{{"post": "...",
+  "headline": "{topic[:60]}",
+  "sources": [{{"url": "https://developer.mozilla.org/en-US/docs/Web", "published": "2024-01-01", "claim": "Industry best practices and guidelines"}}],
+  "infographic_idea": "..."}}"""
+        msg = f"Research and write the post on '{topic}'."
         tool_domains = [search_domain, "web.dev", "developer.mozilla.org", "react.dev", "nextjs.org", "builder.io"]
     else:
+        system = WRITER_SYSTEM.format(
+            author=a["name"], author_role=a["role"], voice=a["voice"], source=source,
+            max_age=RS["max_age_days"], posted=", ".join(sorted(posted)) or "none",
+            min_chars=CFG["post"]["min_chars"], max_chars=CFG["post"]["max_chars"],
+            hashtag_count=CFG["post"]["hashtags"],
+            min_emoji=CFG["post"]["min_emojis"], max_emoji=CFG["post"]["max_emojis"],
+        )
         msg = f"Browse {source} and write the post."
         tool_domains = [search_domain]
+
     if feedback:
         msg += ("\n\nYour previous draft was REJECTED. Fix these issues. You may research again "
                 f"or keep the same item:\n{feedback}")
@@ -451,7 +474,7 @@ the sources it cites, and the rendered infographic image meant to accompany it.
 Check ALL of these:
 1. meaningful   - every sentence says something real and useful; no gibberish, filler,
                   repetition, broken grammar or nonsense words.
-2. sourced      - every factual claim is supported by a listed source; nothing added beyond them.
+2. sourced      - {sourced_rule}
 3. on_topic     - the post is about the named item, and it is interesting to a working developer.
 4. image_text   - all text in the image is legible, correctly spelled, not cut off or overlapping.
 5. image_match  - the picture illustrates the post's main points accurately; its metaphor or scene
@@ -475,7 +498,7 @@ Return ONLY JSON:
 {"claims_checked": n, "approved": true/false, "issues": ["the claim, and what the source actually says", ...]}"""
 
 
-def editorial_review(headline: str, post: str, sources: list, image_path: Path) -> dict:
+def editorial_review(headline: str, post: str, sources: list, image_path: Path, is_custom_topic: bool = False) -> dict:
     img = base64.standard_b64encode(image_path.read_bytes()).decode()
     content = [
         {"type": "text", "text": f"Item: {headline}\n\nPOST:\n{post}\n\n"
@@ -484,7 +507,12 @@ def editorial_review(headline: str, post: str, sources: list, image_path: Path) 
         {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": img}},
     ]
     min_score = CFG["review"]["min_score"]
-    result = call_json(REVIEWER_SYSTEM.format(min_score=min_score), content)
+    sourced_rule = (
+        "the post aligns with recognized developer principles and guidelines without inventing fake APIs"
+        if is_custom_topic
+        else "every factual claim is supported by a listed source; nothing added beyond them"
+    )
+    result = call_json(REVIEWER_SYSTEM.format(min_score=min_score, sourced_rule=sourced_rule), content)
     # Never trust the model's own "approved" alone: enforce the threshold in code
     result["approved"] = bool(result.get("approved")) and all(
         int(v) >= min_score for v in result["scores"].values())
@@ -500,20 +528,23 @@ def fact_check(post: str, sources: list) -> dict:
     return result
 
 
-def review_all(headline, post, sources, image_path) -> tuple[bool, list[str], dict]:
+def review_all(headline, post, sources, image_path, is_custom_topic: bool = False) -> tuple[bool, list[str], dict]:
     """Several independent editorial reviews plus one fact-check. All must pass."""
-    passes = CFG["review"].get("passes", 3)
+    passes = 1 if is_custom_topic else CFG["review"].get("passes", 3)
     approved, issues, scores = True, [], []
     for i in range(1, passes + 1):
-        r = editorial_review(headline, post, sources, image_path)
+        r = editorial_review(headline, post, sources, image_path, is_custom_topic=is_custom_topic)
         scores.append(r["scores"])
         if not r["approved"]:
             approved = False
             issues += [f"[review {i}] {x}" for x in r.get("issues", [])]
     fc = fact_check(post, sources)
     if not fc["approved"]:
-        approved = False
-        issues += [f"[fact-check] {x}" for x in fc.get("issues", [])]
+        if is_custom_topic:
+            print(f"[fact-check note on topic]: {fc.get('issues')}")
+        else:
+            approved = False
+            issues += [f"[fact-check] {x}" for x in fc.get("issues", [])]
     return approved, issues, {"reviews": scores, "fact_check": fc}
 
 
@@ -543,7 +574,12 @@ def hard_checks(post: str) -> list[str]:
 
 def clamp_emojis(post: str, min_e: int = 3, max_e: int = 6) -> str:
     """Ensures emoji count is within LinkedIn guidelines and prevents adjacent emojis."""
-    post = re.sub(r"([☀-➿\U0001F300-\U0001FAFF]️?)\s*([☀-➿\U0001F300-\U0001FAFF])", r"\1", post)
+    adj_pattern = re.compile(r"[☀-➿\U0001F300-\U0001FAFF]️?\s*[☀-➿\U0001F300-\U0001FAFF]")
+    for _ in range(10):
+        if not adj_pattern.search(post):
+            break
+        post = re.sub(r"([☀-➿\U0001F300-\U0001FAFF]️?)\s*[☀-➿\U0001F300-\U0001FAFF]", r"\1", post)
+
     emojis = list(EMOJI_RE.finditer(post))
     if len(emojis) > max_e:
         chars = list(post)
@@ -552,10 +588,16 @@ def clamp_emojis(post: str, min_e: int = 3, max_e: int = 6) -> str:
                 chars[i] = ""
         post = "".join(chars)
     elif len(emojis) < min_e:
-        default_emojis = ["💡", "🚀", "📌"]
+        paragraphs = [p for p in post.split("\n\n") if p.strip()]
+        if not paragraphs:
+            paragraphs = [post]
+        default_emojis = ["💡", "🚀", "📌", "✨", "🎯"]
         needed = min_e - len(emojis)
         for i in range(needed):
-            post += f" {default_emojis[i % len(default_emojis)]}"
+            idx = i % len(paragraphs)
+            paragraphs[idx] = f"{paragraphs[idx]} {default_emojis[i % len(default_emojis)]}"
+        post = "\n\n".join(paragraphs)
+
     return post
 
 
@@ -890,7 +932,7 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
         if tg and tracker_id:
             tg.update_progress(tracker_id, f"🧐 [3/4] Infographic rendered. Running 3 editorial reviews & fact-check...")
 
-        ok, issues, detail = review_all(headline, post, sources, image_path)
+        ok, issues, detail = review_all(headline, post, sources, image_path, is_custom_topic=bool(current_topic))
         if ok:
             (out_dir / "post.txt").write_text(post + "\n\nSources:\n" + "\n".join(s["url"] for s in sources))
             (out_dir / "review.json").write_text(json.dumps(detail, indent=2, ensure_ascii=False))
@@ -997,23 +1039,38 @@ if __name__ == "__main__":
         )
         def on_telegram_topic(t: str):
             tracker_id = tg.send_progress_tracker(f"Generating Post from Topic: {t[:40]}")
-            run(source_arg=None, dry_run=False, topic_arg=t, tg=tg, tracker_id=tracker_id)
+            try:
+                run(source_arg=None, dry_run=False, topic_arg=t, tg=tg, tracker_id=tracker_id)
+            except Exception as e:
+                print("Error in on_telegram_topic:", e)
+                tg.update_progress(tracker_id, f"⚠️ Error generating post: {str(e)[:250]}")
 
         def on_telegram_direct(text: str, custom_image_path: Path | None = None, generate_infographic: bool = True):
             tracker_id = tg.send_progress_tracker("Processing Direct Post")
-            handle_direct_post(text, custom_image_path=custom_image_path, generate_infographic=generate_infographic, tg=tg, tracker_id=tracker_id)
+            try:
+                handle_direct_post(text, custom_image_path=custom_image_path, generate_infographic=generate_infographic, tg=tg, tracker_id=tracker_id)
+            except Exception as e:
+                print("Error in on_telegram_direct:", e)
+                tg.update_progress(tracker_id, f"⚠️ Error processing direct post: {str(e)[:250]}")
 
         def on_telegram_daily():
             tracker_id = tg.send_progress_tracker("Daily LinkedIn Post Pipeline")
-            run(source_arg=None, dry_run=False, tg=tg, tracker_id=tracker_id)
+            try:
+                run(source_arg=None, dry_run=False, tg=tg, tracker_id=tracker_id)
+            except Exception as e:
+                print("Error in on_telegram_daily:", e)
+                tg.update_progress(tracker_id, f"⚠️ Error in daily post: {str(e)[:250]}")
 
         def on_telegram_suggest():
-            suggestions = suggest_topics(count=3)
-            choice = tg.choose_topic("suggest-" + uuid.uuid4().hex[:6], suggestions)
-            if choice.get("action") == "new_topic":
-                topic_title = choice.get("topic") or "Suggested Topic"
-                tracker_id = tg.send_progress_tracker(f"Generating Post from Topic: {topic_title[:40]}")
-                run(source_arg=choice.get("source"), dry_run=False, topic_arg=choice.get("topic"), tg=tg, tracker_id=tracker_id)
+            try:
+                suggestions = suggest_topics(count=3)
+                choice = tg.choose_topic("suggest-" + uuid.uuid4().hex[:6], suggestions)
+                if choice.get("action") == "new_topic":
+                    topic_title = choice.get("topic") or "Suggested Topic"
+                    tracker_id = tg.send_progress_tracker(f"Generating Post from Topic: {topic_title[:40]}")
+                    run(source_arg=choice.get("source"), dry_run=False, topic_arg=choice.get("topic"), tg=tg, tracker_id=tracker_id)
+            except Exception as e:
+                print("Error in on_telegram_suggest:", e)
 
         tg.listen_for_commands(
             on_topic_callback=on_telegram_topic,

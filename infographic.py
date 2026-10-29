@@ -22,7 +22,10 @@ def extract_svg(text: str) -> str:
     m = re.search(r"<svg\b.*</svg>", text, re.S)
     if not m:
         raise ValueError("Designer did not return an <svg> drawing.")
-    return m.group(0)
+    svg = m.group(0)
+    # Auto-escape unescaped ampersands (e.g. UX & UI -> UX &amp; UI)
+    svg = re.sub(r"&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)", "&amp;", svg)
+    return svg
 
 
 def _local(tag: str) -> str:
