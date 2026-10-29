@@ -109,6 +109,19 @@ class TelegramReviewer:
         dest_path.write_bytes(r.content)
         return dest_path
 
+    def send_progress_tracker(self, title: str) -> int:
+        """Sends an in-place progress tracker message that can be dynamically updated."""
+        msg = self._call("sendMessage", chat_id=self.chat_id, text=f"⏳ **{title}**\n\n🔄 Starting pipeline...")
+        return msg["message_id"]
+
+    def update_progress(self, message_id: int, step_text: str):
+        """Updates the status tracker message in real-time."""
+        try:
+            self._call("editMessageText", chat_id=self.chat_id, message_id=message_id,
+                       text=step_text)
+        except Exception:
+            pass
+
     def send_draft(self, draft_id: str, topic: str, post: str, image_path: Path) -> int:
         self._skip_old_updates()
         with open(image_path, "rb") as f:

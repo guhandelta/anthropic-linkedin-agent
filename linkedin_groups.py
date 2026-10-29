@@ -169,6 +169,7 @@ def post_to_groups(
     image_path: Path | None = None,
     delay_seconds: int = 12,
     headless: bool = True,
+    progress_callback: callable | None = None,
 ) -> dict:
     """Publishes the post sequentially across all listed LinkedIn groups."""
     results = {"success": [], "failed": []}
@@ -186,11 +187,16 @@ def post_to_groups(
                 "Run: python linkedin_groups.py --login once to authenticate."
             )
             print(f"❌ {msg}")
+            if progress_callback:
+                progress_callback(f"⚠️ {msg}")
             context.close()
             return {"error": msg, "success": [], "failed": groups}
 
         for idx, group_url in enumerate(groups, 1):
+            status_msg = f"📢 Publishing to group [{idx}/{len(groups)}]: {group_url}..."
             print(f"[{idx}/{len(groups)}] Processing group: {group_url}")
+            if progress_callback:
+                progress_callback(status_msg)
             try:
                 ok = post_to_single_group(page, group_url, text, image_path)
                 if ok:

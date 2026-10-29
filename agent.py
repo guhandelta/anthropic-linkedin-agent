@@ -415,37 +415,63 @@ def publish_to_linkedin_and_groups(
     if target_groups:
         delay = CFG.get("linkedin", {}).get("group_delay_seconds", 12)
         print(f"\nPublishing to {len(target_groups)} LinkedIn groups...")
+
+        grp_tracker_id = None
+        if tg:
+            try:
+                grp_tracker_id = tg.send_progress_tracker(f"Publishing to {len(target_groups)} LinkedIn Groups")
+            except Exception:
+                pass
+
+        def on_group_progress(msg: str):
+            if tg and grp_tracker_id:
+                tg.update_progress(grp_tracker_id, msg)
+
         try:
-            group_res = post_to_groups(target_groups, post, Path(image_path) if image_path else None, delay_seconds=delay)
+            group_res = post_to_groups(
+                target_groups,
+                post,
+                Path(image_path) if image_path else None,
+                delay_seconds=delay,
+                progress_callback=on_group_progress
+            )
             success_count = len(group_res.get("success", []))
-            if tg and success_count > 0 and message_id:
+            summary_msg = f"🎉 Successfully published to personal wall + {success_count}/{len(target_groups)} LinkedIn groups!"
+            if tg and grp_tracker_id:
+                tg.update_progress(grp_tracker_id, summary_msg)
+            elif tg and success_count > 0 and message_id:
                 try:
-                    tg._call("sendMessage", chat_id=tg.chat_id, reply_to_message_id=message_id,
-                             text=f"📢 Also published to {success_count}/{len(target_groups)} LinkedIn groups!")
+                    tg._call("sendMessage", chat_id=tg.chat_id, reply_to_message_id=message_id, text=summary_msg)
                 except Exception:
                     pass
         except Exception as e:
             print("Group posting encountered an error:", e)
+            if tg and grp_tracker_id:
+                tg.update_progress(grp_tracker_id, f"⚠️ Group posting encountered an issue: {e}")
 
     return post_urn
 
 
-def handle_direct_post(post_text: str, custom_image_path: Path | None = None, generate_infographic: bool = True):
+def handle_direct_post(post_text: str, custom_image_path: Path | None = None, generate_infographic: bool = True,
+                       tg: TelegramReviewer | None = None, tracker_id: int | None = None):
     """Processes a user-provided direct post: optionally creates infographic, asks consent on Telegram, and publishes."""
     draft_id = datetime.now().strftime("%Y%m%d") + "-direct-" + uuid.uuid4().hex[:6]
     out_dir = ROOT / "output" / datetime.now().strftime("%Y-%m-%d_%H%M")
     out_dir.mkdir(parents=True, exist_ok=True)
-    tg = TelegramReviewer(
-        os.environ["TELEGRAM_BOT_TOKEN"], os.environ["TELEGRAM_CHAT_ID"],
-        timeout_s=CFG["telegram"]["timeout_hours"] * 3600,
-        remind_every_s=CFG["telegram"]["remind_every_minutes"] * 60,
-    )
+    if not tg:
+        tg = TelegramReviewer(
+            os.environ["TELEGRAM_BOT_TOKEN"], os.environ["TELEGRAM_CHAT_ID"],
+            timeout_s=CFG["telegram"]["timeout_hours"] * 3600,
+            remind_every_s=CFG["telegram"]["remind_every_minutes"] * 60,
+        )
 
     image_path = custom_image_path
     headline = "Direct Submission"
 
     if generate_infographic and not image_path:
         print("\n[Direct Post] Extracting visual idea & designing infographic...")
+        if tg and tracker_id:
+            tg.update_progress(tracker_id, f"🎨 [1/2] Auto-designing infographic layout for direct post ({len(post_text)} chars)...")
         try:
             res = call_json(
                 system="You are an expert graphic design assistant. Given a LinkedIn post, return JSON: {\"headline\": \"short title 3-5 words\", \"infographic_idea\": \"2-3 sentences describing a visual layout or metaphor explaining the key points\"}",
@@ -461,6 +487,9 @@ def handle_direct_post(post_text: str, custom_image_path: Path | None = None, ge
         except Exception as e:
             print(f"Infographic design for direct post failed: {e}. Falling back to text-only.")
             image_path = None
+
+    if tg and tracker_id:
+        tg.update_progress(tracker_id, "✅ [2/2] Post prepared! Delivering draft below for your consent...")
 
     if image_path and Path(image_path).exists():
         message_id = tg.send_draft(draft_id, headline, post_text, Path(image_path))
@@ -496,19 +525,20 @@ def handle_direct_post(post_text: str, custom_image_path: Path | None = None, ge
         feedback = decision.get("feedback")
         tg._call("sendMessage", chat_id=tg.chat_id,
                  text=f"✍️ Notes received:\n\"{feedback}\"\nRe-drafting with Claude...")
-        run(source_arg=None, dry_run=False, topic_arg=f"Revising post based on: {feedback}\nOriginal:\n{post_text}")
+        run(source_arg=None, dry_run=False, topic_arg=f"Revising post based on: {feedback}\nOriginal:\n{post_text}", tg=tg)
     else:
         print("Direct post was cancelled or rejected.")
 
 
-def publish_after_approval(headline, source, post, sources, image_path) -> dict:
+def publish_after_approval(headline, source, post, sources, image_path, tg: TelegramReviewer | None = None) -> dict:
     """Both gates must pass: the AI reviewers (already done) AND you on Telegram."""
     draft_id = datetime.now().strftime("%Y%m%d") + "-" + uuid.uuid4().hex[:8]
-    tg = TelegramReviewer(
-        os.environ["TELEGRAM_BOT_TOKEN"], os.environ["TELEGRAM_CHAT_ID"],
-        timeout_s=CFG["telegram"]["timeout_hours"] * 3600,
-        remind_every_s=CFG["telegram"]["remind_every_minutes"] * 60,
-    )
+    if not tg:
+        tg = TelegramReviewer(
+            os.environ["TELEGRAM_BOT_TOKEN"], os.environ["TELEGRAM_CHAT_ID"],
+            timeout_s=CFG["telegram"]["timeout_hours"] * 3600,
+            remind_every_s=CFG["telegram"]["remind_every_minutes"] * 60,
+        )
     shown = post + "\n\nSources:\n" + "\n".join(f"- {s['url']}" for s in sources)
     message_id = tg.send_draft(draft_id, headline, shown, image_path)
     print(f"Sent draft {draft_id} to Telegram; waiting for your decision...")
@@ -550,7 +580,8 @@ def publish_after_approval(headline, source, post, sources, image_path) -> dict:
 
 
 # ---------------------------------------------------------------- main
-def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | None = None):
+def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | None = None,
+        tg: TelegramReviewer | None = None, tracker_id: int | None = None):
     log = load_log()
     posted = posted_urls(log)
     out_dir = ROOT / "output" / datetime.now().strftime("%Y-%m-%d_%H%M")
@@ -570,16 +601,22 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
 
         if not current_source:
             print("No source available today: all were used recently or already tried.")
+            if tg and tracker_id:
+                tg.update_progress(tracker_id, "⚠️ All sources were used recently or tried. Please try a different topic.")
             sys.exit(0)
 
         tried.add(current_source)
         action_verb = "revising draft on" if feedback else "browsing"
         topic_info = f" (Topic: {current_topic})" if current_topic else ""
         print(f"\n--- Attempt {attempt}: {action_verb} {current_source}{topic_info} ---")
+        if tg and tracker_id:
+            tg.update_progress(tracker_id, f"🔍 [1/4] Researching fresh items on `{current_source}`{topic_info}...")
 
         draft = write_draft(current_source, feedback, posted, topic=current_topic)
         if draft.get("no_item"):
             print("Nothing fresh on this source:", draft.get("reason"))
+            if tg and tracker_id:
+                tg.update_progress(tracker_id, f"ℹ️ Nothing fresh on `{current_source}`. Checking next source...")
             current_source, feedback = None, None
             continue
 
@@ -593,6 +630,9 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
             print("Checks failed:", issues)
             feedback = "\n".join(issues)
             continue
+
+        if tg and tracker_id:
+            tg.update_progress(tracker_id, f"✍️ [2/4] Drafted post ({len(post)} chars). Designing visual infographic...")
 
         image_path = out_dir / f"infographic_{attempt}.png"
         design_feedback, drawn = feedback, False
@@ -620,29 +660,38 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
             feedback = design_feedback
             continue
 
+        if tg and tracker_id:
+            tg.update_progress(tracker_id, f"🧐 [3/4] Infographic rendered. Running 3 editorial reviews & fact-check...")
+
         ok, issues, detail = review_all(headline, post, sources, image_path)
         if ok:
             (out_dir / "post.txt").write_text(post + "\n\nSources:\n" + "\n".join(s["url"] for s in sources))
             (out_dir / "review.json").write_text(json.dumps(detail, indent=2, ensure_ascii=False))
             print(f"\nAPPROVED ({len(post)} chars). Saved to {out_dir}")
+            if tg and tracker_id:
+                tg.update_progress(tracker_id, f"✅ [4/4] Editorial approval passed! Delivering draft below for your review...")
             if dry_run:
                 print("Dry run: not sending to Telegram or LinkedIn.\n\n" + post)
                 print("\nSources:\n" + "\n".join(f"- {s['url']}" for s in sources))
                 return
 
-            res = publish_after_approval(headline, current_source, post, sources, image_path)
+            res = publish_after_approval(headline, current_source, post, sources, image_path, tg=tg)
             status = res.get("status")
             if status == "posted":
                 return
             elif status == "revise":
                 feedback = res.get("feedback")
                 print(f"\n[Telegram Feedback] User requested revisions: {feedback}")
+                if tg and tracker_id:
+                    tg.update_progress(tracker_id, f"🔄 Redrafting based on notes: \"{feedback[:50]}...\"")
                 continue
             elif status == "new_topic":
                 current_topic = res.get("topic")
                 current_source = res.get("source") or current_source
                 feedback = None
                 print(f"\n[Telegram Topic Switch] User requested: {current_topic} (Source: {current_source})")
+                if tg and tracker_id:
+                    tg.update_progress(tracker_id, f"🔄 Switching topic to: {current_topic[:50]}...")
                 continue
             else:
                 print("User declined or skipped post.")
@@ -697,19 +746,24 @@ if __name__ == "__main__":
             remind_every_s=CFG["telegram"]["remind_every_minutes"] * 60,
         )
         def on_telegram_topic(t: str):
-            run(source_arg=None, dry_run=False, topic_arg=t)
+            tracker_id = tg.send_progress_tracker(f"Generating Post from Topic: {t[:40]}")
+            run(source_arg=None, dry_run=False, topic_arg=t, tg=tg, tracker_id=tracker_id)
 
         def on_telegram_direct(text: str, custom_image_path: Path | None = None, generate_infographic: bool = True):
-            handle_direct_post(text, custom_image_path=custom_image_path, generate_infographic=generate_infographic)
+            tracker_id = tg.send_progress_tracker("Processing Direct Post")
+            handle_direct_post(text, custom_image_path=custom_image_path, generate_infographic=generate_infographic, tg=tg, tracker_id=tracker_id)
 
         def on_telegram_daily():
-            run(source_arg=None, dry_run=False)
+            tracker_id = tg.send_progress_tracker("Daily LinkedIn Post Pipeline")
+            run(source_arg=None, dry_run=False, tg=tg, tracker_id=tracker_id)
 
         def on_telegram_suggest():
             suggestions = suggest_topics(count=3)
             choice = tg.choose_topic("suggest-" + uuid.uuid4().hex[:6], suggestions)
             if choice.get("action") == "new_topic":
-                run(source_arg=choice.get("source"), dry_run=False, topic_arg=choice.get("topic"))
+                topic_title = choice.get("topic") or "Suggested Topic"
+                tracker_id = tg.send_progress_tracker(f"Generating Post from Topic: {topic_title[:40]}")
+                run(source_arg=choice.get("source"), dry_run=False, topic_arg=choice.get("topic"), tg=tg, tracker_id=tracker_id)
 
         tg.listen_for_commands(
             on_topic_callback=on_telegram_topic,
