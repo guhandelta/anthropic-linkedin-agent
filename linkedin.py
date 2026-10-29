@@ -53,6 +53,24 @@ class LinkedInClient:
         if r.status_code >= 400:
             raise RuntimeError(f"Comment failed {r.status_code}: {r.text}")
 
+    def post_text(self, text: str) -> str:
+        import re
+        body = re.sub(r"\\#(\w)", r"#\1", self._escape(text))
+        payload = {
+            "author": self.author,
+            "commentary": body,
+            "visibility": "PUBLIC",
+            "distribution": {"feedDistribution": "MAIN_FEED",
+                             "targetEntities": [], "thirdPartyDistributionChannels": []},
+            "lifecycleState": "PUBLISHED",
+            "isReshareDisabledByAuthor": False,
+        }
+        r = requests.post("https://api.linkedin.com/rest/posts",
+                          headers=self.h, json=payload, timeout=30)
+        if r.status_code >= 400:
+            raise RuntimeError(f"LinkedIn post failed {r.status_code}: {r.text}")
+        return r.headers.get("x-restli-id", "")
+
     def post_with_image(self, text: str, image_path: Path, alt_text: str = "") -> str:
         image_urn = self.upload_image(image_path)
         # Keep hashtags clickable: escape everything, then restore "#word"

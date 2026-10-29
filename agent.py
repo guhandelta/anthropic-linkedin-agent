@@ -380,6 +380,127 @@ def suggest_topics(count: int = 3) -> list[dict]:
     return suggestions
 
 
+def publish_to_linkedin_and_groups(
+    post: str,
+    image_path: Path | None,
+    headline: str,
+    sources: list | None = None,
+    draft_id: str | None = None,
+    message_id: int | None = None,
+    tg: TelegramReviewer | None = None,
+) -> str:
+    """Publishes a post (with or without image) to the LinkedIn personal feed and all configured groups."""
+    li = LinkedInClient(os.environ["LINKEDIN_ACCESS_TOKEN"], CFG["linkedin"]["api_version"])
+    try:
+        if image_path and Path(image_path).exists():
+            post_urn = li.post_with_image(post, Path(image_path), alt_text=headline)
+        else:
+            post_urn = li.post_text(post)
+    except Exception as e:
+        if tg and draft_id and message_id:
+            tg.mark_failed(draft_id, message_id, str(e))
+        raise
+
+    if sources:
+        try:
+            li.comment(post_urn, "Sources:\n" + "\n".join(f"- {s.get('claim', 'Source')}: {s.get('url', '')}" for s in sources))
+        except Exception as e:
+            print("Post is live, but the source comment failed:", e)
+
+    if tg and draft_id and message_id:
+        tg.mark_posted(draft_id, message_id, post_urn)
+    print("Posted to personal feed:", post_urn)
+
+    target_groups = CFG.get("linkedin", {}).get("target_groups", [])
+    if target_groups:
+        delay = CFG.get("linkedin", {}).get("group_delay_seconds", 12)
+        print(f"\nPublishing to {len(target_groups)} LinkedIn groups...")
+        try:
+            group_res = post_to_groups(target_groups, post, Path(image_path) if image_path else None, delay_seconds=delay)
+            success_count = len(group_res.get("success", []))
+            if tg and success_count > 0 and message_id:
+                try:
+                    tg._call("sendMessage", chat_id=tg.chat_id, reply_to_message_id=message_id,
+                             text=f"📢 Also published to {success_count}/{len(target_groups)} LinkedIn groups!")
+                except Exception:
+                    pass
+        except Exception as e:
+            print("Group posting encountered an error:", e)
+
+    return post_urn
+
+
+def handle_direct_post(post_text: str, custom_image_path: Path | None = None, generate_infographic: bool = True):
+    """Processes a user-provided direct post: optionally creates infographic, asks consent on Telegram, and publishes."""
+    draft_id = datetime.now().strftime("%Y%m%d") + "-direct-" + uuid.uuid4().hex[:6]
+    out_dir = ROOT / "output" / datetime.now().strftime("%Y-%m-%d_%H%M")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    tg = TelegramReviewer(
+        os.environ["TELEGRAM_BOT_TOKEN"], os.environ["TELEGRAM_CHAT_ID"],
+        timeout_s=CFG["telegram"]["timeout_hours"] * 3600,
+        remind_every_s=CFG["telegram"]["remind_every_minutes"] * 60,
+    )
+
+    image_path = custom_image_path
+    headline = "Direct Submission"
+
+    if generate_infographic and not image_path:
+        print("\n[Direct Post] Extracting visual idea & designing infographic...")
+        try:
+            res = call_json(
+                system="You are an expert graphic design assistant. Given a LinkedIn post, return JSON: {\"headline\": \"short title 3-5 words\", \"infographic_idea\": \"2-3 sentences describing a visual layout or metaphor explaining the key points\"}",
+                content=f"POST:\n{post_text}",
+                max_tokens=1000
+            )
+            headline = res.get("headline", "Tech Insights")
+            idea = res.get("infographic_idea", "Visual breakdown of the key takeaways.")
+            svg = design_svg(post_text, idea, headline, None, CFG["infographic"]["footer"])
+            image_path = out_dir / "direct_infographic.png"
+            render_svg(svg, image_path)
+            (out_dir / "direct_infographic.svg").write_text(svg)
+        except Exception as e:
+            print(f"Infographic design for direct post failed: {e}. Falling back to text-only.")
+            image_path = None
+
+    if image_path and Path(image_path).exists():
+        message_id = tg.send_draft(draft_id, headline, post_text, Path(image_path))
+    else:
+        message_id = tg.send_text_draft(draft_id, headline, post_text)
+
+    print(f"Sent direct draft {draft_id} to Telegram; waiting for your decision...")
+    decision = tg.wait_for_decision(draft_id, message_id)
+    print("Decision:", decision)
+
+    action = decision if isinstance(decision, str) else decision.get("action")
+    if action == "approved":
+        publish_to_linkedin_and_groups(
+            post=post_text,
+            image_path=image_path,
+            headline=headline,
+            sources=[],
+            draft_id=draft_id,
+            message_id=message_id,
+            tg=tg,
+        )
+        append_log({
+            "date": datetime.now().isoformat(timespec="seconds"),
+            "draft_id": draft_id,
+            "source_domain": "Direct Post",
+            "headline": headline,
+            "post_urn": "direct",
+            "chars": len(post_text),
+            "sources": []
+        })
+        print("Direct post successfully published to Wall and Groups.")
+    elif action == "revise":
+        feedback = decision.get("feedback")
+        tg._call("sendMessage", chat_id=tg.chat_id,
+                 text=f"✍️ Notes received:\n\"{feedback}\"\nRe-drafting with Claude...")
+        run(source_arg=None, dry_run=False, topic_arg=f"Revising post based on: {feedback}\nOriginal:\n{post_text}")
+    else:
+        print("Direct post was cancelled or rejected.")
+
+
 def publish_after_approval(headline, source, post, sources, image_path) -> dict:
     """Both gates must pass: the AI reviewers (already done) AND you on Telegram."""
     draft_id = datetime.now().strftime("%Y%m%d") + "-" + uuid.uuid4().hex[:8]
@@ -398,37 +519,18 @@ def publish_after_approval(headline, source, post, sources, image_path) -> dict:
     action = decision if isinstance(decision, str) else decision.get("action")
 
     if action == "approved" and get_status(draft_id) == "approved":
-        try:
-            li = LinkedInClient(os.environ["LINKEDIN_ACCESS_TOKEN"], CFG["linkedin"]["api_version"])
-            post_urn = li.post_with_image(post, image_path, alt_text=headline)
-        except Exception as e:  # noqa: BLE001
-            tg.mark_failed(draft_id, message_id, str(e))
-            raise
-        try:
-            li.comment(post_urn, "Sources:\n" + "\n".join(f"- {s['claim']}: {s['url']}" for s in sources))
-        except Exception as e:  # noqa: BLE001
-            print("Post is live, but the source comment failed:", e)
-        tg.mark_posted(draft_id, message_id, post_urn)
-        print("Posted:", post_urn)
+        post_urn = publish_to_linkedin_and_groups(
+            post=post,
+            image_path=image_path,
+            headline=headline,
+            sources=sources,
+            draft_id=draft_id,
+            message_id=message_id,
+            tg=tg,
+        )
         append_log({"date": datetime.now().isoformat(timespec="seconds"), "draft_id": draft_id,
                     "source_domain": source, "headline": headline,
                     "post_urn": post_urn, "chars": len(post), "sources": sources})
-
-        target_groups = CFG.get("linkedin", {}).get("target_groups", [])
-        if target_groups:
-            delay = CFG.get("linkedin", {}).get("group_delay_seconds", 12)
-            print(f"\nPublishing to {len(target_groups)} LinkedIn groups...")
-            try:
-                group_res = post_to_groups(target_groups, post, image_path, delay_seconds=delay)
-                success_count = len(group_res.get("success", []))
-                if success_count > 0:
-                    try:
-                        tg._call("sendMessage", chat_id=tg.chat_id, reply_to_message_id=message_id,
-                                 text=f"📢 Also published to {success_count}/{len(target_groups)} LinkedIn groups!")
-                    except Exception:
-                        pass
-            except Exception as e:
-                print("Group posting encountered an error:", e)
         return {"status": "posted"}
 
     elif action == "revise":
@@ -556,7 +658,10 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", help="browse this allowed domain instead of picking one")
     ap.add_argument("--topic", help="manually provide a topic instead of picking from source")
-    ap.add_argument("--listen", action="store_true", help="run Telegram listener for /topic or /post commands")
+    ap.add_argument("--direct", help="provide full post text directly to publish to wall & groups")
+    ap.add_argument("--image", help="path to image to accompany direct post")
+    ap.add_argument("--no-image", action="store_true", help="skip generating infographic for direct post")
+    ap.add_argument("--listen", action="store_true", help="run Telegram listener for /topic, /direct, or photos")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -568,6 +673,20 @@ if __name__ == "__main__":
         )
         def on_telegram_topic(t: str):
             run(source_arg=None, dry_run=False, topic_arg=t)
-        tg.listen_for_commands(on_telegram_topic)
+
+        def on_telegram_direct(text: str, custom_image_path: Path | None = None, generate_infographic: bool = True):
+            handle_direct_post(text, custom_image_path=custom_image_path, generate_infographic=generate_infographic)
+
+        def on_telegram_daily():
+            run(source_arg=None, dry_run=False)
+
+        tg.listen_for_commands(
+            on_topic_callback=on_telegram_topic,
+            on_direct_callback=on_telegram_direct,
+            on_daily_callback=on_telegram_daily,
+        )
+    elif args.direct:
+        img = Path(args.image) if args.image else None
+        handle_direct_post(args.direct, custom_image_path=img, generate_infographic=not args.no_image)
     else:
         run(args.source, args.dry_run, topic_arg=args.topic)

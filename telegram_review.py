@@ -23,6 +23,7 @@ import json
 import os
 import sys
 import time
+import uuid
 from pathlib import Path
 
 import requests
@@ -94,6 +95,20 @@ class TelegramReviewer:
         self.offset = ups[-1]["update_id"] + 1 if ups else None
 
     # ---------------------------------------------------------- public API
+    def download_photo(self, photo_list: list, dest_path: Path) -> Path:
+        """Download highest resolution photo from Telegram message to dest_path."""
+        if not photo_list:
+            raise ValueError("No photo found in message.")
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        file_id = photo_list[-1]["file_id"]
+        res = self._call("getFile", file_id=file_id)
+        file_path = res["file_path"]
+        download_url = f"https://api.telegram.org/file/bot{self.token}/{file_path}"
+        r = requests.get(download_url, timeout=60)
+        r.raise_for_status()
+        dest_path.write_bytes(r.content)
+        return dest_path
+
     def send_draft(self, draft_id: str, topic: str, post: str, image_path: Path) -> int:
         self._skip_old_updates()
         with open(image_path, "rb") as f:
@@ -107,6 +122,58 @@ class TelegramReviewer:
                                                      ("❌ Reject", f"reject:{draft_id}")]))
         set_status(draft_id, "pending", topic=topic, message_id=msg["message_id"])
         return msg["message_id"]
+
+    def send_text_draft(self, draft_id: str, topic: str, post: str) -> int:
+        self._skip_old_updates()
+        text = (f"📝 LinkedIn Direct Draft (Text Only)\n📌 {topic}\n"
+                f"📏 {len(post)} characters\n🆔 {draft_id}\n\n{post}")
+        msg = self._call("sendMessage", chat_id=self.chat_id, text=text[:4096],
+                         reply_markup=self._buttons([("✅ Approve & Post", f"approve:{draft_id}"),
+                                                     ("❌ Reject", f"reject:{draft_id}")]))
+        set_status(draft_id, "pending", topic=topic, message_id=msg["message_id"])
+        return msg["message_id"]
+
+    def prompt_direct_choice(self, text: str, timeout_s: int = 300) -> str:
+        """Ask user if they want an auto-designed infographic for their direct post."""
+        choice_id = uuid.uuid4().hex[:8]
+        preview = (text[:280] + "...") if len(text) > 280 else text
+        msg = self._call(
+            "sendMessage", chat_id=self.chat_id,
+            text=f"📝 Direct post received ({len(text)} chars):\n\n\"{preview}\"\n\nHow would you like to publish?",
+            reply_markup=self._buttons(
+                [("🎨 Auto-Design Infographic & Review", f"direct_info:{choice_id}")],
+                [("⚡ Post As-Is (Text Only)", f"direct_text:{choice_id}")],
+                [("❌ Cancel", f"direct_cancel:{choice_id}")]
+            )
+        )
+        message_id = msg["message_id"]
+        start = time.time()
+        while time.time() - start < timeout_s:
+            params = {"timeout": 20, "allowed_updates": ["callback_query"]}
+            if self.offset is not None:
+                params["offset"] = self.offset
+            for up in self._call("getUpdates", **params):
+                self.offset = up["update_id"] + 1
+                cq = up.get("callback_query")
+                if not cq:
+                    continue
+                data = cq.get("data", "")
+                act, _, cid = data.partition(":")
+                if cid != choice_id:
+                    continue
+                if act == "direct_info":
+                    self._answer_cq(cq["id"], text="Generating infographic...")
+                    self._set_button(message_id, "🎨 Generating Infographic...", choice_id)
+                    return "infographic"
+                elif act == "direct_text":
+                    self._answer_cq(cq["id"], text="Preparing text-only post...")
+                    self._set_button(message_id, "⚡ Text-Only Selected", choice_id)
+                    return "text_only"
+                elif act == "direct_cancel":
+                    self._answer_cq(cq["id"], text="Cancelled.")
+                    self._set_button(message_id, "❌ Cancelled", choice_id)
+                    return "cancel"
+        return "cancel"
 
     def wait_for_decision(self, draft_id: str, message_id: int) -> dict:
         """Returns dict:
@@ -301,19 +368,34 @@ class TelegramReviewer:
 
         return {"action": "rejected"}
 
-    def listen_for_commands(self, on_topic_callback, poll_interval_s: int = 5):
-        """Polls for incoming `/post <topic>` or `/topic <topic>` commands from user."""
+    def listen_for_commands(self, on_topic_callback, on_direct_callback, on_daily_callback=None, poll_interval_s: int = 5):
+        """Polls for incoming /topic, /direct, photos, or manual prompts from user."""
         self._skip_old_updates()
-        print(f"Listening on Telegram for /post or /topic commands from chat {self.chat_id}...")
-        self._call("sendMessage", chat_id=self.chat_id,
-                   text="🤖 LinkedIn Agent is listening!\n\nCommands:\n- `/topic <your topic>`: Generate a post & infographic on this topic\n- `/post <your topic>`: Same as /topic\n- Send any link or headline to draft a post.")
+        print(f"Listening on Telegram for commands from chat {self.chat_id}...")
+        help_text = (
+            "🤖 **LinkedIn Agent is live!**\n\n"
+            "Here is what you can send:\n"
+            "• `/topic <topic>`: Research, draft post + infographic, get consent -> post to Wall & all groups\n"
+            "• `/direct <post text>`: Provide your own post. Choose auto-infographic or text-only, get consent -> post to Wall & all groups\n"
+            "• **Send any photo with a caption**: Posts your photo + caption to Wall & all groups\n"
+            "• `/daily`: Run today's automated post from allowed_domains\n"
+            "• Or simply paste your post or type any topic!"
+        )
+        self._call("sendMessage", chat_id=self.chat_id, text=help_text)
 
         while True:
             params = {"timeout": 30, "allowed_updates": ["message"]}
             if self.offset is not None:
                 params["offset"] = self.offset
 
-            for up in self._call("getUpdates", **params):
+            try:
+                updates = self._call("getUpdates", **params)
+            except Exception as e:
+                print(f"Telegram polling error: {e}")
+                time.sleep(poll_interval_s)
+                continue
+
+            for up in updates:
                 self.offset = up["update_id"] + 1
                 msg = up.get("message")
                 if not msg:
@@ -324,28 +406,76 @@ class TelegramReviewer:
                 if sender != self.chat_id and chat != self.chat_id:
                     continue
 
-                text = (msg.get("text") or "").strip()
+                text = (msg.get("text") or msg.get("caption") or "").strip()
+                photos = msg.get("photo")
+
+                if text in ("/start", "/help"):
+                    self._call("sendMessage", chat_id=self.chat_id, text=help_text)
+                    continue
+
+                if text == "/daily":
+                    self._call("sendMessage", chat_id=self.chat_id,
+                               text="🚀 Triggering today's automated post discovery from allowed_domains...")
+                    if on_daily_callback:
+                        try:
+                            on_daily_callback()
+                        except Exception as e:
+                            self._call("sendMessage", chat_id=self.chat_id, text=f"⚠️ Error: {str(e)[:1000]}")
+                    continue
+
+                # Case 1: Photo uploaded with caption
+                if photos:
+                    from pathlib import Path
+                    uploads_dir = Path(__file__).parent / "output" / "telegram_uploads"
+                    img_path = uploads_dir / f"upload_{int(time.time())}.png"
+                    try:
+                        self.download_photo(photos, img_path)
+                        self._call("sendMessage", chat_id=self.chat_id,
+                                   text="📸 Photo received! Preparing direct post with your image...")
+                        on_direct_callback(text or "Shared update", custom_image_path=img_path, generate_infographic=False)
+                    except Exception as e:
+                        self._call("sendMessage", chat_id=self.chat_id, text=f"⚠️ Failed to process photo: {e}")
+                    continue
+
                 if not text:
                     continue
 
-                topic = None
-                if text.startswith(("/topic ", "/post ")):
+                # Case 2: Explicit /topic command
+                if text.startswith(("/topic ", "/idea ", "/draft ")):
                     topic = text.split(" ", 1)[1].strip()
-                elif text == "/start" or text == "/help":
                     self._call("sendMessage", chat_id=self.chat_id,
-                               text="👋 Send `/topic <topic>` or `/post <topic>` to generate a new post & infographic. You'll review and approve before anything goes live!")
-                    continue
-                else:
-                    topic = text
-
-                if topic:
-                    self._call("sendMessage", chat_id=self.chat_id,
-                               text=f"🎯 Got it! Researching and drafting a post on:\n'{topic}'\nI'll send the draft and infographic here for your approval.")
+                               text=f"🎯 Researching & drafting on topic:\n'{topic}'\nI will send the draft + infographic for your approval.")
                     try:
                         on_topic_callback(topic)
                     except Exception as e:
-                        self._call("sendMessage", chat_id=self.chat_id,
-                                   text=f"⚠️ Error while generating post:\n{str(e)[:1000]}")
+                        self._call("sendMessage", chat_id=self.chat_id, text=f"⚠️ Error: {str(e)[:1000]}")
+                    continue
+
+                # Case 3: Explicit /direct or /publish command
+                if text.startswith(("/direct ", "/publish ")):
+                    direct_text = text.split(" ", 1)[1].strip()
+                    choice = self.prompt_direct_choice(direct_text)
+                    if choice == "infographic":
+                        on_direct_callback(direct_text, custom_image_path=None, generate_infographic=True)
+                    elif choice == "text_only":
+                        on_direct_callback(direct_text, custom_image_path=None, generate_infographic=False)
+                    continue
+
+                # Case 4: Free-form text
+                # If long (>=80 chars), treat as direct post; else treat as topic
+                if len(text) >= 80:
+                    choice = self.prompt_direct_choice(text)
+                    if choice == "infographic":
+                        on_direct_callback(text, custom_image_path=None, generate_infographic=True)
+                    elif choice == "text_only":
+                        on_direct_callback(text, custom_image_path=None, generate_infographic=False)
+                else:
+                    self._call("sendMessage", chat_id=self.chat_id,
+                               text=f"🎯 Researching & drafting on topic:\n'{text}'\nI will send the draft + infographic for your approval.")
+                    try:
+                        on_topic_callback(text)
+                    except Exception as e:
+                        self._call("sendMessage", chat_id=self.chat_id, text=f"⚠️ Error: {str(e)[:1000]}")
 
     def mark_posted(self, draft_id: str, message_id: int, post_urn: str):
         set_status(draft_id, "posted", post_urn=post_urn)
