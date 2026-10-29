@@ -15,6 +15,8 @@ only ever be posted once. Only taps from TELEGRAM_CHAT_ID are accepted.
 
 Helper:  python telegram_review.py --find-chat-id
          (send any message to your bot first; prints your chat id)
+         python telegram_review.py --ping
+         (sends a test message to verify Telegram bot ping)
 """
 from __future__ import annotations
 import json
@@ -165,10 +167,18 @@ class TelegramReviewer:
 
 
 # ------------------------------------------------------------- helper CLI
-if __name__ == "__main__" and "--find-chat-id" in sys.argv:
+if __name__ == "__main__":
     from dotenv import load_dotenv
     load_dotenv(Path(__file__).parent / ".env")
     token = os.environ["TELEGRAM_BOT_TOKEN"]
-    ups = requests.get(API.format(token=token, method="getUpdates"), timeout=30).json()["result"]
-    chats = {(u.get("message") or {}).get("chat", {}).get("id") for u in ups} - {None}
-    print("Chat id(s):", chats or "none yet — send any message to your bot, then run again")
+
+    if "--find-chat-id" in sys.argv:
+        ups = requests.get(API.format(token=token, method="getUpdates"), timeout=30).json()["result"]
+        chats = {(u.get("message") or {}).get("chat", {}).get("id") for u in ups} - {None}
+        print("Chat id(s):", chats or "none yet — send any message to your bot, then run again")
+    elif "--test" in sys.argv or "--ping" in sys.argv:
+        chat_id = os.environ["TELEGRAM_CHAT_ID"]
+        reviewer = TelegramReviewer(token, chat_id)
+        msg = reviewer._call("sendMessage", chat_id=chat_id, text="🤖 Test ping from LinkedIn Agent bot! Connection verified.")
+        print(f"Ping delivered successfully to chat {chat_id}! Message ID: {msg.get('message_id')}")
+
