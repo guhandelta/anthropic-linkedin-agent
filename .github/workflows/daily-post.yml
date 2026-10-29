@@ -2,10 +2,10 @@ name: Daily LinkedIn post
 
 on:
   schedule:
-    # Option A (Once a day): 9:15 AM EDT (13:15 UTC) Monday - Friday
-    - cron: "15 13 * * 1-5"
+    # Option A (Once a day): 9:15 AM EDT (13:15 UTC) Monday - Sunday
+    - cron: "15 13 * * *"
     # Option B (Twice a day): Uncomment the line below for 9:15 AM & 5:15 PM EDT (13:15 & 21:15 UTC)
-    # - cron: "15 13,21 * * 1-5"
+    # - cron: "15 13,21 * * *"
 
   workflow_dispatch:
     inputs:
