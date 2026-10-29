@@ -27,5 +27,20 @@
         "claim": "Industry best practices and guidelines"
       }
     ]
+  },
+  {
+    "date": "2026-10-29T15:51:27",
+    "draft_id": "20261029-8b6179b8",
+    "source_domain": "docs.pydantic.dev/latest/changelog",
+    "headline": "/topic The architecture shift: Why Microfrontends + BFFs are",
+    "post_urn": "urn:li:share:7521658500947648512",
+    "chars": 2610,
+    "sources": [
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web",
+        "published": "2024-01-01",
+        "claim": "Industry best practices and guidelines"
+      }
+    ]
   }
 ]
