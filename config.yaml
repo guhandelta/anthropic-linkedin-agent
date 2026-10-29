@@ -41,7 +41,6 @@ research:
   skip_recent_days: 3       # don't use the same source again within 3 days
   must_cite: true           # every factual claim must come from a source it read
   allowed_domains:          # domains only (no paths). Official vendors, standards and advisories
-    # Web frameworks and languages
     - react.dev
     - nextjs.org
     - typescriptlang.org
@@ -58,18 +57,15 @@ research:
     - svelte.dev
     - angular.dev
     - tailwindcss.com
-    # Web platform
     - developer.mozilla.org
     - web.dev
     - developer.chrome.com
-    # AI vendors and research
     - openai.com
     - anthropic.com
     - huggingface.co
     - langchain.com
     - deeplearning.ai
     - arxiv.org
-    # Cloud, infrastructure and release notes
     - developers.googleblog.com
     - devblogs.microsoft.com
     - blog.cloudflare.com
@@ -78,7 +74,6 @@ research:
     - cloud.google.com
     - docker.com
     - kubernetes.io
-    # Security advisories and standards
     - owasp.org
     - nvd.nist.gov
     - cisa.gov
