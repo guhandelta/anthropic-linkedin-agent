@@ -188,6 +188,7 @@ Review and command your agent directly from your mobile device via Telegram:
   * `[💡 Suggest Topics]`: Discovers 3 fresh technical topics and lets you pick with a single tap.
   * `[❌ Skip / Reject]`: Cancels the draft without posting.
 * **Auto-Reminder Daemon:** Dispatches reminder pings every 20 minutes if a draft is awaiting approval, expiring safely after 3 hours.
+* **GitHub Actions Inactivity Guard:** Monitors human commit history and delivers Telegram alerts every 20 days (and daily after day 52) to prevent GitHub from automatically disabling scheduled cron workflows after 60 days of inactivity.
 * **Anti-Double-Posting Protection:** Inline buttons transition to an inert `[✅ Posted]` or `[❌ Cancelled]` state upon click, preventing duplicate triggers.
 
 ### 5. 🌐 Multi-Channel Distribution (Personal Wall + Groups)

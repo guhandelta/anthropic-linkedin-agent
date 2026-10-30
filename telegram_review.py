@@ -20,8 +20,10 @@ Helper:  python telegram_review.py --find-chat-id
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 import os
+import subprocess
 import sys
 import time
 import uuid
@@ -61,6 +63,127 @@ def set_status(draft_id: str, status: str, **extra):
 
 
 # ------------------------------------------------------------- Telegram Bot Client
+REMINDER_STATE_FILE = Path(__file__).parent / "state" / "cron_reminder.json"
+
+
+def get_last_human_commit_days(repo_dir: Path | None = None) -> int | None:
+    """Returns the number of days since the last non-bot commit to the repository."""
+    target_dir = repo_dir or Path(__file__).parent
+    bot_names = {"linkedin-agent", "github-actions", "github-actions[bot]", "actions-user"}
+    bot_emails = {"agent@users.noreply.github.com", "actions@github.com"}
+    try:
+        res = subprocess.run(
+            ["git", "-C", str(target_dir), "log", "-n", "60", "--format=%ct|%an|%ae"],
+            capture_output=True, text=True, check=True
+        )
+        for line in res.stdout.strip().splitlines():
+            parts = line.split("|")
+            if len(parts) >= 3:
+                ts, author, email = parts[0].strip(), parts[1].strip().lower(), parts[2].strip().lower()
+                if author in bot_names or email in bot_emails or "actions" in email or ("noreply" in email and "bot" in author):
+                    continue
+                dt = datetime.fromtimestamp(int(ts), tz=timezone.utc)
+                return max(0, (datetime.now(timezone.utc) - dt).days)
+        # Fallback to the latest commit if all were filtered
+        fallback = subprocess.run(
+            ["git", "-C", str(target_dir), "log", "-1", "--format=%ct"],
+            capture_output=True, text=True, check=True
+        )
+        out = fallback.stdout.strip()
+        if out:
+            dt = datetime.fromtimestamp(int(out), tz=timezone.utc)
+            return max(0, (datetime.now(timezone.utc) - dt).days)
+    except Exception as e:
+        print(f"[Commit Reminder] Could not query git commit history: {e}")
+    return None
+
+
+def check_commit_reminder(repo_dir: Path | None = None, force: bool = False) -> dict:
+    """Checks whether a GitHub Actions inactivity warning should be delivered.
+    Rules:
+      - Remind every 20 days (e.g. day 20, 40)
+      - Remind EVERY DAY after day 52 (day 52, 53, 54, ..., 60)
+      GitHub automatically disables scheduled Actions workflows after 60 days of inactivity.
+    """
+    days = get_last_human_commit_days(repo_dir)
+    if days is None:
+        return {"should_remind": False, "days": None, "is_urgent": False, "alert_message": "", "header_banner": ""}
+
+    cfg = {}
+    cfg_file = (repo_dir or Path(__file__).parent) / "config.yaml"
+    if cfg_file.exists():
+        try:
+            import yaml
+            cfg = yaml.safe_load(cfg_file.read_text()) or {}
+        except Exception:
+            pass
+    inactivity_cfg = cfg.get("telegram", {}).get("commit_inactivity", {})
+    interval_days = inactivity_cfg.get("interval_days", 20)
+    urgent_after_days = inactivity_cfg.get("urgent_after_days", 52)
+    cutoff_days = inactivity_cfg.get("github_limit_days", 60)
+
+    is_urgent = days >= urgent_after_days
+    # Trigger: every interval_days (e.g. 20, 40) OR every day from day 52 onwards
+    is_due = is_urgent or (days > 0 and days % interval_days == 0)
+
+    # Avoid duplicate alert delivery on the same calendar day unless forced
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    state = {}
+    if REMINDER_STATE_FILE.exists():
+        try:
+            state = json.loads(REMINDER_STATE_FILE.read_text())
+        except Exception:
+            pass
+
+    last_notified_date = state.get("last_notified_date")
+    last_notified_days = state.get("last_notified_days")
+
+    if not force and is_due and last_notified_date == today_str and last_notified_days == days:
+        is_due = False
+
+    days_left = max(0, cutoff_days - days)
+
+    if is_urgent:
+        header_banner = f"🚨 URGENT: It has been {days} days since your last commit! GitHub Actions cron disables at 60 days ({days_left}d left). Push a commit today!"
+        alert_message = (
+            f"🚨 **URGENT: GitHub Actions Cron Inactivity Alert**\n\n"
+            f"⚠️ It has been **{days} days** since your last repository commit!\n\n"
+            f"GitHub automatically disables scheduled Actions workflows after **{cutoff_days} days** of inactivity. "
+            f"You have **{days_left} day{'s' if days_left != 1 else ''}** remaining before the daily research & post pipeline is stopped.\n\n"
+            f"👉 **Action required:** Please make and push any commit to your repository to keep the automated post generator running."
+        )
+    else:
+        header_banner = f"🔔 Maintenance Reminder: {days} days since last commit (GitHub disables Actions cron at 60 days). Push a commit to keep cron active."
+        alert_message = (
+            f"🔔 **GitHub Actions Maintenance Reminder**\n\n"
+            f"It has been **{days} days** since your last repository commit!\n\n"
+            f"GitHub automatically disables scheduled Actions workflows after **{cutoff_days} days** of inactivity. "
+            f"You have **{days_left} days** remaining before the daily research & post pipeline is paused.\n\n"
+            f"💡 **Tip:** Push a small commit or update to your repository to reset GitHub's 60-day inactivity timer."
+        )
+
+    return {
+        "should_remind": is_due or force,
+        "days": days,
+        "is_urgent": is_urgent,
+        "alert_message": alert_message,
+        "header_banner": header_banner
+    }
+
+
+def record_commit_reminder_sent(days: int):
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    try:
+        REMINDER_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        REMINDER_STATE_FILE.write_text(json.dumps({
+            "last_notified_date": today_str,
+            "last_notified_days": days,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }, indent=2))
+    except Exception as e:
+        print(f"[Commit Reminder] Could not persist reminder state: {e}")
+
+
 class TelegramReviewer:
     """Client for managing human editorial reviews and conversational bot interactions via Telegram."""
     
@@ -154,13 +277,25 @@ class TelegramReviewer:
                                         ("❌ Reject", f"reject:{draft_id}")]))
         return msg["message_id"]
 
+    def _notify_commit_inactivity_if_due(self) -> str | None:
+        """Sends an inactivity warning message if due and returns a header banner string (or None)."""
+        info = check_commit_reminder()
+        if info.get("should_remind") and info.get("alert_message"):
+            try:
+                self._call("sendMessage", chat_id=self.chat_id, text=info["alert_message"])
+                if info.get("days") is not None:
+                    record_commit_reminder_sent(info["days"])
+            except Exception as e:
+                print(f"[Commit Reminder] Could not send Telegram alert: {e}")
+            return info.get("header_banner")
+        return None
+
     def send_draft(self, draft_id: str, topic: str, post: str, image_path: Path) -> int:
         """Deliver full draft package to Telegram: media infographic + full text with review buttons."""
         self._skip_old_updates()
+        banner = self._notify_commit_inactivity_if_due()
         is_gif = image_path.suffix.lower() == ".gif"
         caption = f"✨ Animated Infographic for review\n🆔 {draft_id}" if is_gif else f"🖼️ Infographic for today's draft\n🆔 {draft_id}"
-        
-        # Upload media: sendAnimation for GIF, sendPhoto for PNG
         with open(image_path, "rb") as f:
             if is_gif:
                 self._call("sendAnimation", chat_id=self.chat_id,
@@ -172,7 +307,8 @@ class TelegramReviewer:
                            files={"photo": f})
                            
         # Send full post text with review buttons attached
-        text = (f"📝 New LinkedIn draft for review\n📌 Topic: {topic}\n"
+        header = f"{banner}\n\n" if banner else ""
+        text = (f"{header}📝 New LinkedIn draft for review\n📌 Topic: {topic}\n"
                 f"📏 {len(post)} characters\n🆔 {draft_id}\n\n{post}")
         message_id = self._send_review_text(text, draft_id)
         set_status(draft_id, "pending", topic=topic, message_id=message_id)
@@ -181,7 +317,9 @@ class TelegramReviewer:
     def send_text_draft(self, draft_id: str, topic: str, post: str) -> int:
         """Deliver a text-only draft to Telegram with review buttons attached."""
         self._skip_old_updates()
-        text = (f"📝 LinkedIn Direct Draft (Text Only)\n📌 {topic}\n"
+        banner = self._notify_commit_inactivity_if_due()
+        header = f"{banner}\n\n" if banner else ""
+        text = (f"{header}📝 LinkedIn Direct Draft (Text Only)\n📌 {topic}\n"
                 f"📏 {len(post)} characters\n🆔 {draft_id}\n\n{post}")
         message_id = self._send_review_text(text, draft_id)
         set_status(draft_id, "pending", topic=topic, message_id=message_id)
@@ -716,3 +854,20 @@ if __name__ == "__main__":
         reviewer = TelegramReviewer(token, chat_id)
         msg = reviewer._call("sendMessage", chat_id=chat_id, text="🤖 Test ping from LinkedIn Agent bot! Connection verified.")
         print(f"Ping delivered successfully to chat {chat_id}! Message ID: {msg.get('message_id')}")
+    elif "--check-commit-reminder" in sys.argv:
+        info = check_commit_reminder(force=True)
+        print("Commit Inactivity Reminder Check:")
+        print(f"  Days since last human commit: {info['days']}")
+        print(f"  Should remind: {info['should_remind']}")
+        print(f"  Is urgent (>= 52 days): {info['is_urgent']}")
+        print(f"  Header banner:\n    {info['header_banner']}")
+        print(f"  Alert message:\n{info['alert_message']}")
+    elif "--test-reminder" in sys.argv:
+        chat_id = os.environ["TELEGRAM_CHAT_ID"]
+        reviewer = TelegramReviewer(token, chat_id)
+        info = check_commit_reminder(force=True)
+        if info.get("alert_message"):
+            msg = reviewer._call("sendMessage", chat_id=chat_id, text=f"[TEST SIMULATION]\n\n{info['alert_message']}")
+            print(f"Test reminder sent to chat {chat_id}! Message ID: {msg.get('message_id')}")
+        else:
+            print("No commit history found to simulate reminder.")

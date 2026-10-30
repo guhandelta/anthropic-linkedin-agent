@@ -216,3 +216,73 @@ def test_set_bot_commands(monkeypatch):
 
     assert reviewer.set_bot_commands() is True
     assert mock_call.call_count >= 2
+
+
+def test_get_last_human_commit_days(tmp_path: Path, monkeypatch):
+    # Mock subprocess.run for git log
+    mock_res = MagicMock()
+    # 2 commits: one bot commit, one human commit 3 days ago
+    ts_now = int(telegram_review.datetime.now(telegram_review.timezone.utc).timestamp())
+    ts_3days_ago = ts_now - (3 * 86400)
+    mock_res.stdout = f"{ts_now}|github-actions[bot]|actions@github.com\n{ts_3days_ago}|Alice|alice@example.com\n"
+    monkeypatch.setattr(telegram_review.subprocess, "run", MagicMock(return_value=mock_res))
+
+    days = telegram_review.get_last_human_commit_days(tmp_path)
+    assert days == 3
+
+
+def test_check_commit_reminder_intervals_and_urgency(tmp_path: Path, monkeypatch):
+    state_file = tmp_path / "cron_reminder.json"
+    monkeypatch.setattr(telegram_review, "REMINDER_STATE_FILE", state_file)
+
+    # Day 10 (not due: not multiple of 20, not >= 52)
+    monkeypatch.setattr(telegram_review, "get_last_human_commit_days", lambda repo: 10)
+    info = telegram_review.check_commit_reminder(tmp_path)
+    assert info["should_remind"] is False
+    assert info["is_urgent"] is False
+
+    # Day 20 (due: multiple of 20)
+    monkeypatch.setattr(telegram_review, "get_last_human_commit_days", lambda repo: 20)
+    info = telegram_review.check_commit_reminder(tmp_path)
+    assert info["should_remind"] is True
+    assert info["is_urgent"] is False
+    assert "Maintenance Reminder" in info["alert_message"]
+
+    # Day 55 (due and urgent: >= 52)
+    monkeypatch.setattr(telegram_review, "get_last_human_commit_days", lambda repo: 55)
+    info = telegram_review.check_commit_reminder(tmp_path)
+    assert info["should_remind"] is True
+    assert info["is_urgent"] is True
+    assert "URGENT" in info["alert_message"]
+
+
+def test_check_commit_reminder_deduplication(tmp_path: Path, monkeypatch):
+    state_file = tmp_path / "cron_reminder.json"
+    monkeypatch.setattr(telegram_review, "REMINDER_STATE_FILE", state_file)
+
+    # Send reminder on Day 20
+    monkeypatch.setattr(telegram_review, "get_last_human_commit_days", lambda repo: 20)
+    telegram_review.record_commit_reminder_sent(20)
+
+    # Next check on same day should not be due
+    info = telegram_review.check_commit_reminder(tmp_path)
+    assert info["should_remind"] is False
+
+    # Force flag should still trigger
+    info_forced = telegram_review.check_commit_reminder(tmp_path, force=True)
+    assert info_forced["should_remind"] is True
+
+
+def test_notify_commit_inactivity_if_due(monkeypatch):
+    reviewer = telegram_review.TelegramReviewer("test-token", "12345")
+    mock_call = MagicMock(return_value={"message_id": 111})
+    monkeypatch.setattr(reviewer, "_call", mock_call)
+
+    # When due
+    monkeypatch.setattr(telegram_review, "check_commit_reminder", lambda: {
+        "should_remind": True, "alert_message": "Alert!", "days": 20, "header_banner": "Banner!"
+    })
+    banner = reviewer._notify_commit_inactivity_if_due()
+    assert banner == "Banner!"
+    mock_call.assert_called_with("sendMessage", chat_id="12345", text="Alert!")
+
