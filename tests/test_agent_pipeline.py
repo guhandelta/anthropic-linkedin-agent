@@ -121,33 +121,63 @@ def test_editorial_review_and_fact_check(tmp_path: Path, monkeypatch):
     dummy_img.write_bytes(b"dummy image")
 
     # Mock reviewer approving
-    mock_rev_call = MagicMock(return_value={
+    mock_rev_call = {
         "approved": True,
-        "scores": {"meaningful": 5, "sourced": 5, "on_topic": 5, "image_text": 5, "image_match": 5, "professional": 5},
+        "scores": {"meaningful": 5, "sourced": 5, "on_topic": 5, "image_text": 5,
+                   "image_match": 5, "professional": 5, "technical_depth": 5, "takeaway": 5},
         "issues": []
-    })
-    mock_fc_call = MagicMock(return_value={
+    }
+    mock_fc_call = {
         "approved": True,
+        "claims_checked": 1,
+        "evidence": [{"url": "https://react.dev", "quote": "React documents reusable interface components"}],
         "issues": []
-    })
+    }
 
     monkeypatch.setattr(agent, "call_json", MagicMock(side_effect=[mock_rev_call, mock_fc_call]))
+    monkeypatch.setattr(agent, "verify_sources", MagicMock(return_value=[
+        {"url": "https://react.dev/", "text": "React documents reusable interface components for practical web applications.",
+         "published_dates": []}
+    ]))
     monkeypatch.setitem(agent.CFG["review"], "passes", 1)
 
     ok, issues, detail = agent.review_all(
-        "Headline", "Post content", [{"url": "https://react.dev"}], dummy_img, is_custom_topic=True
+        "Headline", "Post content",
+        [{"url": "https://react.dev", "claim": "React documents reusable interface components"}],
+        dummy_img, is_custom_topic=True
     )
     assert ok is True
     assert issues == []
 
 
-def test_suggest_topics(monkeypatch):
-    mock_call = MagicMock(return_value={"topic": "Anthropic Claude 3.5 Sonnet", "source": "anthropic.com/news"})
+def test_suggest_topics(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent, "ROOT", tmp_path)
+    monkeypatch.setattr(agent, "load_log", MagicMock(return_value=[]))
+    monkeypatch.setattr(agent.random, "sample", lambda values, count: ["react.dev/reference"])
+    monkeypatch.setattr(agent, "verify_sources", MagicMock(return_value=[
+        {"url": "https://react.dev/reference",
+         "text": "React effects synchronize components with external systems when needed.",
+         "published_dates": []}
+    ]))
+    candidate = {
+        "topic": "Use React effects only for external synchronization",
+        "angle": "Avoid unnecessary effects in local state calculations",
+        "technical_takeaway": "Move derived values into render and reserve effects for external systems",
+        "topic_kind": "evergreen", "source_url": "https://react.dev/reference",
+        "published": None, "source_claim": "Effects synchronize React components with external systems"
+    }
+    mock_call = MagicMock(side_effect=[candidate, {
+        "approved": True,
+        "evidence_quote": "React effects synchronize components with external systems when needed.",
+        "issues": [],
+    }, candidate])
     monkeypatch.setattr(agent, "call_json", mock_call)
 
     topics = agent.suggest_topics(count=2)
     assert len(topics) >= 1
     assert "topic" in topics[0]
+    assert (tmp_path / "topic_history.json").exists()
+    assert agent.suggest_topics(count=2) == []
 
 
 def test_call_anthropic_json_success_and_pause(monkeypatch):
@@ -276,7 +306,9 @@ def test_run_dry_run_success(tmp_path: Path, monkeypatch):
 
     mock_draft = {
         "post": "🚀 Practical insight on modern frontends! " + "word " * 180 + "#Tech #Dev #Coding",
-        "headline": "Frontend Deep Dive",
+        "headline": "Modern frontend rendering tradeoffs",
+        "topic_kind": "evergreen",
+        "technical_takeaway": "Check modern frontend rendering tradeoffs before choosing a large library",
         "sources": [{"url": "https://react.dev/blog/item", "published": recent_date, "claim": "Fast builds"}],
         "infographic_idea": "Diagram showing the compilation steps clearly."
     }
@@ -290,4 +322,12 @@ def test_run_dry_run_success(tmp_path: Path, monkeypatch):
     # Execute dry run pipeline
     agent.run(source_arg="react.dev/blog", dry_run=True, tg=mock_tg, tracker_id=999)
     mock_tg.update_progress.assert_called()
+
+    # A topic selected from Suggest Topics must not reject itself as a duplicate.
+    from quality import remember_topic
+    remember_topic(tmp_path / "topic_history.json", "Modern frontend rendering tradeoffs",
+                   ["https://react.dev/blog/item"], "evergreen",
+                   status="suggested", source="react.dev/blog")
+    agent.run(source_arg="react.dev/blog", topic_arg="Modern frontend rendering tradeoffs",
+              dry_run=True, tg=mock_tg, tracker_id=999)
 

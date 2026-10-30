@@ -54,10 +54,15 @@ telegram:
 
 research:
   search_tool: web_search_20250305   # Anthropic web search tool version
-  pick: random_source       # each run browses one allowed source chosen at random
-  max_age_days: 7           # only items published in the last 7 days
+  pick: random_source       # choose one approved source per run
+  evergreen_share: 0.4      # sometimes start from Web API and standards references
+  evergreen_sources:
+    - developer.mozilla.org/en-US/docs/Web/API
+    - web.dev/learn
+    - react.dev/reference
+    - httpwg.org/specs/
   skip_recent_days: 3       # don't use the same source again within 3 days
-  must_cite: true           # every factual claim must come from a source it read
+  must_cite: true           # every factual claim must come from a verified source page
   allowed_domains:          # official vendors, standards, advisories, blogs and changelogs
     - openai.com/news/
     - anthropic.com/news
@@ -86,6 +91,7 @@ research:
     - v0.app/docs/pre-installed-agents
     - v0.app/docs/slack
     - react.dev/blog
+    - react.dev/reference
     - nextjs.org/blog
     - svelte.dev/blog
     - solidjs.com/blog
@@ -121,7 +127,9 @@ research:
     - docker.com/blog/
     - kubernetes.io/blog/
     - web.dev/blog
+    - web.dev/learn
     - developer.mozilla.org/en-US/blog/
+    - developer.mozilla.org/en-US/docs/Web/API
     - httpwg.org/specs/
     - httpwg.org/work-in-progress/
     - owasp.org/blog/
