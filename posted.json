@@ -42,5 +42,40 @@
         "claim": "Industry best practices and guidelines"
       }
     ]
+  },
+  {
+    "date": "2026-10-30T15:02:43",
+    "draft_id": "20261030-6a3fc42a",
+    "source_domain": "github.com/mrdoob/three.js/releases",
+    "headline": "Removal of Deprecated Code in Three.js r187",
+    "post_urn": "urn:li:share:7522008644377296896",
+    "chars": 1027,
+    "sources": [
+      {
+        "url": "https://github.com/mrdoob/three.js/releases?after=r18",
+        "published": "2026-10-30",
+        "claim": "In the latest Three.js release (r187), the team has removed code that was deprecated back in r177."
+      }
+    ]
+  },
+  {
+    "date": "2026-10-30T15:27:54",
+    "draft_id": "20261030-135a46c1",
+    "source_domain": "httpwg.org/work-in-progress",
+    "headline": "Breaking the Monolith: Why 3D UIs and Micro-Frontends (MFE)",
+    "post_urn": "urn:li:share:7522015198522626048",
+    "chars": 2233,
+    "sources": [
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Games/Techniques/3D_on_the_web/Building_up_a_basic_demo_with_Three.js",
+        "published": "2024-01-01",
+        "claim": "Industry best practices and guidelines"
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/WebGL_best_practices",
+        "published": "2024-01-01",
+        "claim": "Industry best practices and guidelines"
+      }
+    ]
   }
 ]

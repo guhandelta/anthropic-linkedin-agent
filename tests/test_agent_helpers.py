@@ -120,3 +120,24 @@ def test_web_tools():
     assert len(tools) == 1
     assert tools[0]["type"] == agent.CFG["research"]["search_tool"]
     assert "react.dev" in tools[0]["allowed_domains"]
+
+
+def test_fit_to_character_range():
+    # 1. Test short post gets padded into strict [2970, 2999] range
+    short_post = "🚀 Modern frontend architecture insight! " + "word " * 100 + "\n\n#React #Dev"
+    fitted_short = agent.fit_to_character_range(short_post, min_chars=2970, max_chars=2999)
+    assert 2970 <= len(fitted_short) <= 2999
+
+    # 2. Test long post gets trimmed into strict [2970, 2999] range
+    long_post = "💡 Deep dive into distributed consensus mechanisms. " + "system design details " * 200 + "\n\n#Cloud #Tech #DevOps"
+    fitted_long = agent.fit_to_character_range(long_post, min_chars=2970, max_chars=2999)
+    assert 2970 <= len(fitted_long) <= 2999
+
+    # 3. Test post already in range remains intact
+    exact_post = ("A" * 2980)
+    fitted_exact = agent.fit_to_character_range(exact_post, min_chars=2970, max_chars=2999)
+    assert len(fitted_exact) == 2980
+
+    # 4. Verify hard_checks accepts fitted post
+    issues = agent.hard_checks(fitted_short)
+    assert not any("must be >=" in i or "must be <=" in i for i in issues)

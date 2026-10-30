@@ -11,11 +11,11 @@ author:
     Explains concepts simply, avoids hype.
 
 post:
-  min_chars: 700       # your target range
-  max_chars: 3000      # LinkedIn allows 3000; ~1300 reads best on mobile
-  hashtags: 3
+  min_chars: 2970      # strictly between 2970 - 2999 characters in all posts
+  max_chars: 2999      # LinkedIn allows 3000; strictly cap at 2999
+  hashtags: 4
   min_emojis: 3        # meaningful emojis sprinkled across the post
-  max_emojis: 7
+  max_emojis: 6
 
 review:
   min_score: 4         # every review criterion must score >= 4 out of 5

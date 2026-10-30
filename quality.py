@@ -231,6 +231,11 @@ def fetch_source_page(url: str, allowed_hosts: set[str]) -> dict:
         copy = " ".join(" ".join(parser.parts).split())
         if len(copy) < 100:
             raise ValueError(f"Source page has too little readable text: {url}")
+        url_match = re.search(r"/(20\d\d)[/-](0[1-9]|1[0-2])[/-](0[1-9]|[12]\d|3[01])", current)
+        if url_match:
+            parser.dates.add(f"{url_match.group(1)}-{url_match.group(2)}-{url_match.group(3)}")
+        for d in re.findall(r"\b(20\d\d-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01]))\b", page):
+            parser.dates.add(d)
         return {"url": canonical_url(current), "text": copy, "published_dates": sorted(parser.dates)}
     raise ValueError(f"Source redirected too many times: {url}")
 
