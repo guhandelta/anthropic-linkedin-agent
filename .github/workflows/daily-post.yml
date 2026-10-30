@@ -1,13 +1,28 @@
+# ==============================================================================
+# GitHub Actions Automation: Daily LinkedIn Post Pipeline
+# ==============================================================================
+# This workflow runs the autonomous LinkedIn Agent on GitHub's free runners.
+#
+# Execution Flow:
+#   1. Cron Trigger: Runs automatically every morning (9:15 AM America/New_York).
+#   2. Manual Trigger (workflow_dispatch): Allows on-demand runs with optional custom topics.
+#   3. Research & Drafting: Discovers fresh documentation and synthesizes practitioner post.
+#   4. Infographic Rendering: CairoSVG + libcairo2 + Chromium renders 1080x1350 SVG/GIF.
+#   5. Telegram Review Gate: Sends interactive card to user; runner holds open for approval.
+#   6. Publish & Commit: Posts to LinkedIn Wall & Groups, then commits history to repo.
+# ==============================================================================
 name: Daily LinkedIn post
 
 on:
   schedule:
-    # Option A (Once a day): 9:15 AM EDT (13:15 UTC) Monday - Sunday
-    - cron: "15 13 * * *"
-     timezone: "America/New_York"
-    # Option B (Twice a day): Uncomment the line below for 9:15 AM & 5:15 PM EDT (13:15 & 21:15 UTC)
-    # - cron: "15 13,21 * * *"
+    # Schedule: Run daily at 9:15 AM New York time (EDT/EST)
+    - cron: "15 9 * * *"
+      timezone: "America/New_York"
+    # Optional evening schedule (uncomment to publish twice daily at 5:15 PM):
+    # - cron: "15 17 * * *"
+    #   timezone: "America/New_York"
 
+  # Manual on-demand execution via GitHub Web UI
   workflow_dispatch:
     inputs:
       topic:
@@ -16,21 +31,43 @@ on:
         default: ""
 
 permissions:
-  contents: write            # to commit posted.json back
+  contents: write            # Required to commit updated posted.json and topic_history.json
+
+# Concurrency group ensures only one editorial review session runs at a time
+concurrency:
+  group: linkedin-editorial-session
+  cancel-in-progress: false
 
 jobs:
   post:
     runs-on: ubuntu-latest
-    timeout-minutes: 240     # up to 4 hours waiting for your Telegram approval
+    timeout-minutes: 240     # Holds runner up to 4 hours while waiting for user's Telegram decision
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      # Step 1: Check out repository code
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Step 2: Set up Python 3.12 runtime
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: sudo apt-get install -y fonts-dejavu-core fonts-noto-color-emoji libcairo2
-      - run: pip install -r requirements.txt
-      - run: playwright install --with-deps chromium
-      - name: Run agent
+
+      # Step 3: Install system dependencies for CairoSVG rendering (libcairo2 and clean fonts)
+      - name: Install System Graphics & Font Libraries
+        run: sudo apt-get install -y fonts-dejavu-core fonts-noto-color-emoji libcairo2
+
+      # Step 4: Install Python requirements
+      - name: Install Python Dependencies
+        run: pip install -r requirements.txt
+
+      # Step 5: Install Playwright and Chromium browser binary for LinkedIn group posting
+      - name: Install Playwright & Chromium
+        run: playwright install --with-deps chromium
+
+      # Step 6: Execute the autonomous agent pipeline
+      - name: Run LinkedIn Agent
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -39,23 +76,28 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           LI_AT: ${{ secrets.LI_AT }}
+          TOPIC: ${{ inputs.topic }}
         run: |
-          if [ -n "${{ github.event.inputs.topic }}" ]; then
-            python agent.py --topic "${{ github.event.inputs.topic }}"
+          if [ -n "$TOPIC" ]; then
+            python agent.py --topic "$TOPIC"
           else
             python agent.py
           fi
-      - name: Save outputs
+
+      # Step 7: Upload generated SVGs, GIFs, and review logs as build artifacts
+      - name: Upload Output Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: output
           path: output/
-      - name: Commit post log
+
+      # Step 8: Commit updated publication logs and topic history back to remote git repo
+      - name: Commit Post & Topic History
         if: success()
         run: |
           git config user.name "linkedin-agent"
           git config user.email "agent@users.noreply.github.com"
-          git add posted.json
-          git commit -m "Log daily post" || echo "nothing to commit"
+          git add posted.json topic_history.json
+          git commit -m "Log editorial activity [skip ci]" || echo "nothing to commit"
           git push
