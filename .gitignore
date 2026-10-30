@@ -7,3 +7,6 @@ browser_profile/
 *.pyc
 *.log
 .DS_Store
+.coverage
+.pytest_cache/
+

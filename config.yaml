@@ -1,5 +1,7 @@
 model: claude-sonnet-5-5
 openai_fallback_model: gpt-4o
+model_strategy: random   # "random" | "anthropic" | "openai"
+reasoning_effort: medium # "low" | "medium" | "high" for supported models
 
 author:
   name: Guha
@@ -45,6 +47,10 @@ linkedin:
 telegram:
   timeout_hours: 3          # wait this long for your Approve/Reject, then skip the day
   remind_every_minutes: 20  # ping you on Telegram until you answer
+  commit_inactivity:
+    interval_days: 20       # remind every 20 days (e.g. day 20, day 40)
+    urgent_after_days: 52   # remind everyday after day 52 (GitHub disables cron after 60 days)
+    github_limit_days: 60   # GitHub Actions scheduled workflow inactivity limit
 
 research:
   search_tool: web_search_20250305   # Anthropic web search tool version

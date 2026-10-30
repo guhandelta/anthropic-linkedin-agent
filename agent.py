@@ -58,6 +58,62 @@ if openai_key and not os.environ.get("OPENAI_API_KEY"):
 openai_client = OpenAI(api_key=openai_key) if openai_key else None
 
 ACTIVE_LLM_PROVIDER = "anthropic"  # "anthropic" | "openai"
+CURRENT_TELEGRAM_REVIEWER = None
+CURRENT_TRACKER_ID = None
+
+
+def _fmt_provider(p: str) -> str:
+    lp = p.lower()
+    if "openai" in lp:
+        return "OpenAI"
+    if "anthropic" in lp or "claude" in lp:
+        return "Claude"
+    return p.title()
+
+
+def notify_provider_switch(from_provider: str, to_provider: str, reason: str):
+    """Logs provider switch and notifies Telegram user if reviewer is active."""
+    clean_reason = str(reason).split("\n")[0][:140]
+    from_name = _fmt_provider(from_provider)
+    to_name = _fmt_provider(to_provider)
+    print(f"\n⚠️ [LLM Fallback] {from_name} issue: {clean_reason}\n🔄 Switching to {to_name} to continue...\n")
+    if CURRENT_TELEGRAM_REVIEWER:
+        try:
+            if CURRENT_TRACKER_ID:
+                CURRENT_TELEGRAM_REVIEWER.update_progress(
+                    CURRENT_TRACKER_ID,
+                    f"⚠️ [{from_name} Issue] Switched to {to_name}..."
+                )
+            CURRENT_TELEGRAM_REVIEWER._call(
+                "sendMessage",
+                chat_id=CURRENT_TELEGRAM_REVIEWER.chat_id,
+                text=f"⚠️ **AI Model Fallback Notice**\n\nCould not access **{from_name}** ({clean_reason}).\n\n🔄 Automatically switched to **{to_name}** to complete research & infographic."
+            )
+        except Exception:
+            pass
+
+
+def select_model_for_run(preferred: str | None = None) -> str:
+    """Select starting LLM provider based on config strategy or explicit flag."""
+    global ACTIVE_LLM_PROVIDER
+    has_anthropic = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    has_openai = bool(openai_client)
+
+    if preferred:
+        ACTIVE_LLM_PROVIDER = preferred.lower()
+    else:
+        strategy = CFG.get("model_strategy", "random").lower()
+        if strategy == "random" and has_anthropic and has_openai:
+            ACTIVE_LLM_PROVIDER = random.choice(["anthropic", "openai"])
+        elif strategy == "openai" and has_openai:
+            ACTIVE_LLM_PROVIDER = "openai"
+        elif has_anthropic:
+            ACTIVE_LLM_PROVIDER = "anthropic"
+        elif has_openai:
+            ACTIVE_LLM_PROVIDER = "openai"
+
+    print(f"🤖 [Model Strategy: {CFG.get('model_strategy', 'random')}] Active starting provider: {ACTIVE_LLM_PROVIDER.upper()}")
+    return ACTIVE_LLM_PROVIDER
 
 EMOJI_RE = re.compile(r"[☀-➿\U0001F300-\U0001FAFF]")
 
@@ -71,7 +127,8 @@ SOURCES = [
 
 def domain_for_source(s: str) -> str:
     """Extract clean domain name without paths for Anthropic web_search tool."""
-    return s.split("/")[0].lower().removeprefix("www.")
+    cleaned = s.removeprefix("https://").removeprefix("http://")
+    return cleaned.split("/")[0].lower().removeprefix("www.")
 
 
 ALLOWED = sorted({domain_for_source(s) for s in SOURCES})
@@ -261,12 +318,18 @@ def call_openai_json(system: str, content, tools: list | None = None, max_tokens
         else:
             messages.append({"role": "user", "content": str(content)})
 
-        resp = openai_client.chat.completions.create(
-            model=model_name,
-            messages=messages,
-            response_format={"type": "json_object"},
-            max_tokens=max_tokens,
-        )
+        kwargs = {
+            "model": model_name,
+            "messages": messages,
+            "response_format": {"type": "json_object"},
+            "max_tokens": max_tokens,
+        }
+        effort = CFG.get("reasoning_effort", "medium")
+        if any(m in model_name for m in ("o1", "o3", "reasoning")):
+            kwargs["reasoning_effort"] = effort
+        elif "gpt-4" in model_name:
+            kwargs["temperature"] = 0.7
+        resp = openai_client.chat.completions.create(**kwargs)
         text = resp.choices[0].message.content or ""
 
     try:
@@ -290,32 +353,45 @@ def call_openai_svg(system: str, msg: str, max_tokens: int = 8000) -> str:
     if not openai_client:
         raise RuntimeError("Claude limit reached and OpenAI API key is not configured in .env.")
     model_name = CFG.get("openai_fallback_model", "gpt-4o")
-    resp = openai_client.chat.completions.create(
-        model=model_name,
-        messages=[
+    kwargs = {
+        "model": model_name,
+        "messages": [
             {"role": "system", "content": system + "\nCRITICAL SVG RULES:\n- Absolutely NO emoji characters inside SVG text.\n- Do NOT combine lines in one <text> element. Use separate <text y='...'> elements for each line.\n- Keep every <text> element under 65 characters total.\n- Do NOT use HTML entities like &#8211; use plain hyphens or ASCII.\n- Escape raw & as &amp;."},
             {"role": "user", "content": msg}
         ],
-        max_tokens=max_tokens,
-    )
+        "max_tokens": max_tokens,
+    }
+    effort = CFG.get("reasoning_effort", "medium")
+    if any(m in model_name for m in ("o1", "o3", "reasoning")):
+        kwargs["reasoning_effort"] = effort
+    elif "gpt-4" in model_name:
+        kwargs["temperature"] = 0.7
+    resp = openai_client.chat.completions.create(**kwargs)
     text = resp.choices[0].message.content or ""
     return EMOJI_RE.sub("", extract_svg(text))
 
 
 def call_json(system: str, content, tools: list | None = None, max_tokens: int = 4000) -> dict:
-    """Routes JSON generation to Claude, automatically falling back to OpenAI if Claude limit is reached."""
+    """Routes JSON generation to active provider with bidirectional fallback."""
     global ACTIVE_LLM_PROVIDER
     if ACTIVE_LLM_PROVIDER == "anthropic":
         try:
             return call_anthropic_json(system, content, tools=tools, max_tokens=max_tokens)
         except Exception as e:
-            if openai_client and is_claude_limit_error(e):
-                print(f"\n⚠️ [LLM Fallback] Claude limit reached ({e}). Switching to OpenAI ({CFG.get('openai_fallback_model', 'gpt-4o')})...\n")
+            if openai_client:
+                notify_provider_switch("anthropic", "openai", str(e))
                 ACTIVE_LLM_PROVIDER = "openai"
-            else:
-                raise
-
-    return call_openai_json(system, content, tools=tools, max_tokens=max_tokens)
+                return call_openai_json(system, content, tools=tools, max_tokens=max_tokens)
+            raise
+    else:
+        try:
+            return call_openai_json(system, content, tools=tools, max_tokens=max_tokens)
+        except Exception as e:
+            if anthropic_client:
+                notify_provider_switch("openai", "anthropic", str(e))
+                ACTIVE_LLM_PROVIDER = "anthropic"
+                return call_anthropic_json(system, content, tools=tools, max_tokens=max_tokens)
+            raise
 
 
 # ---------------------------------------------------------------- writer (research + write)
@@ -511,13 +587,28 @@ def design_svg(post: str, idea: str, headline: str, feedback: str | None, footer
             text = "".join(b.text for b in resp.content if b.type == "text")
             return extract_svg(text)
         except Exception as e:
-            if openai_client and is_claude_limit_error(e):
-                print(f"\n⚠️ [LLM Fallback] Claude limit reached during SVG design ({e}). Switching to OpenAI ({CFG.get('openai_fallback_model', 'gpt-4o')})...\n")
+            if openai_client and not isinstance(e, ValueError):
+                notify_provider_switch("anthropic", "openai", str(e))
                 ACTIVE_LLM_PROVIDER = "openai"
-            else:
-                raise
-
-    return call_openai_svg(sys_prompt, msg, max_tokens=8000)
+                return call_openai_svg(sys_prompt, msg, max_tokens=8000)
+            raise
+    else:
+        try:
+            return call_openai_svg(sys_prompt, msg, max_tokens=8000)
+        except Exception as e:
+            if anthropic_client:
+                notify_provider_switch("openai", "anthropic", str(e))
+                ACTIVE_LLM_PROVIDER = "anthropic"
+                resp = anthropic_client.messages.create(
+                    model=CFG["model"], max_tokens=12000,
+                    system=sys_prompt,
+                    messages=[{"role": "user", "content": msg}],
+                )
+                if resp.stop_reason == "max_tokens":
+                    raise ValueError("The drawing was cut off; it must be simpler.")
+                text = "".join(b.text for b in resp.content if b.type == "text")
+                return extract_svg(text)
+            raise
 
 
 # ---------------------------------------------------------------- reviewers
@@ -772,6 +863,13 @@ def publish_to_linkedin_and_groups(
 def handle_direct_post(post_text: str, custom_image_path: Path | None = None, generate_infographic: bool = True,
                        tg: TelegramReviewer | None = None, tracker_id: int | None = None):
     """Processes a user-provided direct post: optionally creates infographic, asks consent on Telegram, and publishes."""
+    global CURRENT_TELEGRAM_REVIEWER, CURRENT_TRACKER_ID
+    if tg:
+        CURRENT_TELEGRAM_REVIEWER = tg
+    if tracker_id:
+        CURRENT_TRACKER_ID = tracker_id
+    select_model_for_run()
+
     draft_id = datetime.now().strftime("%Y%m%d") + "-direct-" + uuid.uuid4().hex[:6]
     out_dir = ROOT / "output" / datetime.now().strftime("%Y-%m-%d_%H%M")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -781,6 +879,7 @@ def handle_direct_post(post_text: str, custom_image_path: Path | None = None, ge
             timeout_s=CFG["telegram"]["timeout_hours"] * 3600,
             remind_every_s=CFG["telegram"]["remind_every_minutes"] * 60,
         )
+        CURRENT_TELEGRAM_REVIEWER = tg
 
     media_path = custom_image_path
     headline = "Direct Submission"
@@ -906,6 +1005,13 @@ def publish_after_approval(headline, source, post, sources, image_path, tg: Tele
 # ---------------------------------------------------------------- main
 def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | None = None,
         tg: TelegramReviewer | None = None, tracker_id: int | None = None):
+    global CURRENT_TELEGRAM_REVIEWER, CURRENT_TRACKER_ID
+    if tg:
+        CURRENT_TELEGRAM_REVIEWER = tg
+    if tracker_id:
+        CURRENT_TRACKER_ID = tracker_id
+    select_model_for_run()
+
     log = load_log()
     posted = posted_urls(log)
     out_dir = ROOT / "output" / datetime.now().strftime("%Y-%m-%d_%H%M")
@@ -1085,15 +1191,17 @@ if __name__ == "__main__":
     ap.add_argument("--listen", action="store_true", help="run Telegram listener for /topic, /direct, or photos")
     ap.add_argument("--setup-bot", action="store_true", help="configure Telegram bot command menu and profile")
     ap.add_argument("--openai", action="store_true", help="force using OpenAI instead of Claude")
+    ap.add_argument("--claude", action="store_true", help="force using Claude instead of OpenAI")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
-    if args.openai:
+    if args.claude:
+        select_model_for_run(preferred="anthropic")
+    elif args.openai:
         if not openai_client:
             print("❌ Cannot use --openai: OPENAI_API_KEY (or OPEN_AI_API_KEY) is not set in .env")
             sys.exit(1)
-        ACTIVE_LLM_PROVIDER = "openai"
-        print(f"⚡ Forced active LLM provider to OpenAI ({CFG.get('openai_fallback_model', 'gpt-4o')})")
+        select_model_for_run(preferred="openai")
 
     if args.setup_bot:
         tg = TelegramReviewer(os.environ["TELEGRAM_BOT_TOKEN"], os.environ["TELEGRAM_CHAT_ID"])

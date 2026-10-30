@@ -5,3 +5,5 @@ pyyaml
 requests
 cairosvg
 playwright
+pytest
+pytest-cov
