@@ -20,14 +20,23 @@ Helper:  python telegram_review.py --find-chat-id
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
 import os
 import subprocess
 import sys
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
+
+# -----------------------------------------------------------------------------
+# Auto-Bootstrap: Ensure execution inside .venv where all packages are installed
+# -----------------------------------------------------------------------------
+_ROOT = Path(__file__).resolve().parent
+_VENV_PYTHON = _ROOT / ".venv" / "bin" / "python"
+if _VENV_PYTHON.exists() and sys.executable != str(_VENV_PYTHON) and os.environ.get("AGENT_VENV_WRAPPED") != "1":
+    os.environ["AGENT_VENV_WRAPPED"] = "1"
+    os.execv(str(_VENV_PYTHON), [str(_VENV_PYTHON)] + sys.argv)
 
 import requests
 

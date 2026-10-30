@@ -45,18 +45,28 @@ Run Commands:
 """
 from __future__ import annotations
 
+import os
+import sys
+from pathlib import Path
+
+# -----------------------------------------------------------------------------
+# Auto-Bootstrap: Ensure execution inside .venv where all packages are installed
+# -----------------------------------------------------------------------------
+_ROOT = Path(__file__).resolve().parent
+_VENV_PYTHON = _ROOT / ".venv" / "bin" / "python"
+if _VENV_PYTHON.exists() and sys.executable != str(_VENV_PYTHON) and os.environ.get("AGENT_VENV_WRAPPED") != "1":
+    os.environ["AGENT_VENV_WRAPPED"] = "1"
+    os.execv(str(_VENV_PYTHON), [str(_VENV_PYTHON)] + sys.argv)
+
 import argparse
 import ast
 import base64
 import json
-import os
 import random
 import re
 import requests
-import sys
 import uuid
 from datetime import date, datetime, timedelta
-from pathlib import Path
 from urllib.parse import urlparse
 
 import yaml
