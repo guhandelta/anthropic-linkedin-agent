@@ -88,13 +88,32 @@ def test_send_text_draft(monkeypatch, tmp_state):
     assert telegram_review.get_status("draft-txt") == "pending"
 
 
+def test_long_review_text_is_sent_in_full_before_approval(monkeypatch, tmp_state):
+    reviewer = telegram_review.TelegramReviewer("test-token", "12345")
+    monkeypatch.setattr(reviewer, "_skip_old_updates", MagicMock())
+    calls = []
+
+    def fake_call(method, **kwargs):
+        calls.append((method, kwargs))
+        return {"message_id": len(calls)}
+
+    monkeypatch.setattr(reviewer, "_call", fake_call)
+    reviewer.send_text_draft("long-draft", "Technical topic", "x" * 8200)
+    messages = [kwargs for method, kwargs in calls if method == "sendMessage"]
+    assert len(messages) > 1
+    assert sum(len(message["text"]) for message in messages) > 8200
+    assert all("reply_markup" not in message for message in messages[:-1])
+    assert "reply_markup" in messages[-1]
+
+
 def test_prompt_direct_choice_infographic(monkeypatch):
     reviewer = telegram_review.TelegramReviewer("test-token", "12345")
     cid = "testcid1"
     mock_call = MagicMock()
     mock_call.side_effect = [
         {"message_id": 10},
-        [{"update_id": 1, "callback_query": {"id": "cq1", "data": f"direct_info:{cid}"}}],
+        [{"update_id": 1, "callback_query": {"id": "cq1", "data": f"direct_info:{cid}",
+                                              "from": {"id": 12345}, "message": {"chat": {"id": 12345}}}}],
         None,  # answerCallbackQuery
         None,  # editMessageReplyMarkup
     ]
@@ -111,7 +130,8 @@ def test_prompt_direct_choice_text_only(monkeypatch):
     mock_call = MagicMock()
     mock_call.side_effect = [
         {"message_id": 10},
-        [{"update_id": 1, "callback_query": {"id": "cq1", "data": f"direct_text:{cid}"}}],
+        [{"update_id": 1, "callback_query": {"id": "cq1", "data": f"direct_text:{cid}",
+                                              "from": {"id": 12345}, "message": {"chat": {"id": 12345}}}}],
         None,
         None,
     ]
@@ -128,7 +148,8 @@ def test_prompt_direct_choice_cancel(monkeypatch):
     mock_call = MagicMock()
     mock_call.side_effect = [
         {"message_id": 10},
-        [{"update_id": 1, "callback_query": {"id": "cq1", "data": f"direct_cancel:{cid}"}}],
+        [{"update_id": 1, "callback_query": {"id": "cq1", "data": f"direct_cancel:{cid}",
+                                              "from": {"id": 12345}, "message": {"chat": {"id": 12345}}}}],
         None,
         None,
     ]

@@ -1,4 +1,4 @@
-"""Telegram human-in-the-loop review for the LinkedIn agent.
+"""Telegram human-in-the-loop review and interactive command center for the LinkedIn agent.
 
 Flow
   1. Send the infographic + the full post text with two buttons:
@@ -19,6 +19,7 @@ Helper:  python telegram_review.py --find-chat-id
          (sends a test message to verify Telegram bot ping)
 """
 from __future__ import annotations
+
 import json
 import os
 import sys
@@ -28,43 +29,57 @@ from pathlib import Path
 
 import requests
 
+# Base endpoint for Telegram Bot API calls
 API = "https://api.telegram.org/bot{token}/{method}"
+
+# Persistent state file tracking each draft's review lifecycle (pending, approved, rejected, expired, posted, failed)
 STATE = Path(__file__).parent / "state" / "drafts.json"
 
 
-# ------------------------------------------------------------- draft state
+# ------------------------------------------------------------- draft state machine
 def _load() -> dict:
+    """Load persisted draft states from disk."""
     return json.loads(STATE.read_text()) if STATE.exists() else {}
 
 
 def _save(data: dict):
+    """Save draft states to disk atomically."""
     STATE.parent.mkdir(exist_ok=True)
     STATE.write_text(json.dumps(data, indent=2, ensure_ascii=False))
 
 
 def get_status(draft_id: str) -> str | None:
+    """Retrieve the current lifecycle status of a draft."""
     return _load().get(draft_id, {}).get("status")
 
 
 def set_status(draft_id: str, status: str, **extra):
+    """Transition a draft to a new lifecycle state with a timestamp and optional metadata."""
     data = _load()
     data.setdefault(draft_id, {}).update({"status": status, "updated": int(time.time()), **extra})
     _save(data)
 
 
-# ------------------------------------------------------------- bot client
+# ------------------------------------------------------------- Telegram Bot Client
 class TelegramReviewer:
+    """Client for managing human editorial reviews and conversational bot interactions via Telegram."""
+    
     def __init__(self, token: str, chat_id: str, timeout_s: int = 3 * 3600,
                  remind_every_s: int = 20 * 60):
-        self.token, self.chat_id = token, str(chat_id)
-        self.timeout_s, self.remind_every_s = timeout_s, remind_every_s
-        self.offset = None
+        self.token = token
+        self.chat_id = str(chat_id)
+        self.timeout_s = timeout_s          # Max seconds to wait for owner approval (default 3 hours)
+        self.remind_every_s = remind_every_s  # Reminder frequency (default 20 minutes)
+        self.offset = None                  # Telegram update_id offset for long polling
 
     def _call(self, method: str, files=None, **params):
+        """Execute a raw HTTP request to Telegram's Bot API with error handling."""
         url = API.format(token=self.token, method=method)
         if files:
+            # Multipart form-data for media file uploads (photos, animations)
             r = requests.post(url, data=params, files=files, timeout=70)
         else:
+            # Standard JSON payload for text messages and inline markup
             r = requests.post(url, json=params, timeout=70)
         body = r.json()
         if not body.get("ok"):
@@ -73,10 +88,11 @@ class TelegramReviewer:
 
     @staticmethod
     def _buttons(*rows):
+        """Construct a Telegram InlineKeyboardMarkup structure from rows of (label, callback_data) tuples."""
         return {"inline_keyboard": [[{"text": t, "callback_data": d} for t, d in row] for row in rows]}
 
     def _set_button(self, message_id: int, text: str, draft_id: str):
-        # Telegram can't grey out a button; an inert "noop" button is the standard way.
+        """Replace active buttons with an inert 'noop' button to prevent duplicate clicks."""
         try:
             self._call("editMessageReplyMarkup", chat_id=self.chat_id, message_id=message_id,
                        reply_markup=self._buttons([(text, f"noop:{draft_id}")]))
@@ -84,22 +100,24 @@ class TelegramReviewer:
             pass
 
     def _answer_cq(self, cq_id: str, text: str):
+        """Acknowledge a Telegram callback query with a toast notification to dismiss loading spinners."""
         try:
             self._call("answerCallbackQuery", callback_query_id=cq_id, text=text)
         except Exception:
             pass
 
     def _skip_old_updates(self):
-        """Ignore taps made before this draft was sent."""
+        """Advance polling offset to ignore messages and button taps sent before the current action."""
         ups = self._call("getUpdates", offset=-1, timeout=0)
         self.offset = ups[-1]["update_id"] + 1 if ups else None
 
     # ---------------------------------------------------------- public API
     def download_photo(self, photo_list: list, dest_path: Path) -> Path:
-        """Download highest resolution photo from Telegram message to dest_path."""
+        """Download the highest resolution image attachment from a Telegram message to disk."""
         if not photo_list:
             raise ValueError("No photo found in message.")
         dest_path.parent.mkdir(parents=True, exist_ok=True)
+        # Telegram lists photo resolutions in ascending order; [-1] is always highest quality
         file_id = photo_list[-1]["file_id"]
         res = self._call("getFile", file_id=file_id)
         file_path = res["file_path"]
@@ -110,22 +128,39 @@ class TelegramReviewer:
         return dest_path
 
     def send_progress_tracker(self, title: str) -> int:
-        """Sends an in-place progress tracker message that can be dynamically updated."""
+        """Send an in-place progress tracker message that will be updated throughout pipeline execution."""
         msg = self._call("sendMessage", chat_id=self.chat_id, text=f"⏳ **{title}**\n\n🔄 Starting pipeline...")
         return msg["message_id"]
 
     def update_progress(self, message_id: int, step_text: str):
-        """Updates the status tracker message in real-time."""
+        """Update the existing progress tracker message text in real time."""
         try:
             self._call("editMessageText", chat_id=self.chat_id, message_id=message_id,
                        text=step_text)
         except Exception:
             pass
 
+    def _send_review_text(self, text: str, draft_id: str) -> int:
+        """Send draft text, splitting into 4000-character chunks to adhere to Telegram's 4096 limit.
+        
+        Places the interactive [✅ Approve & Post] and [❌ Reject] buttons on the final message chunk.
+        """
+        chunks = [text[i:i + 4000] for i in range(0, len(text), 4000)] or [""]
+        for chunk in chunks[:-1]:
+            self._call("sendMessage", chat_id=self.chat_id, text=chunk)
+        msg = self._call(
+            "sendMessage", chat_id=self.chat_id, text=chunks[-1],
+            reply_markup=self._buttons([("✅ Approve & Post", f"approve:{draft_id}"),
+                                        ("❌ Reject", f"reject:{draft_id}")]))
+        return msg["message_id"]
+
     def send_draft(self, draft_id: str, topic: str, post: str, image_path: Path) -> int:
+        """Deliver full draft package to Telegram: media infographic + full text with review buttons."""
         self._skip_old_updates()
         is_gif = image_path.suffix.lower() == ".gif"
         caption = f"✨ Animated Infographic for review\n🆔 {draft_id}" if is_gif else f"🖼️ Infographic for today's draft\n🆔 {draft_id}"
+        
+        # Upload media: sendAnimation for GIF, sendPhoto for PNG
         with open(image_path, "rb") as f:
             if is_gif:
                 self._call("sendAnimation", chat_id=self.chat_id,
@@ -135,26 +170,25 @@ class TelegramReviewer:
                 self._call("sendPhoto", chat_id=self.chat_id,
                            caption=caption,
                            files={"photo": f})
+                           
+        # Send full post text with review buttons attached
         text = (f"📝 New LinkedIn draft for review\n📌 Topic: {topic}\n"
                 f"📏 {len(post)} characters\n🆔 {draft_id}\n\n{post}")
-        msg = self._call("sendMessage", chat_id=self.chat_id, text=text[:4096],
-                         reply_markup=self._buttons([("✅ Approve & Post", f"approve:{draft_id}"),
-                                                     ("❌ Reject", f"reject:{draft_id}")]))
-        set_status(draft_id, "pending", topic=topic, message_id=msg["message_id"])
-        return msg["message_id"]
+        message_id = self._send_review_text(text, draft_id)
+        set_status(draft_id, "pending", topic=topic, message_id=message_id)
+        return message_id
 
     def send_text_draft(self, draft_id: str, topic: str, post: str) -> int:
+        """Deliver a text-only draft to Telegram with review buttons attached."""
         self._skip_old_updates()
         text = (f"📝 LinkedIn Direct Draft (Text Only)\n📌 {topic}\n"
                 f"📏 {len(post)} characters\n🆔 {draft_id}\n\n{post}")
-        msg = self._call("sendMessage", chat_id=self.chat_id, text=text[:4096],
-                         reply_markup=self._buttons([("✅ Approve & Post", f"approve:{draft_id}"),
-                                                     ("❌ Reject", f"reject:{draft_id}")]))
-        set_status(draft_id, "pending", topic=topic, message_id=msg["message_id"])
-        return msg["message_id"]
+        message_id = self._send_review_text(text, draft_id)
+        set_status(draft_id, "pending", topic=topic, message_id=message_id)
+        return message_id
 
     def prompt_direct_choice(self, text: str, timeout_s: int = 300) -> str:
-        """Ask user if they want an auto-designed infographic for their direct post."""
+        """Prompt user whether to auto-design an infographic or publish text-only for direct posts."""
         choice_id = uuid.uuid4().hex[:8]
         preview = (text[:280] + "...") if len(text) > 280 else text
         msg = self._call(
@@ -168,6 +202,7 @@ class TelegramReviewer:
         )
         message_id = msg["message_id"]
         start = time.time()
+        
         while time.time() - start < timeout_s:
             params = {"timeout": 20, "allowed_updates": ["callback_query"]}
             if self.offset is not None:
@@ -180,6 +215,11 @@ class TelegramReviewer:
                 data = cq.get("data", "")
                 act, _, cid = data.partition(":")
                 if cid != choice_id:
+                    continue
+                # Verify sender authorization
+                if (str(cq.get("from", {}).get("id")) != self.chat_id
+                        or str(cq.get("message", {}).get("chat", {}).get("id")) != self.chat_id):
+                    self._answer_cq(cq["id"], text="Not authorised.")
                     continue
                 if act == "direct_info":
                     self._answer_cq(cq["id"], text="Generating infographic...")
@@ -196,13 +236,15 @@ class TelegramReviewer:
         return "cancel"
 
     def wait_for_decision(self, draft_id: str, message_id: int) -> dict:
-        """Returns dict:
-        {'action': 'approved'}
-        {'action': 'revise', 'feedback': '...'}
-        {'action': 'suggest_topics'}
-        {'action': 'new_topic', 'topic': '...', 'source': '...'}
-        {'action': 'rejected'}
-        {'action': 'expired'}
+        """Poll Telegram for the user's decision on a pending draft.
+        
+        Returns one of:
+        - {'action': 'approved'}
+        - {'action': 'revise', 'feedback': '...'}
+        - {'action': 'suggest_topics'}
+        - {'action': 'new_topic', 'topic': '...', 'source': '...'}
+        - {'action': 'rejected'}
+        - {'action': 'expired'}
         """
         start = time.time()
         next_ping = start + self.remind_every_s
@@ -210,6 +252,7 @@ class TelegramReviewer:
 
         while True:
             now = time.time()
+            # 1. Check expiration
             if now - start >= self.timeout_s:
                 self._set_button(message_id, "⌛ Expired — not posted", draft_id)
                 try:
@@ -221,6 +264,7 @@ class TelegramReviewer:
                 set_status(draft_id, "expired")
                 return {"action": "expired"}
 
+            # 2. Check periodic reminder interval
             if now >= next_ping and not awaiting_feedback:
                 left = int((self.timeout_s - (now - start)) // 60)
                 try:
@@ -231,6 +275,7 @@ class TelegramReviewer:
                     pass
                 next_ping += self.remind_every_s
 
+            # 3. Poll Telegram for incoming actions or messages
             wait = int(max(1, min(40, next_ping - time.time(), self.timeout_s - (time.time() - start))))
             params = {"timeout": wait, "allowed_updates": ["callback_query", "message"]}
             if self.offset is not None:
@@ -239,14 +284,14 @@ class TelegramReviewer:
             for up in self._call("getUpdates", **params):
                 self.offset = up["update_id"] + 1
 
-                # Handle text messages (e.g. revisions or manual topic command)
+                # Handle text messages (corrections, feedback, or /topic switches)
                 msg = up.get("message")
                 if msg:
                     sender = str(msg.get("from", {}).get("id"))
                     chat = str(msg.get("chat", {}).get("id"))
                     text = (msg.get("text") or "").strip()
 
-                    if sender == self.chat_id or chat == self.chat_id:
+                    if sender == self.chat_id and chat == self.chat_id:
                         if text.startswith(("/topic ", "/post ")):
                             custom_topic = text.split(" ", 1)[1].strip()
                             self._call("sendMessage", chat_id=self.chat_id,
@@ -258,28 +303,32 @@ class TelegramReviewer:
                                        text=f"✍️ Feedback received:\n\"{text}\"\n\nRegenerating post & infographic...")
                             return {"action": "revise", "feedback": text}
 
-                # Handle button callbacks
+                # Handle inline button callbacks
                 cq = up.get("callback_query")
                 if not cq:
                     continue
 
-                if str(cq["from"]["id"]) != self.chat_id and str(cq["message"]["chat"]["id"]) != self.chat_id:
+                if (str(cq.get("from", {}).get("id")) != self.chat_id
+                        or str(cq.get("message", {}).get("chat", {}).get("id")) != self.chat_id):
                     self._answer_cq(cq["id"], text="Not authorised.")
                     continue
 
                 data = cq.get("data", "")
                 action, _, cb_draft = data.partition(":")
 
+                # Inert button clicked
                 if action == "noop":
                     self._answer_cq(cq["id"], text="This action is complete.")
                     continue
 
+                # Approved: proceed to publish to Wall and Groups
                 if action == "approve" and cb_draft == draft_id:
                     set_status(draft_id, "approved")
                     self._answer_cq(cq["id"], text="🚀 Posting to LinkedIn & groups…")
                     self._set_button(message_id, "⏳ Posting…", draft_id)
                     return {"action": "approved"}
 
+                # Rejected: provide secondary options (Revise, Suggest Topics, Skip)
                 if action == "reject" and cb_draft == draft_id:
                     self._answer_cq(cq["id"], text="Draft rejected.")
                     self._set_button(message_id, "❌ Rejected", draft_id)
@@ -316,7 +365,7 @@ class TelegramReviewer:
         return {"action": "rejected"}
 
     def choose_topic(self, draft_id: str, topic_options: list[dict], timeout_s: int = 1800) -> dict:
-        """Presents topic options with buttons and waits for user choice or custom text reply."""
+        """Present candidate topic suggestions with interactive buttons and await user selection."""
         if not topic_options:
             return {"action": "none"}
 
@@ -325,7 +374,15 @@ class TelegramReviewer:
         for idx, opt in enumerate(topic_options, 1):
             t = opt.get("topic", "Topic")
             s = opt.get("source", "")
-            summary_lines.append(f"{idx}. {t} (Source: {s})")
+            angle = opt.get("angle", "")
+            takeaway = opt.get("technical_takeaway", "")
+            evidence_url = opt.get("source_url", "")
+            summary_lines.append(
+                f"{idx}. {t} ({opt.get('topic_kind', 'topic')})\n"
+                f"Angle: {angle[:180]}\n"
+                f"Try or check: {takeaway[:220]}\n"
+                f"Source: {evidence_url or s}"
+            )
             short_label = (f"{idx}. {t}")[:36]
             rows.append([(short_label, f"pick_topic:{idx-1}:{draft_id}")])
 
@@ -348,19 +405,27 @@ class TelegramReviewer:
             for up in self._call("getUpdates", **params):
                 self.offset = up["update_id"] + 1
 
+                # Handle custom topic reply as text
                 msg_obj = up.get("message")
                 if msg_obj:
                     sender = str(msg_obj.get("from", {}).get("id"))
                     text = (msg_obj.get("text") or "").strip()
-                    if sender == self.chat_id and text:
+                    chat = str(msg_obj.get("chat", {}).get("id"))
+                    if sender == self.chat_id and chat == self.chat_id and text:
                         if text.startswith(("/topic ", "/post ")):
                             text = text.split(" ", 1)[1].strip()
                         self._call("sendMessage", chat_id=self.chat_id,
                                    text=f"🎯 Understood! Drafting on:\n'{text}'")
                         return {"action": "new_topic", "topic": text, "source": None}
 
+                # Handle button selections
                 cq = up.get("callback_query")
                 if not cq:
+                    continue
+
+                if (str(cq.get("from", {}).get("id")) != self.chat_id
+                        or str(cq.get("message", {}).get("chat", {}).get("id")) != self.chat_id):
+                    self._answer_cq(cq["id"], text="Not authorised.")
                     continue
 
                 data = cq.get("data", "")
@@ -390,6 +455,7 @@ class TelegramReviewer:
 
     @staticmethod
     def _main_menu_keyboard():
+        """Render a persistent reply keyboard below the chat input for immediate action access."""
         return {
             "keyboard": [
                 [{"text": "✍️ Post from Topic"}, {"text": "📝 Direct Post"}],
@@ -401,7 +467,7 @@ class TelegramReviewer:
         }
 
     def set_bot_commands(self):
-        """Registers native Telegram bot commands for the menu button across scopes."""
+        """Register native Telegram bot slash commands so they appear in Telegram's menu button."""
         commands = [
             {"command": "topic", "description": "Research & draft post on a topic"},
             {"command": "direct", "description": "Provide post text directly to publish"},
@@ -411,11 +477,8 @@ class TelegramReviewer:
             {"command": "help", "description": "Show interactive action guide"}
         ]
         try:
-            # Register for default scope
             self._call("setMyCommands", commands=commands)
-            # Register for all private chats scope (ensures 1-on-1 chats display them)
             self._call("setMyCommands", commands=commands, scope={"type": "all_private_chats"})
-            # Register specifically for this user's chat
             if self.chat_id:
                 try:
                     self._call("setMyCommands", commands=commands, scope={"type": "chat", "chat_id": int(self.chat_id)})
@@ -435,7 +498,7 @@ class TelegramReviewer:
         on_status_callback=None,
         poll_interval_s: int = 5,
     ):
-        """Polls for incoming /topic, /direct, menu button actions, photos, or manual prompts."""
+        """Daemon long-polling loop handling incoming Telegram commands, quick buttons, and photos."""
         try:
             self._call("deleteWebhook", drop_pending_updates=False)
         except Exception:
@@ -461,7 +524,7 @@ class TelegramReviewer:
         )
         self._call("sendMessage", chat_id=self.chat_id, text=help_text, reply_markup=self._main_menu_keyboard())
 
-        user_state = None  # None | "waiting_for_topic" | "waiting_for_direct"
+        user_state = None  # Tracks conversation mode: None | "waiting_for_topic" | "waiting_for_direct"
 
         while True:
             params = {"timeout": 30, "allowed_updates": ["message", "callback_query"]}
@@ -486,9 +549,10 @@ class TelegramReviewer:
                 if not msg:
                     continue
 
+                # Ensure only authorized chat/sender can trigger actions
                 sender = str(msg.get("from", {}).get("id"))
                 chat = str(msg.get("chat", {}).get("id"))
-                if sender != self.chat_id and chat != self.chat_id:
+                if sender != self.chat_id or chat != self.chat_id:
                     print(f"[Telegram] Ignoring message from unauthorized chat: {chat} (sender: {sender})")
                     continue
 
@@ -496,20 +560,20 @@ class TelegramReviewer:
                 photos = msg.get("photo")
                 print(f"[Telegram] Received message: '{text}' (photos: {bool(photos)}) | state: {user_state}")
 
-                # Action Button: Help / Start
+                # 1. Help & Start
                 if text in ("/start", "/help", "❓ Help & Commands"):
                     user_state = None
                     self._call("sendMessage", chat_id=self.chat_id, text=help_text, reply_markup=self._main_menu_keyboard())
                     continue
 
-                # Action Button: Status
+                # 2. Status & History
                 if text in ("/status", "📊 Status & History"):
                     user_state = None
                     status_report = on_status_callback() if on_status_callback else "Agent is active and ready."
                     self._call("sendMessage", chat_id=self.chat_id, text=status_report, reply_markup=self._main_menu_keyboard())
                     continue
 
-                # Action Button: Suggest Topics
+                # 3. Suggest Topics
                 if text in ("/suggest", "💡 Suggest Topics"):
                     user_state = None
                     self._call("sendMessage", chat_id=self.chat_id, text="🔍 Scanning allowed domains for 3 fresh topic ideas...")
@@ -520,7 +584,7 @@ class TelegramReviewer:
                             self._call("sendMessage", chat_id=self.chat_id, text=f"⚠️ Error: {str(e)[:1000]}")
                     continue
 
-                # Action Button: Run Daily Post
+                # 4. Run Daily Discovery Pipeline
                 if text in ("/daily", "🚀 Run Daily Post"):
                     user_state = None
                     self._call("sendMessage", chat_id=self.chat_id, text="🚀 Triggering today's automated post discovery from allowed_domains...")
@@ -531,21 +595,21 @@ class TelegramReviewer:
                             self._call("sendMessage", chat_id=self.chat_id, text=f"⚠️ Error: {str(e)[:1000]}")
                     continue
 
-                # Action Button: Post from Topic prompt
+                # 5. Prompt for Topic
                 if text in ("✍️ Post from Topic", "/topic"):
                     user_state = "waiting_for_topic"
                     self._call("sendMessage", chat_id=self.chat_id,
                                text="✍️ **Post from Topic**\n\nPlease send the topic title, concept, or article link you'd like to post about:")
                     continue
 
-                # Action Button: Direct Post prompt
+                # 6. Prompt for Direct Post
                 if text in ("📝 Direct Post", "/direct", "/publish"):
                     user_state = "waiting_for_direct"
                     self._call("sendMessage", chat_id=self.chat_id,
                                text="📝 **Direct Post**\n\nPlease send your post text (or send a photo with a caption) to publish to your Wall and all groups:")
                     continue
 
-                # Case: Photo uploaded with caption
+                # 7. Direct Photo Upload with Caption
                 if photos:
                     user_state = None
                     uploads_dir = Path(__file__).parent / "output" / "telegram_uploads"
@@ -553,7 +617,7 @@ class TelegramReviewer:
                     try:
                         self.download_photo(photos, img_path)
                         self._call("sendMessage", chat_id=self.chat_id,
-                                   text="📸 Photo received! Preparing direct post with your image...")
+                                    text="📸 Photo received! Preparing direct post with your image...")
                         on_direct_callback(text or "Shared update", custom_image_path=img_path, generate_infographic=False)
                     except Exception as e:
                         self._call("sendMessage", chat_id=self.chat_id, text=f"⚠️ Failed to process photo: {e}")
@@ -562,7 +626,7 @@ class TelegramReviewer:
                 if not text:
                     continue
 
-                # State: User was prompted for topic
+                # 8. Handling conversational prompt states
                 if user_state == "waiting_for_topic":
                     user_state = None
                     self._call("sendMessage", chat_id=self.chat_id,
@@ -573,7 +637,6 @@ class TelegramReviewer:
                         self._call("sendMessage", chat_id=self.chat_id, text=f"⚠️ Error: {str(e)[:1000]}")
                     continue
 
-                # State: User was prompted for direct post text
                 if user_state == "waiting_for_direct":
                     user_state = None
                     choice = self.prompt_direct_choice(text)
@@ -583,7 +646,7 @@ class TelegramReviewer:
                         on_direct_callback(text, custom_image_path=None, generate_infographic=False)
                     continue
 
-                # Command: /topic <topic text>
+                # 9. Slash command syntax: /topic <topic text>
                 if text.startswith(("/topic ", "/idea ", "/draft ")):
                     topic = text.split(" ", 1)[1].strip()
                     self._call("sendMessage", chat_id=self.chat_id,
@@ -594,7 +657,7 @@ class TelegramReviewer:
                         self._call("sendMessage", chat_id=self.chat_id, text=f"⚠️ Error: {str(e)[:1000]}")
                     continue
 
-                # Command: /direct <post text>
+                # 10. Slash command syntax: /direct <post text>
                 if text.startswith(("/direct ", "/publish ")):
                     direct_text = text.split(" ", 1)[1].strip()
                     choice = self.prompt_direct_choice(direct_text)
@@ -604,7 +667,7 @@ class TelegramReviewer:
                         on_direct_callback(direct_text, custom_image_path=None, generate_infographic=False)
                     continue
 
-                # Fallback Free-form text:
+                # 11. Free-form text input heuristic
                 if len(text) >= 80:
                     choice = self.prompt_direct_choice(text)
                     if choice == "infographic":
@@ -620,6 +683,7 @@ class TelegramReviewer:
                         self._call("sendMessage", chat_id=self.chat_id, text=f"⚠️ Error: {str(e)[:1000]}")
 
     def mark_posted(self, draft_id: str, message_id: int, post_urn: str):
+        """Mark draft as successfully published to LinkedIn and update the button to '✅ Posted'."""
         set_status(draft_id, "posted", post_urn=post_urn)
         self._set_button(message_id, "✅ Posted", draft_id)
         link = f"https://www.linkedin.com/feed/update/{post_urn}/" if post_urn else ""
@@ -627,6 +691,7 @@ class TelegramReviewer:
                    text=f"🎉 Posted to LinkedIn! {link}")
 
     def mark_failed(self, draft_id: str, message_id: int, error: str):
+        """Mark draft as failed and update the button to '⚠️ Post failed'."""
         set_status(draft_id, "failed", error=error[:500])
         self._set_button(message_id, "⚠️ Post failed", draft_id)
         self._call("sendMessage", chat_id=self.chat_id, reply_to_message_id=message_id,
@@ -639,13 +704,15 @@ if __name__ == "__main__":
     load_dotenv(Path(__file__).parent / ".env")
     token = os.environ["TELEGRAM_BOT_TOKEN"]
 
+    # CLI option: Discover Chat ID by reading recent messages
     if "--find-chat-id" in sys.argv:
         ups = requests.get(API.format(token=token, method="getUpdates"), timeout=30).json()["result"]
         chats = {(u.get("message") or {}).get("chat", {}).get("id") for u in ups} - {None}
         print("Chat id(s):", chats or "none yet — send any message to your bot, then run again")
+        
+    # CLI option: Verify Telegram bot connection with a test ping
     elif "--test" in sys.argv or "--ping" in sys.argv:
         chat_id = os.environ["TELEGRAM_CHAT_ID"]
         reviewer = TelegramReviewer(token, chat_id)
         msg = reviewer._call("sendMessage", chat_id=chat_id, text="🤖 Test ping from LinkedIn Agent bot! Connection verified.")
         print(f"Ping delivered successfully to chat {chat_id}! Message ID: {msg.get('message_id')}")
-
