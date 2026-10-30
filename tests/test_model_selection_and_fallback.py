@@ -11,10 +11,13 @@ def reset_agent_globals():
     orig_provider = agent.ACTIVE_LLM_PROVIDER
     orig_reviewer = agent.CURRENT_TELEGRAM_REVIEWER
     orig_tracker = agent.CURRENT_TRACKER_ID
+    orig_disabled = set(agent.DISABLED_PROVIDERS)
+    agent.DISABLED_PROVIDERS.clear()
     yield
     agent.ACTIVE_LLM_PROVIDER = orig_provider
     agent.CURRENT_TELEGRAM_REVIEWER = orig_reviewer
     agent.CURRENT_TRACKER_ID = orig_tracker
+    agent.DISABLED_PROVIDERS = orig_disabled
 
 
 def test_select_model_for_run_preferred():

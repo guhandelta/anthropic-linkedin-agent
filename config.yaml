@@ -1,4 +1,4 @@
-model: claude-sonnet-5-5
+model: claude-3-5-sonnet-20241022
 openai_fallback_model: gpt-4o
 model_strategy: random   # "random" | "anthropic" | "openai"
 reasoning_effort: medium # "low" | "medium" | "high" for supported models

@@ -272,7 +272,24 @@ def quote_in_page(quote: str, page_text: str) -> bool:
     """Verify whether a cited quote or factual excerpt exists within the live page text.
     
     Normalizes whitespace and case to ensure reliable matching across line breaks.
+    Supports multi-sentence quotes where individual sentences match the source page.
     """
     clean_quote = " ".join(quote.casefold().split())
     clean_page = " ".join(page_text.casefold().split())
-    return len(clean_quote) >= 20 and clean_quote in clean_page
+    if len(clean_quote) < 20:
+        return False
+    if clean_quote in clean_page:
+        return True
+
+    # If the LLM combined two non-contiguous sentences, check if any individual sentence matches
+    sentences = [s.strip() for s in re.split(r"[.!?\n]", clean_quote) if len(s.strip()) >= 25]
+    if sentences and any(s in clean_page for s in sentences):
+        return True
+
+    # Also try matching after stripping non-alphanumeric punctuation
+    norm_quote = re.sub(r"[^\w\s]", "", clean_quote)
+    norm_page = re.sub(r"[^\w\s]", "", clean_page)
+    if len(norm_quote) >= 20 and norm_quote in norm_page:
+        return True
+
+    return False

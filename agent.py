@@ -45,28 +45,18 @@ Run Commands:
 """
 from __future__ import annotations
 
-import os
-import sys
-from pathlib import Path
-
-# -----------------------------------------------------------------------------
-# Auto-Bootstrap: Ensure execution inside .venv where all packages are installed
-# -----------------------------------------------------------------------------
-_ROOT = Path(__file__).resolve().parent
-_VENV_PYTHON = _ROOT / ".venv" / "bin" / "python"
-if _VENV_PYTHON.exists() and sys.executable != str(_VENV_PYTHON) and os.environ.get("AGENT_VENV_WRAPPED") != "1":
-    os.environ["AGENT_VENV_WRAPPED"] = "1"
-    os.execv(str(_VENV_PYTHON), [str(_VENV_PYTHON)] + sys.argv)
-
 import argparse
 import ast
 import base64
 import json
+import os
 import random
 import re
 import requests
+import sys
 import uuid
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from urllib.parse import urlparse
 
 import yaml
@@ -116,6 +106,7 @@ openai_client = OpenAI(api_key=openai_key) if openai_key else None
 
 # Active LLM provider tracking ("anthropic" or "openai")
 ACTIVE_LLM_PROVIDER = "anthropic"
+DISABLED_PROVIDERS: set[str] = set()
 
 # Global references for Telegram progress updates during live pipeline execution
 CURRENT_TELEGRAM_REVIEWER = None
@@ -142,6 +133,7 @@ def notify_provider_switch(from_provider: str, to_provider: str, reason: str):
     clean_reason = str(reason).split("\n")[0][:140]
     from_name = _fmt_provider(from_provider)
     to_name = _fmt_provider(to_provider)
+    DISABLED_PROVIDERS.add(from_provider.lower())
     print(f"\n⚠️ [LLM Fallback] {from_name} issue: {clean_reason}\n🔄 Switching to {to_name} to continue...\n")
     if CURRENT_TELEGRAM_REVIEWER:
         try:
@@ -171,8 +163,8 @@ def select_model_for_run(preferred: str | None = None) -> str:
       - 'openai': Starts with OpenAI (fails over to Claude on error).
     """
     global ACTIVE_LLM_PROVIDER
-    has_anthropic = bool(os.environ.get("ANTHROPIC_API_KEY"))
-    has_openai = bool(openai_client)
+    has_anthropic = bool(os.environ.get("ANTHROPIC_API_KEY")) and "anthropic" not in DISABLED_PROVIDERS
+    has_openai = bool(openai_client) and "openai" not in DISABLED_PROVIDERS
 
     if preferred:
         ACTIVE_LLM_PROVIDER = preferred.lower()
@@ -507,11 +499,11 @@ def call_json(system: str, content, tools: list | None = None, max_tokens: int =
     If OpenAI was active and fails, it switches back to Claude.
     """
     global ACTIVE_LLM_PROVIDER
-    if ACTIVE_LLM_PROVIDER == "anthropic":
+    if ACTIVE_LLM_PROVIDER == "anthropic" and "anthropic" not in DISABLED_PROVIDERS:
         try:
             return call_anthropic_json(system, content, tools=tools, max_tokens=max_tokens)
         except Exception as e:
-            if openai_client:
+            if openai_client and "openai" not in DISABLED_PROVIDERS:
                 notify_provider_switch("anthropic", "openai", str(e))
                 ACTIVE_LLM_PROVIDER = "openai"
                 return call_openai_json(system, content, tools=tools, max_tokens=max_tokens)
@@ -520,7 +512,7 @@ def call_json(system: str, content, tools: list | None = None, max_tokens: int =
         try:
             return call_openai_json(system, content, tools=tools, max_tokens=max_tokens)
         except Exception as e:
-            if anthropic_client:
+            if anthropic_client and "anthropic" not in DISABLED_PROVIDERS:
                 notify_provider_switch("openai", "anthropic", str(e))
                 ACTIVE_LLM_PROVIDER = "anthropic"
                 return call_anthropic_json(system, content, tools=tools, max_tokens=max_tokens)
@@ -740,7 +732,7 @@ def design_svg(post: str, idea: str, headline: str, feedback: str | None, footer
         msg += f"\n\nYour previous drawing was REJECTED. Fix these issues and redraw it:\n{feedback}"
     sys_prompt = DESIGNER_SYSTEM.replace("FOOTER_TEXT", footer)
 
-    if ACTIVE_LLM_PROVIDER == "anthropic":
+    if ACTIVE_LLM_PROVIDER == "anthropic" and "anthropic" not in DISABLED_PROVIDERS:
         try:
             resp = anthropic_client.messages.create(
                 model=CFG["model"], max_tokens=12000,
@@ -752,7 +744,7 @@ def design_svg(post: str, idea: str, headline: str, feedback: str | None, footer
             text = "".join(b.text for b in resp.content if b.type == "text")
             return extract_svg(text)
         except Exception as e:
-            if openai_client and not isinstance(e, ValueError):
+            if openai_client and not isinstance(e, ValueError) and "openai" not in DISABLED_PROVIDERS:
                 notify_provider_switch("anthropic", "openai", str(e))
                 ACTIVE_LLM_PROVIDER = "openai"
                 return call_openai_svg(sys_prompt, msg, max_tokens=8000)
@@ -761,7 +753,7 @@ def design_svg(post: str, idea: str, headline: str, feedback: str | None, footer
         try:
             return call_openai_svg(sys_prompt, msg, max_tokens=8000)
         except Exception as e:
-            if anthropic_client:
+            if anthropic_client and "anthropic" not in DISABLED_PROVIDERS:
                 notify_provider_switch("openai", "anthropic", str(e))
                 ACTIVE_LLM_PROVIDER = "anthropic"
                 resp = anthropic_client.messages.create(
@@ -929,7 +921,7 @@ def hard_checks(post: str) -> list[str]:
     lo, hi = CFG["post"]["min_emojis"], CFG["post"]["max_emojis"]
     if not lo <= emojis <= hi:
         issues.append(f"Use {lo}-{hi} meaningful emojis spread across the post (found {emojis}).")
-    if re.search(r"[☀-➿\U0001F300-\U0001FAFF]️?\s*[☀-➿\U0001F300-\U0001FAFF]", post):
+    if re.search(r"[☀-➿\U0001F300-\U0001FAFF]️?[ \t]*[☀-➿\U0001F300-\U0001FAFF]", post):
         issues.append("Do not put emojis next to each other; spread them out.")
     if re.search(r"^\s*\{.*\}\s*$", post, re.S) or '{"' in post or '"post":' in post:
         issues.append("Remove raw JSON artifacts from the post text.")
@@ -942,11 +934,11 @@ def clamp_emojis(post: str, min_e: int = 3, max_e: int = 6) -> str:
     
     Removes clusters of consecutive emojis and pads sparse posts if needed.
     """
-    adj_pattern = re.compile(r"[☀-➿\U0001F300-\U0001FAFF]️?\s*[☀-➿\U0001F300-\U0001FAFF]")
+    adj_pattern = re.compile(r"([☀-➿\U0001F300-\U0001FAFF]️?)[ \t]*[☀-➿\U0001F300-\U0001FAFF]")
     for _ in range(10):
         if not adj_pattern.search(post):
             break
-        post = re.sub(r"([☀-➿\U0001F300-\U0001FAFF]️?)\s*[☀-➿\U0001F300-\U0001FAFF]", r"\1", post)
+        post = adj_pattern.sub(r"\1", post)
 
     emojis = list(EMOJI_RE.finditer(post))
     if len(emojis) > max_e:
@@ -960,10 +952,14 @@ def clamp_emojis(post: str, min_e: int = 3, max_e: int = 6) -> str:
         if not paragraphs:
             paragraphs = [post]
         default_emojis = ["💡", "🚀", "📌", "✨", "🎯"]
-        needed = min_e - len(emojis)
-        for i in range(needed):
-            idx = i % len(paragraphs)
-            paragraphs[idx] = f"{paragraphs[idx]} {default_emojis[i % len(default_emojis)]}"
+        curr_count = len(emojis)
+        # Add at most one emoji per paragraph to paragraphs that don't have one
+        for p_idx in range(len(paragraphs)):
+            if curr_count >= min_e:
+                break
+            if not EMOJI_RE.search(paragraphs[p_idx]):
+                paragraphs[p_idx] = f"{paragraphs[p_idx]} {default_emojis[curr_count % len(default_emojis)]}"
+                curr_count += 1
         post = "\n\n".join(paragraphs)
 
     return post
