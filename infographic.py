@@ -278,13 +278,7 @@ def _text_boxes(root) -> list[dict]:
 
 
 def design_quality_checks(svg: str) -> list[str]:
-    """Soft richness and cleanliness checks for a poster that already passed svg_checks().
-
-    Returns actionable feedback for the designer. The pipeline retries once or twice with this
-    feedback but still publishes the best valid drawing, so these never block a post outright.
-    Checks: enough content (text/icons/panels), no large empty vertical gaps, no text off-canvas,
-    no overlapping text, and only known icon names.
-    """
+    """Check poster density and estimated text geometry before publication."""
     try:
         root = ET.fromstring(svg)
     except ET.ParseError:
@@ -327,6 +321,31 @@ def design_quality_checks(svg: str) -> list[str]:
                 overlaps.append(f"'{a['text'][:25]}' / '{b['text'][:25]}'")
     if overlaps:
         issues.append("Overlapping text, move these apart: " + "; ".join(overlaps[:3]))
+    if root.get("data-layout") == "structured":
+        truncated = [b["text"][:35] for b in boxes if b["text"].rstrip().endswith(("…", "..."))]
+        if truncated:
+            issues.append("Hidden or truncated text: " + "; ".join(truncated[:3]))
+        panels = []
+        for el in root.iter():
+            if _local(el.tag) != "rect":
+                continue
+            x, y = _float(el.get("x")), _float(el.get("y"))
+            w, h = _float(el.get("width")), _float(el.get("height"))
+            if None in (x, y, w, h) or w < 150 or h < 45 or w >= W:
+                continue
+            panels.append((x, y, x + w, y + h, w * h))
+        clipped = []
+        for box in boxes:
+            # A text run belongs to the smallest card containing its starting point.
+            candidates = [p for p in panels if p[0] <= box["x0"] <= p[2]
+                          and p[1] <= box["y"] <= p[3]]
+            if not candidates:
+                continue
+            left, top, right, bottom, _ = min(candidates, key=lambda p: p[4])
+            if box["x0"] < left + 3 or box["x1"] > right - 3 or box["top"] < top + 3 or box["bottom"] > bottom - 3:
+                clipped.append(box["text"][:35])
+        if clipped:
+            issues.append("Text reaches beyond its card: " + "; ".join(clipped[:3]))
     return issues
 
 
@@ -350,7 +369,7 @@ def render_svg_to_gif(svg: str, path: Path, n_frames: int = 12, fps: int = 12) -
     1. Detects connector lines and data flow paths. Auto-applies dashed stroke arrays if solid.
     2. Generates 12 discrete animation frames by shifting stroke-dashoffset across a 20px period.
     3. Substitutes dynamic pulse placeholders ({pulse_r}, {pulse_op}) for pulsing radar rings.
-    4. Renders each frame via CairoSVG to a bitmap, resizes with LANCZOS antialiasing to 720x900,
+    4. Renders each frame via CairoSVG at the poster's full 1080x1350 resolution,
        and quantizes to a 128-color median cut palette for compact file size and high fidelity.
     5. Saves as a looping animated GIF.
     """
@@ -375,6 +394,7 @@ def render_svg_to_gif(svg: str, path: Path, n_frames: int = 12, fps: int = 12) -
         return f"<{tag} {attrs} />" if is_self_closing else f"<{tag} {attrs}>"
 
     base_svg = re.sub(r'<(line|polyline|path)\s+([^>]*(?:x1=|d="M|points=)[^>]*)>', _ensure_dashed, svg)
+    motion_steps = sorted({int(step) for step in re.findall(r'data-motion-step="(\d+)"', svg)})
 
     frames = []
     dash_period = 20  # 20 matches dash pattern "10 10" and loops seamlessly without jump cuts
@@ -386,6 +406,21 @@ def render_svg_to_gif(svg: str, path: Path, n_frames: int = 12, fps: int = 12) -
         pulse_op = round(0.85 - 0.45 * (0.5 + 0.5 * math.sin(phase)), 2)
 
         frame_svg = base_svg
+
+        # Spotlight one diagram node at a time; all labels remain visible in every frame.
+        if motion_steps:
+            active_step = motion_steps[(i * len(motion_steps)) // n_frames]
+
+            def _highlight_node(match):
+                tag = match.group(0)
+                step = int(re.search(r'data-motion-step="(\d+)"', tag).group(1))
+                if step == active_step:
+                    tag = re.sub(r'stroke="[^"]*"', 'stroke="#3768B7"', tag)
+                    tag = re.sub(r'stroke-width="[^"]*"', 'stroke-width="7"', tag)
+                return tag
+
+            frame_svg = re.sub(r'<rect\s+[^>]*data-motion-step="\d+"[^>]*>',
+                               _highlight_node, frame_svg)
 
         # Shift dashoffset on all dashed connector lines to simulate flowing data packets
         def _shift_dash(m):
@@ -413,8 +448,7 @@ def render_svg_to_gif(svg: str, path: Path, n_frames: int = 12, fps: int = 12) -
         # Render frame to PNG buffer, resize cleanly, and quantize palette
         png_bytes = cairosvg.svg2png(bytestring=frame_svg.encode("utf-8"), output_width=W, output_height=H)
         img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
-        resized = img.resize((720, 900), Image.Resampling.LANCZOS)
-        quantized = resized.quantize(colors=128, method=Image.Quantize.MEDIANCUT)
+        quantized = img.quantize(colors=128, method=Image.Quantize.MEDIANCUT)
         frames.append(quantized)
 
     # Save animated GIF with loop=0 (infinite loop)
