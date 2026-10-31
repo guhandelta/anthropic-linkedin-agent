@@ -1,6 +1,7 @@
-model: claude-3-5-sonnet-20241022
+model: claude-sonnet-4-6
 openai_fallback_model: gpt-4o
-model_strategy: random   # "random" | "anthropic" | "openai"
+gemini_fallback_model: gemini-3.1-pro-preview
+model_strategy: random   # "random" | "anthropic" | "openai" | "gemini"
 reasoning_effort: medium # "low" | "medium" | "high" for supported models
 
 author:

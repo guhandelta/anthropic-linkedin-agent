@@ -63,10 +63,13 @@ import yaml
 import anthropic
 from anthropic import Anthropic
 from openai import OpenAI
+from google import genai
+from google.genai import types as genai_types
 from dotenv import load_dotenv
 
 # Module Imports: Graphics, LinkedIn Distribution, Telegram Bot, Quality & Anti-Hallucination
-from infographic import extract_svg, render_svg, render_svg_to_gif, svg_checks
+from infographic import (ICON_NAMES, design_quality_checks, extract_svg, finalize_svg,
+                         render_svg, render_svg_to_gif, svg_checks)
 from linkedin import LinkedInClient
 from linkedin_groups import post_to_groups
 from telegram_review import TelegramReviewer, get_status
@@ -104,9 +107,15 @@ if openai_key and not os.environ.get("OPENAI_API_KEY"):
     os.environ["OPENAI_API_KEY"] = openai_key
 openai_client = OpenAI(api_key=openai_key) if openai_key else None
 
-# Active LLM provider tracking ("anthropic" or "openai")
+# Second fallback LLM Client (Google Gemini - supports GOOGLE_API_KEY or GEMINI_API_KEY)
+gemini_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+gemini_client = genai.Client(api_key=gemini_key) if gemini_key else None
+
+# Active LLM provider tracking ("anthropic", "openai" or "gemini")
 ACTIVE_LLM_PROVIDER = "anthropic"
 DISABLED_PROVIDERS: set[str] = set()
+# Failover order used when the active provider errors out
+PROVIDER_ORDER = ["anthropic", "openai", "gemini"]
 
 # Global references for Telegram progress updates during live pipeline execution
 CURRENT_TELEGRAM_REVIEWER = None
@@ -118,6 +127,8 @@ def _fmt_provider(p: str) -> str:
     lp = p.lower()
     if "openai" in lp:
         return "OpenAI"
+    if "gemini" in lp or "google" in lp:
+        return "Gemini"
     if "anthropic" in lp or "claude" in lp:
         return "Claude"
     return p.title()
@@ -165,6 +176,7 @@ def select_model_for_run(preferred: str | None = None) -> str:
     global ACTIVE_LLM_PROVIDER
     has_anthropic = bool(os.environ.get("ANTHROPIC_API_KEY")) and "anthropic" not in DISABLED_PROVIDERS
     has_openai = bool(openai_client) and "openai" not in DISABLED_PROVIDERS
+    has_gemini = bool(gemini_client) and "gemini" not in DISABLED_PROVIDERS
 
     if preferred:
         ACTIVE_LLM_PROVIDER = preferred.lower()
@@ -174,10 +186,14 @@ def select_model_for_run(preferred: str | None = None) -> str:
             ACTIVE_LLM_PROVIDER = random.choice(["anthropic", "openai"])
         elif strategy == "openai" and has_openai:
             ACTIVE_LLM_PROVIDER = "openai"
+        elif strategy == "gemini" and has_gemini:
+            ACTIVE_LLM_PROVIDER = "gemini"
         elif has_anthropic:
             ACTIVE_LLM_PROVIDER = "anthropic"
         elif has_openai:
             ACTIVE_LLM_PROVIDER = "openai"
+        elif has_gemini:
+            ACTIVE_LLM_PROVIDER = "gemini"
 
     print(f"🤖 [Model Strategy: {CFG.get('model_strategy', 'random')}] Active starting provider: {ACTIVE_LLM_PROVIDER.upper()}")
     return ACTIVE_LLM_PROVIDER
@@ -489,35 +505,101 @@ def call_openai_svg(system: str, msg: str, max_tokens: int = 8000) -> str:
     resp = openai_client.chat.completions.create(**kwargs)
     text = resp.choices[0].message.content or ""
     svg = EMOJI_RE.sub("", extract_svg(text))
-    return re.sub(r'font-size\s*=\s*["\'](1[4-9]|2[01])(?:\.\d+)?["\']', 'font-size="22"', svg)
+    return finalize_svg(svg)
+
+
+def call_gemini_json(system: str, content, tools: list | None = None, max_tokens: int = 4000) -> dict:
+    """
+    Invokes Google Gemini and returns a parsed JSON object (the last-resort fallback provider).
+
+    Research mode uses Gemini's built-in Google Search grounding (which cannot be combined with
+    JSON mime type, so the JSON is extracted from the text); plain mode requests JSON directly.
+    Thinking tokens count toward the output budget, so the cap is raised to leave room for them.
+    """
+    if not gemini_client:
+        raise RuntimeError("Gemini API key (GOOGLE_API_KEY) is not configured in .env.")
+    model_name = CFG.get("gemini_fallback_model", "gemini-3.1-pro-preview")
+
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if item.get("type") == "text":
+                parts.append(genai_types.Part.from_text(text=item["text"]))
+            elif item.get("type") == "image":
+                import base64
+                parts.append(genai_types.Part.from_bytes(
+                    data=base64.b64decode(item["source"]["data"]),
+                    mime_type=item["source"].get("media_type", "image/png")))
+        contents = parts
+    else:
+        contents = str(content)
+
+    instruction = system
+    config_kwargs = {"max_output_tokens": max(max_tokens, 8192) * 4}
+    if tools:
+        domains = []
+        for t in tools:
+            if isinstance(t, dict) and "allowed_domains" in t:
+                domains.extend(t["allowed_domains"])
+        if domains:
+            instruction += f"\nAllowed research sources: {', '.join(domains)}. Ground your findings and facts strictly in these sources."
+        instruction += "\nReturn ONLY a single valid JSON object, with no markdown fences or commentary."
+        config_kwargs["tools"] = [genai_types.Tool(google_search=genai_types.GoogleSearch())]
+    else:
+        config_kwargs["response_mime_type"] = "application/json"
+    resp = gemini_client.models.generate_content(
+        model=model_name, contents=contents,
+        config=genai_types.GenerateContentConfig(system_instruction=instruction, **config_kwargs))
+    return extract_json_object(resp.text or "")
+
+
+def call_gemini_svg(system: str, msg: str, max_tokens: int = 16000) -> str:
+    """Invokes Google Gemini to generate pure SVG code for infographics (same rules as OpenAI)."""
+    if not gemini_client:
+        raise RuntimeError("Gemini API key (GOOGLE_API_KEY) is not configured in .env.")
+    model_name = CFG.get("gemini_fallback_model", "gemini-3.1-pro-preview")
+    rules = ("\nCRITICAL SVG RULES:\n- Absolutely NO emoji characters inside SVG text.\n"
+             "- Do NOT combine lines in one <text> element. Use separate <text y='...'> elements for each line.\n"
+             "- Keep every <text> element under 65 characters total.\n"
+             "- Do NOT use HTML entities like &#8211; use plain hyphens or ASCII.\n- Escape raw & as &amp;.")
+    resp = gemini_client.models.generate_content(
+        model=model_name, contents=msg,
+        config=genai_types.GenerateContentConfig(system_instruction=system + rules,
+                                                 max_output_tokens=max_tokens * 2))
+    return finalize_svg(EMOJI_RE.sub("", extract_svg(resp.text or "")))
+
+
+def _failover_chain(start_is_anthropic: bool) -> list[str]:
+    """Ordered providers to try: the active one first, then the rest of PROVIDER_ORDER that are usable."""
+    if ACTIVE_LLM_PROVIDER == "gemini" and "gemini" not in DISABLED_PROVIDERS:
+        first = "gemini"
+    elif start_is_anthropic:
+        first = "anthropic"
+    else:
+        first = "openai"  # Original behaviour: anything that isn't usable Claude starts on OpenAI
+    usable = {"anthropic": bool(anthropic_client), "openai": bool(openai_client), "gemini": bool(gemini_client)}
+    rest = [p for p in PROVIDER_ORDER if p != first and usable[p] and p not in DISABLED_PROVIDERS]
+    return [first] + rest
 
 
 def call_json(system: str, content, tools: list | None = None, max_tokens: int = 4000) -> dict:
     """
-    Routes JSON requests to the active LLM provider with automatic bidirectional fallback.
-    
-    If Claude encounters an issue, it seamlessly fails over to OpenAI.
-    If OpenAI was active and fails, it switches back to Claude.
+    Routes JSON requests to the active LLM provider with automatic multi-step fallback.
+
+    Order: Claude -> OpenAI -> Gemini (rotated so the active provider goes first). Each failure
+    disables that provider for the rest of the run and alerts the user, then the next one is tried.
     """
     global ACTIVE_LLM_PROVIDER
-    if ACTIVE_LLM_PROVIDER == "anthropic" and "anthropic" not in DISABLED_PROVIDERS:
+    callers = {"anthropic": call_anthropic_json, "openai": call_openai_json, "gemini": call_gemini_json}
+    chain = _failover_chain(ACTIVE_LLM_PROVIDER == "anthropic" and "anthropic" not in DISABLED_PROVIDERS)
+    for i, prov in enumerate(chain):
         try:
-            return call_anthropic_json(system, content, tools=tools, max_tokens=max_tokens)
+            return callers[prov](system, content, tools=tools, max_tokens=max_tokens)
         except Exception as e:
-            if openai_client and "openai" not in DISABLED_PROVIDERS:
-                notify_provider_switch("anthropic", "openai", str(e))
-                ACTIVE_LLM_PROVIDER = "openai"
-                return call_openai_json(system, content, tools=tools, max_tokens=max_tokens)
-            raise
-    else:
-        try:
-            return call_openai_json(system, content, tools=tools, max_tokens=max_tokens)
-        except Exception as e:
-            if anthropic_client and "anthropic" not in DISABLED_PROVIDERS:
-                notify_provider_switch("openai", "anthropic", str(e))
-                ACTIVE_LLM_PROVIDER = "anthropic"
-                return call_anthropic_json(system, content, tools=tools, max_tokens=max_tokens)
-            raise
+            if i == len(chain) - 1:
+                raise
+            notify_provider_switch(prov, chain[i + 1], str(e))
+            ACTIVE_LLM_PROVIDER = chain[i + 1]
 
 
 # -----------------------------------------------------------------------------
@@ -653,140 +735,231 @@ infographic_idea. Never use an example or placeholder URL as a source."""
 
 
 # -----------------------------------------------------------------------------
-# Infographic Designer: 1080x1350 Technical Architecture in Pure SVG
+# Infographic Designer: rich 1080x1350 editorial posters in pure SVG
 # -----------------------------------------------------------------------------
-DESIGNER_SYSTEM = """You are an elite visual designer specializing in publication-grade technical infographics for LinkedIn (in the style of top tech creators like LuMay AI, Rakesh Gohel, and Rathanakumar).
-You turn complex software engineering concepts and LinkedIn posts into a clean, sophisticated, highly informative technical architecture diagram drawn as pure SVG.
-The graphic must look publication-ready, visually captivating, densely informative, neatly spaced, and crystal clear on both mobile and desktop screens. It MUST NOT be a trivial, boring icon diagram.
+# Visual themes modelled on the best viral dev/AI infographics. One theme is chosen per post
+# (stable for that post's retries, varied across posts) so the feed never looks repetitive.
+THEMES = [
+    ("Modern product", """THEME - MODERN PRODUCT POSTER
+- Background: vertical linearGradient #F5F3FF to #EFF6FF. Ink #0F172A, muted text #475569.
+- Brand accents: violet #6D28D9 and blue #2563EB. The title is two-tone: the key word in violet, the rest in ink.
+- Cards: fill #FFFFFF, stroke #E2E8F0, rx=22, with a soft shadow made from a second rect shifted 6px down in #DDD6FE.
+- Semantic tints: good = #ECFDF5 / #059669, problem = #FEF2F2 / #DC2626, caution = #FFFBEB / #D97706, neutral = #EFF6FF / #2563EB.
+- Code panel: fill #0F172A, keywords #C4B5FD, strings #86EFAC, numbers #FCA5A5, plain text #E2E8F0."""),
+    ("Sketchnote", """THEME - SKETCHNOTE (hand-drawn notebook feel)
+- Background: warm paper #FFFDF7. Ink is deep navy #0B1F4B. Use 3px navy outlines everywhere and rx=14 rounded corners.
+- Hard offset shadows: a second rect shifted (6,6) filled #0B1F4B at opacity 0.12 behind every card.
+- Headings sit on a yellow highlighter bar (rect #FDE68A, rx=6) placed behind the text, like a marker stroke.
+- Accents: blue #2F6FDB, green #1D9E5B, warning red #D64545, amber #F59E0B. Section headers are blue tabs (fill #DBEAFE) with navy text.
+- Add playful touches: a curly underline path under the title (stroke-dasharray="none"), small star/sparkle icons, a speech-bubble style callout.
+- Code panel: fill #F1F5F9 with a 3px navy border, navy text, keywords #2F6FDB."""),
+    ("Orange guide", """THEME - ORANGE GUIDE POSTER
+- Background: #FFF8F1. The header is a full-width band (y 0-250) filled with a linearGradient #F97316 to #FB923C with white title text.
+- Section headers are orange (#EA580C) tabs with white numbered titles (1., 2., 3.). Cards: fill #FFFFFF, stroke #FED7AA, rx=16.
+- Ink #1F2937, muted #6B7280. Callouts use pale yellow #FEF3C7 with a #F59E0B left bar. Good = #16A34A, problem = #DC2626.
+- Code panel: fill #1F2937, keywords #FDBA74, strings #86EFAC, plain #F3F4F6.
+- The takeaway bar is solid #EA580C with white bold text."""),
+    ("Midnight", """THEME - MIDNIGHT TECH
+- Background: #0B1020 with a subtle linearGradient to #111A3A. Text #E5E7EB, muted #94A3B8.
+- Cards: fill #131A33, stroke #26325C, rx=20. Accents: cyan #22D3EE, violet #A78BFA, lime #A3E635, caution #FBBF24, problem #F87171.
+- Glow effect without filters: draw the same shape twice, a wider low-opacity stroke (opacity 0.25) under a crisp one.
+- Code panel: fill #060A18, keywords #A78BFA, strings #A3E635, numbers #FBBF24, plain #E5E7EB.
+- The takeaway bar is a cyan-to-violet linearGradient with dark #0B1020 bold text."""),
+]
 
-CANVAS DIMENSIONS & COLOR PALETTE:
-- Canvas: viewBox="0 0 1080 1350" (portrait). Keep 55px outer canvas margin.
-- Background: Very clean, subtle background: off-white/slate tint (#F8FAFC to #F1F5F9) or modern dark slate (#0B0F17) with high-contrast text.
-- Accent Palette: Electric Blue (#2563EB / #3B82F6), Emerald (#059669 / #10B981), Amber (#D97706 / #F59E0B), Crimson (#DC2626 / #EF4444), Purple/Violet (#7C3AED / #8B5CF6).
+DESIGNER_SYSTEM = """You are a world-class information designer. You create save-worthy, scroll-stopping technical posters for LinkedIn, in the style of the best viral AI and developer infographics: dense yet instantly scannable, with a strong visual hierarchy, real icons, colour-coded concepts, code panels, checklists and a punchy takeaway.
+A bland diagram made of a few plain boxes and arrows is a FAILURE. Posters people screenshot and share are rich, structured and well filled.
 
-CHOOSE ONE OF 3 REFERENCE ARCHITECTURAL LAYOUTS APPROPRIATE TO THE TOPIC:
+You receive a LinkedIn post, an infographic idea and usually a CONTENT BLUEPRINT (JSON). Draw that content as ONE pure-SVG poster. Every fact, term, number and code line must come from the post or blueprint. Never invent content.
 
-LAYOUT 1: DUAL COMPARATIVE PANELS (like "RAG vs Agentic RAG")
-- Top Section: Large bold Title (font-size: 46-52, font-weight: bold, fill: #0F172A) and subtitle badge.
-- Panel A (y: 190 to 650, height: 460): Rounded container card (rx="22", stroke="#E2E8F0", fill="#FFFFFF") with top pill badge (e.g. "TRADITIONAL / BASELINE ARCHITECTURE").
-  * Distribute 3 components HORIZONTALLY across the width (NEVER a single narrow vertical column):
-    - Left Node: User / Client (x="95", y="320", width="230", height="180", rx="16", fill="#F8FAFC", stroke="#CBD5E1").
-    - Center Node: Server / Gateway (x="410", y="320", width="260", height="180", rx="16", fill="#F8FAFC", stroke="#CBD5E1").
-    - Right Node: Knowledge Base / DB (x="755", y="320", width="235", height="180", rx="16", fill="#F8FAFC", stroke="#CBD5E1").
-    - Connect them with horizontal dashed lines (stroke-dasharray="10 10", marker-end="url(#arrow)") and numbered step circles (1), (2), (3) along the lines.
-- Panel B (y: 690 to 1230, height: 540): Elevated container card (rx="22", stroke="#3B82F6" stroke-width="2", fill="#FFFFFF") with top pill badge (e.g. "AUTONOMOUS / AGENTIC ARCHITECTURE").
-  * Distribute multi-tiered agentic components across the width:
-    - Left: User / Client (x="95", y="800", width="220", height="200").
-    - Center: Orchestrator / Agent Router (x="390", y="770", width="290", height="260", fill="#EFF6FF", stroke="#93C5FD").
-    - Right (Top & Bottom): Sub-agents / MCP Tools (x="760", y="750", width="235", height="135") and Long-term Memory / Vector DB (x="760", y="915", width="235", height="135").
-    - Branching dashed lines (stroke-dasharray="10 10", marker-end="url(#arrow)") with numbered step circles (1), (2), (3), (4), (5).
+CANVAS: <svg viewBox="0 0 1080 1350" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, DejaVu Sans, sans-serif">. Keep content inside x=40 to x=1040.
 
-LAYOUT 2: SIDE-BY-SIDE ARCHITECTURAL COMPARISON (like "MCP vs Traditional API Architecture")
-- Top Section: Main Title & Subtitle.
-- Vertical divider line down center: <line x1="540" y1="200" x2="540" y2="1240" stroke="#CBD5E1" stroke-dasharray="8 8" stroke-width="2"/>
-- Left Side ("Modern Protocol / Agentic"): x="60" to "510", width="450".
-  * Top layer: Client / Agent nodes (x="85", y="230", width="400", height="130").
-  * Protocol Layer: Middle protocol hub (x="170", y="440", width="230", height="120", rx="16").
-  * Branching Layer: 3 server cards placed side-by-side (width="120" each at x="80", x="220", x="360", y="660").
-  * Storage/Tool Layer: 3 resource cards at bottom (x="80", x="220", x="360", y="880").
-  * Connect layers with branching dashed lines and junction dots!
-- Right Side ("Traditional Architecture"): x="570" to "1020", width="450".
-  * Matching client, API gateway, microservices, and databases layers with branching connectors.
+THEME_BLOCK
 
-LAYOUT 3: SYSTEM ANATOMY & MODULAR HUB (like "The Anatomy of an AI Agent")
-- Top-Left: "Memory & Context" (x="60", y="200", width="460", height="380", rx="20").
-- Top-Right: "Tools & Integrations" (x="560", y="200", width="460", height="380", rx="20").
-- Central Core: "Agent Execution Loop" (x="60", y="615", width="960", height="390", rx="20") with cyclical flow around a central LLM Brain.
-- Bottom: "Guardrails & Policies" (x="60", y="1035", width="960", height="210", rx="20").
-- Connect modules with animated dashed lines (stroke-dasharray="10 10") and numbered flow badges.
+POSTER ANATOMY (top to bottom). Fill the WHOLE canvas: no empty band taller than 200px.
+A. HEADER (y 40-235): a huge two-tone title (font-size 62-76, bold; the key word in the accent colour; split over 2 lines if long), a subtitle (28-30), and a rounded TAGLINE PILL holding the one-line hook. Optionally a small badge chip top-right (a version, topic or tag).
+B. HERO DIAGRAM (y 255-690): the core idea drawn visually: rounded nodes that each hold an icon, a bold label and a 1-line detail, joined by labelled arrows and numbered step badges. Pick the form that fits the content:
+   - BEFORE/AFTER: two side-by-side panels (problem in red tones with icon-x on the left, solution in green tones with icon-check on the right) showing the same scenario both ways.
+   - FLOW: 3-5 nodes left to right (or in two rows) with arrows between them.
+   - LAYERS: stacked horizontal bands, or a CYCLE of nodes around a central hub.
+C. MODULE GRID (y 710-1085): 3-4 cards in a 2-column grid (about 495px wide each, 20px gap). Each card has a coloured header strip with a number badge, an icon and a heading, then 3-4 short lines. Mix card types:
+   - CODE PANEL: a dark rounded rect, monospace font-family="Menlo, DejaVu Sans Mono, Courier New, monospace", font-size 22, at most 7 lines of at most 36 characters, with keywords/strings/numbers coloured through <tspan fill="...">. Use it whenever the post contains code, an API call or a command.
+   - CHECKLIST: an icon-check before every line.
+   - STATS: 2-3 big numbers (font-size 54-64 bold) with 22px captions, whenever the post has numbers, versions or timings.
+   - PROS / CONS: green and red columns with icon-check and icon-x.
+D. GOTCHA BANNER (y 1100-1175): a full-width tinted rounded rect (amber or red tone) with icon-warning, a bold label such as "Watch out", and one line about the limitation or tradeoff.
+E. TAKEAWAY BAR (y 1190-1255): a full-width solid or gradient accent bar with one bold takeaway sentence (font-size 26-30) and an icon-bulb or icon-rocket.
+F. FOOTER: divider line at y=1270, signature text at y=1302.
 
-CRITICAL VISUAL ELEMENTS TO INCLUDE:
-1. ARROWHEAD MARKER IN <defs>:
-   Always define a clean arrowhead marker in <defs> so lines point cleanly to target boxes:
-   <defs>
-     <marker id="arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-       <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#2563EB"/>
-     </marker>
-     <filter id="cardShadow"><feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#0F172A" flood-opacity="0.06"/></filter>
-   </defs>
-2. ANIMATED CONNECTOR LINES:
-   - EVERY single data flow arrow, bus connection, or request/response line MUST have stroke-dasharray="10 10" and marker-end="url(#arrow)".
-   - (The animated GIF engine will dynamically shift dash offsets across frames to create live streaming data motion along all wires!).
-3. NUMBERED STEP FLOW BADGES:
-   - Place numbered circles (1), (2), (3)... directly on or next to connector lines to clearly communicate the sequence of execution:
-     <g><circle cx="280" cy="420" r="15" fill="#2563EB"/><text x="280" y="420" text-anchor="middle" dominant-baseline="central" font-size="15" font-weight="bold" fill="#FFFFFF">1</text></g>
-4. BRANCHING JUNCTION DOTS:
-   - Place small filled dots <circle cx="..." cy="..." r="5" fill="#2563EB"/> where connector wires branch or meet.
-5. COMPONENT CARDS & BOXES:
-   - Rounded corners (rx="14" to rx="20").
-   - Crisp borders (stroke="#E2E8F0" or "#CBD5E1").
-   - Clear bold card title with a mini category badge or icon.
-   - 2-3 concise bullet points or technical specs per box with generous line spacing.
-6. SIGNATURE FOOTER:
-   - Clean divider line at y="1270": <line x1="60" y1="1270" x2="1020" y2="1270" stroke="#CBD5E1" stroke-width="1.5"/>
-   - Signature text at y="1302": <text x="60" y="1302" font-size="22" fill="#64748B">FOOTER_TEXT</text>
+INTUITIVE-DESIGN RULES:
+- Strong hierarchy: title 62-76, section headings 28-34, body 22-24. Never more than three type sizes plus the code font.
+- Colour carries meaning: red/grey = old or problem, green = new or good, amber = caution, blue/violet = neutral flow. Use the same colour for the same idea throughout.
+- Number the reading order with badges (1)(2)(3). Every node gets an icon. Short labels beat long sentences: at most 4 lines per card and at most 6 words per node label.
+- Align to a grid: card edges, text left edges and icon columns line up; keep at least 20px gaps and 20px inner padding.
 
-SPATIAL SPACING & COLLISION RULES (STRICT):
-- Elements must be CLEAN and NEATLY PLACED with generous breathing room.
-- NO OVERLAPPING TEXT: Every <text> element MUST have explicit, calculated x and y coordinates.
-- Card padding: Keep at least 20px padding inside all cards so text never crowds or cuts against borders.
-- Inter-element gaps: Leave at least 30px between adjacent cards so lines and arrows have room to breathe.
-- Minimum font-size 22 for all labels/captions/subtitles, 24-28 for card titles, 46-52 for main title. Never set any font-size below 22.
-- Text line length: Keep lines under 40 characters in half-width cards, under 65 characters in full-width cards.
-- Escape & as &amp; and < as &lt;.
-- NO emoji characters. Draw icons and indicators with shapes or clean paths.
-- Ground all terms, tools, and metrics strictly in the provided post content.
+SVG TECHNICAL RULES:
+- Allowed elements: svg, defs, g, rect, circle, ellipse, line, polyline, polygon, path, text, tspan, linearGradient, radialGradient, stop, use, marker, clipPath. Filters are NOT rendered: never use filter or feDropShadow. For a shadow, draw a second rect shifted a few pixels behind the card.
+- Text never wraps. Break lines yourself with separate <text> elements, each with explicit x and y. Maximum characters per line is floor((box_width - 40) / (font_size * 0.55)); a text's right edge must stay inside its card. At most 90 characters per text element.
+- Minimum font-size is 22 for all text, except digits inside number badges (font-size 18, at most 3 characters).
+- ICONS: place with <use href="#icon-NAME" transform="translate(X,Y) scale(S)" color="#HEX"/>. The icon is a 24x24 grid so X,Y is its top-left corner; use S between 2 and 3.5; color sets its stroke. Available names: ICON_LIST. Use at least 6 icons. Never draw or define your own icons, never use xlink:href, and do not add the icon defs yourself (they are added automatically).
+- CONNECTORS: every data-flow arrow is a <line> or <path> with stroke-dasharray="10 10" and marker-end="url(#arrow)" (the GIF engine animates them). Define the marker in <defs>: <marker id="arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#2563EB"/></marker>. Any OTHER stroked line or path (dividers, underlines, flourishes) must carry stroke-dasharray="none".
+- Number badge: <circle r="16"/> plus <text text-anchor="middle" dominant-baseline="central" font-size="18" font-weight="bold">.
+- No emoji characters. Escape & as &amp; and < as &lt;.
+- Footer: <line x1="60" y1="1270" x2="1020" y2="1270" stroke="#CBD5E1" stroke-width="1.5" stroke-dasharray="none"/> and <text x="60" y="1302" font-size="22" fill="#64748B">FOOTER_TEXT</text> (use a light colour on dark themes).
 
-Return ONLY the SVG, starting with <svg and ending with </svg>. No markdown explanation, no wrapping code fences."""
+Return ONLY the SVG, starting with <svg and ending with </svg>. No markdown, no explanation, no code fences."""
+
+
+BLUEPRINT_SYSTEM = """You are an information designer planning a dense, scannable LinkedIn infographic poster.
+Convert the post into a structured CONTENT BLUEPRINT that an illustrator will draw. Use ONLY facts, numbers, names and code that appear in the post. Keep every string short.
+
+Return ONLY JSON:
+{"title": "3-6 word poster title", "title_accent": "the 1-2 words of the title to highlight",
+ "subtitle": "at most 60 chars",
+ "tagline": "punchy hook, at most 40 chars",
+ "badge": "optional short chip such as a version, or empty string",
+ "hero": {"form": "before_after | flow | layers | cycle",
+          "caption": "at most 50 chars",
+          "left_label": "before_after only: heading for the old way", "right_label": "before_after only: heading for the new way",
+          "nodes": [{"label": "at most 22 chars", "detail": "at most 32 chars", "icon": "ICON"}]},
+ "modules": [{"kind": "code | checklist | stats | pros_cons | steps",
+              "heading": "at most 26 chars", "icon": "ICON",
+              "lines": ["at most 36 chars each, 3-5 lines. For kind=code use real code lines from the post; for stats use 'value | caption'"]}],
+ "gotcha": {"heading": "Watch out", "text": "at most 70 chars: the limitation, tradeoff or breaking change"},
+ "takeaway": "at most 70 chars: the one thing to remember"}
+
+Rules: hero.nodes has 3-5 items (2 per side for before_after). modules has 3-4 items and must include a "code" module when the post has code, and a "stats" module when the post has numbers or versions. Each ICON must be one of: ICON_LIST."""
+
+
+def plan_infographic(post: str, headline: str, idea: str) -> str:
+    """
+    Turns the post into a structured poster blueprint and appends it to the writer's idea.
+
+    The extra planning pass is what makes posters dense and intuitive: the designer receives
+    ready-made sections, short labels, icon choices and a code snippet instead of a 2-sentence
+    idea, and only has to focus on layout. Any failure falls back to the plain idea.
+    """
+    try:
+        system = BLUEPRINT_SYSTEM.replace("ICON_LIST", ", ".join(ICON_NAMES))
+        plan = call_json(system, f"HEADLINE: {headline}\n\nPOST:\n{post}\n\nWRITER'S IDEA:\n{idea}", max_tokens=2500)
+    except Exception as e:  # noqa: BLE001 - planning is an enhancement, never a blocker
+        print(f"Infographic planning skipped ({e}); using the writer's idea only.")
+        return idea
+    if not isinstance(plan, dict) or not plan.get("modules"):
+        return idea
+    return (f"{idea}\n\nCONTENT BLUEPRINT (draw exactly this content; every fact comes from the post):\n"
+            + json.dumps(plan, ensure_ascii=False, indent=1))
+
+
+def _designer_prompt(headline: str, footer: str) -> str:
+    """Assemble the designer system prompt: theme (stable per headline), icon list and footer text."""
+    theme = THEMES[sum(map(ord, headline or "")) % len(THEMES)][1]
+    return (DESIGNER_SYSTEM.replace("THEME_BLOCK", theme)
+            .replace("ICON_LIST", ", ".join(ICON_NAMES))
+            .replace("FOOTER_TEXT", footer))
+
+
+def _call_claude_svg(sys_prompt: str, msg: str) -> str:
+    """Ask Claude for an SVG drawing; raises ValueError when the output was cut off."""
+    resp = anthropic_client.messages.create(
+        model=CFG["model"], max_tokens=16000,
+        system=sys_prompt,
+        messages=[{"role": "user", "content": msg}],
+    )
+    if resp.stop_reason == "max_tokens":
+        raise ValueError("The drawing was cut off; it must be simpler.")
+    text = "".join(b.text for b in resp.content if b.type == "text")
+    return finalize_svg(extract_svg(text))
 
 
 def design_svg(post: str, idea: str, headline: str, feedback: str | None, footer: str) -> str:
     """
-    Renders pure SVG technical architecture infographics matching the draft content.
-    
-    Routes through active provider with full failover capability.
+    Renders a rich, themed SVG infographic poster matching the draft content.
+
+    Routes through the active provider with full failover capability.
     """
     global ACTIVE_LLM_PROVIDER
     msg = f"Headline: {headline}\n\nPOST:\n{post}\n\nINFOGRAPHIC IDEA:\n{idea}"
     if feedback:
         msg += f"\n\nYour previous drawing was REJECTED. Fix these issues and redraw it:\n{feedback}"
-    sys_prompt = DESIGNER_SYSTEM.replace("FOOTER_TEXT", footer)
+    sys_prompt = _designer_prompt(headline, footer)
 
-    if ACTIVE_LLM_PROVIDER == "anthropic" and "anthropic" not in DISABLED_PROVIDERS:
+    callers = {"anthropic": _call_claude_svg,
+               "openai": lambda s, m: call_openai_svg(s, m, max_tokens=16000),
+               "gemini": lambda s, m: call_gemini_svg(s, m, max_tokens=16000)}
+    chain = _failover_chain(ACTIVE_LLM_PROVIDER == "anthropic" and "anthropic" not in DISABLED_PROVIDERS)
+    for i, prov in enumerate(chain):
         try:
-            resp = anthropic_client.messages.create(
-                model=CFG["model"], max_tokens=12000,
-                system=sys_prompt,
-                messages=[{"role": "user", "content": msg}],
-            )
-            if resp.stop_reason == "max_tokens":
-                raise ValueError("The drawing was cut off; it must be simpler.")
-            text = "".join(b.text for b in resp.content if b.type == "text")
-            svg = extract_svg(text)
-            return re.sub(r'font-size\s*=\s*["\'](1[4-9]|2[01])(?:\.\d+)?["\']', 'font-size="22"', svg)
+            return callers[prov](sys_prompt, msg)
         except Exception as e:
-            if openai_client and not isinstance(e, ValueError) and "openai" not in DISABLED_PROVIDERS:
-                notify_provider_switch("anthropic", "openai", str(e))
-                ACTIVE_LLM_PROVIDER = "openai"
-                return call_openai_svg(sys_prompt, msg, max_tokens=8000)
-            raise
-    else:
+            # A cut-off Claude drawing is a design problem (redraw simpler), not a provider outage
+            if i == len(chain) - 1 or (prov == "anthropic" and isinstance(e, ValueError)):
+                raise
+            notify_provider_switch(prov, chain[i + 1], str(e))
+            ACTIVE_LLM_PROVIDER = chain[i + 1]
+
+
+def render_poster_files(svg: str, image_path: Path) -> Path:
+    """
+    Render a validated SVG to disk and return the media file to send.
+
+    Writes the PNG (image_path), the SVG source beside it, and an animated GIF beside it.
+    Returns the GIF when it renders, otherwise the static PNG. Raises ValueError when the SVG
+    itself cannot be rendered, so callers can feed the error back to the designer.
+    """
+    render_svg(svg, image_path)
+    image_path.with_suffix(".svg").write_text(svg)
+    gif_path = image_path.with_suffix(".gif")
+    try:
+        render_svg_to_gif(svg, gif_path)
+        return gif_path
+    except Exception as e:  # noqa: BLE001 - the GIF is a bonus; the PNG is always valid
+        print(f"Animated GIF generation failed ({e}), using static PNG.")
+        return image_path
+
+
+def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: Path,
+                feedback: str | None = None) -> tuple[Path | None, str | None]:
+    """
+    Ask the designer for a poster, validate it, and render it. Returns (media_path, last_feedback).
+
+    Up to three tries: the first must pass the hard safety/readability checks (svg_checks); later
+    tries also receive soft richness feedback (design_quality_checks) so sparse, empty or
+    overlapping drawings get redrawn denser and cleaner. Style problems never block a post: when
+    the last try is still imperfect, the best valid drawing is rendered anyway. media_path is None
+    only when no valid drawing could be produced; last_feedback then explains why.
+    """
+    fallback_svg = None
+    for try_no in range(3):
         try:
-            return call_openai_svg(sys_prompt, msg, max_tokens=8000)
-        except Exception as e:
-            if anthropic_client and "anthropic" not in DISABLED_PROVIDERS:
-                notify_provider_switch("openai", "anthropic", str(e))
-                ACTIVE_LLM_PROVIDER = "anthropic"
-                resp = anthropic_client.messages.create(
-                    model=CFG["model"], max_tokens=12000,
-                    system=sys_prompt,
-                    messages=[{"role": "user", "content": msg}],
-                )
-                if resp.stop_reason == "max_tokens":
-                    raise ValueError("The drawing was cut off; it must be simpler.")
-                text = "".join(b.text for b in resp.content if b.type == "text")
-                return extract_svg(text)
-            raise
+            svg = design_svg(post, brief, headline, feedback, footer)
+        except ValueError as e:
+            feedback = f"{e} Make the drawing simpler with fewer lines and paths."
+            print("Drawing generation failed:", e)
+            continue
+        hard_issues = svg_checks(svg)
+        if hard_issues:
+            feedback = "\n".join(hard_issues)
+            print("Drawing checks failed:", hard_issues)
+            continue
+        fallback_svg = svg  # Best valid drawing so far
+        soft_issues = design_quality_checks(svg)
+        if soft_issues and try_no < 2:
+            feedback = ("The drawing is valid but is not yet a rich, polished poster. "
+                        "Redraw it and fix:\n" + "\n".join(soft_issues))
+            print("Design quality feedback:", soft_issues)
+            continue
+        try:
+            return render_poster_files(svg, image_path), feedback
+        except ValueError as e:
+            feedback = str(e)
+            print("Render failed:", e)
+    if fallback_svg:  # Last resort: render the best valid drawing seen
+        try:
+            return render_poster_files(fallback_svg, image_path), feedback
+        except ValueError as e:
+            feedback = str(e)
+    return None, feedback
 
 
 # -----------------------------------------------------------------------------
@@ -802,7 +975,9 @@ Check ALL of these:
 3. on_topic     - the post is about the named item, and it is interesting to a working developer.
 4. image_text   - all text in the image is legible, correctly spelled, not cut off or overlapping.
 5. image_match  - the picture illustrates the post's main points accurately; its metaphor or scene
-                  makes each point easy to grasp; nothing unrelated or misleading in it.
+                  makes each point easy to grasp; nothing unrelated or misleading in it. Score 3 or
+                  lower if the poster is bland or sparse: large empty areas, only a few plain boxes
+                  and arrows, no icons, no code/checklist/stats panels, or no clear visual hierarchy.
 6. professional - appropriate for a professional audience; every emoji fits its sentence or point.
 7. technical_depth - a concrete API, code, architecture, or debugging detail with a real limitation.
 8. takeaway - a specific action a developer can try or check, not generic advice.
@@ -1331,17 +1506,9 @@ def handle_direct_post(post_text: str, custom_image_path: Path | None = None, ge
             )
             headline = res.get("headline", "Tech Insights")
             idea = res.get("infographic_idea", "Visual breakdown of the key takeaways.")
-            svg = design_svg(post_text, idea, headline, None, CFG["infographic"]["footer"])
             image_path = out_dir / "direct_infographic.png"
-            render_svg(svg, image_path)
-            (out_dir / "direct_infographic.svg").write_text(svg)
-            gif_path = out_dir / "direct_infographic.gif"
-            try:
-                render_svg_to_gif(svg, gif_path)
-                media_path = gif_path
-            except Exception as e:
-                print(f"Animated GIF generation failed ({e}), using static PNG.")
-                media_path = image_path
+            media_path, _ = draw_poster(post_text, plan_infographic(post_text, headline, idea), headline,
+                                        CFG["infographic"]["footer"], image_path)
         except Exception as e:
             print(f"Infographic design for direct post failed: {e}. Falling back to text-only.")
             media_path = None
@@ -1550,36 +1717,11 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
 
         # Infographic Generation & CairoSVG Rendering
         image_path = out_dir / f"infographic_{attempt}.png"
-        media_path = image_path
-        design_feedback, drawn = feedback, False
-        for _ in range(2):  # The designer gets up to two tries to produce valid SVG
-            try:
-                svg = design_svg(post, idea, headline, design_feedback, CFG["infographic"]["footer"])
-            except ValueError as e:
-                design_feedback = f"{e} Make the drawing simpler with fewer lines and paths."
-                print("Drawing generation failed:", e)
-                continue
-            svg_issues = svg_checks(svg)
-            if svg_issues:
-                design_feedback = "\n".join(svg_issues)
-                print("Drawing checks failed:", svg_issues)
-                continue
-            try:
-                render_svg(svg, image_path)
-                (out_dir / f"infographic_{attempt}.svg").write_text(svg)
-                gif_path = image_path.with_suffix(".gif")
-                try:
-                    render_svg_to_gif(svg, gif_path)
-                    media_path = gif_path
-                except Exception as e:
-                    print(f"Animated GIF generation failed ({e}), using static PNG.")
-                    media_path = image_path
-                drawn = True
-                break
-            except ValueError as e:
-                design_feedback = str(e)
-                print("Render failed:", e)
-        if not drawn:
+        # One planning pass turns the post into a dense, structured poster blueprint for the designer
+        poster_brief = plan_infographic(post, headline, idea)
+        media_path, design_feedback = draw_poster(
+            post, poster_brief, headline, CFG["infographic"]["footer"], image_path, feedback)
+        if not media_path:
             feedback = design_feedback
             if tg and tracker_id:
                 tg.update_progress(tracker_id, f"⚠️ [Attempt {attempt}/{CFG['review']['max_attempts']}] Refining visual design: {design_feedback[:60]}...")

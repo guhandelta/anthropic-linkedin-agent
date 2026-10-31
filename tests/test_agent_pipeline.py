@@ -316,6 +316,8 @@ def test_run_dry_run_success(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(agent, "design_svg", MagicMock(return_value=f"<svg viewBox='0 0 1080 1350'><text font-size='24'>Title</text><text font-size='22'>A</text><text font-size='22'>B</text></svg>"))
     monkeypatch.setattr(agent, "render_svg", MagicMock())
     monkeypatch.setattr(agent, "render_svg_to_gif", MagicMock())
+    monkeypatch.setattr(agent, "plan_infographic", MagicMock(side_effect=lambda post, headline, idea: idea))
+    monkeypatch.setattr(agent, "design_quality_checks", MagicMock(return_value=[]))
     monkeypatch.setattr(agent, "review_all", MagicMock(return_value=(True, [], {"scores": {}})))
 
     mock_tg = MagicMock()
