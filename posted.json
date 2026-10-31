@@ -77,5 +77,20 @@
         "claim": "Industry best practices and guidelines"
       }
     ]
+  },
+  {
+    "date": "2026-10-31T00:16:02",
+    "draft_id": "20261031-ec431f61",
+    "source_domain": "deeplearning.ai/the-batch",
+    "headline": "Web security research papers portswigger research",
+    "post_urn": "urn:li:share:7522147509624905728",
+    "chars": 1898,
+    "sources": [
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web",
+        "published": "2024-01-01",
+        "claim": "Industry best practices and guidelines"
+      }
+    ]
   }
 ]
