@@ -343,25 +343,9 @@ def render_svg(svg: str, path: Path) -> Path:
     return path
 
 
-def render_svg_to_gif(svg: str, path: Path, n_frames: int = 12, fps: int = 12) -> Path:
-    """Render a technical SVG infographic into a smooth, seamlessly looping animated GIF.
-    
-    Animation pipeline:
-    1. Detects connector lines and data flow paths. Auto-applies dashed stroke arrays if solid.
-    2. Generates 12 discrete animation frames by shifting stroke-dashoffset across a 20px period.
-    3. Substitutes dynamic pulse placeholders ({pulse_r}, {pulse_op}) for pulsing radar rings.
-    4. Renders each frame via CairoSVG to a bitmap, resizes with LANCZOS antialiasing to 720x900,
-       and quantizes to a 128-color median cut palette for compact file size and high fidelity.
-    5. Saves as a looping animated GIF.
-    """
+def gif_frame_svgs(svg: str, n_frames: int = 12) -> list[str]:
+    """Build the per-frame SVGs the animated GIF is rendered from (see render_svg_to_gif)."""
     import math
-    import io
-    from PIL import Image
-
-    # Validate SVG validity before proceeding
-    issues = svg_checks(svg)
-    if issues:
-        raise ValueError("; ".join(issues))
 
     # Helper: Ensure connector lines have stroke-dasharray so they animate
     def _ensure_dashed(m):
@@ -370,7 +354,11 @@ def render_svg_to_gif(svg: str, path: Path, n_frames: int = 12, fps: int = 12) -
         is_self_closing = attrs.endswith("/")
         if is_self_closing:
             attrs = attrs[:-1].rstrip()
-        if "stroke=" in attrs and "stroke-dasharray" not in attrs and not attrs.startswith("rect"):
+        # Filled or closed paths are shapes (cards, callouts, badges), not connectors: never dash them,
+        # or their outlines turn into moving dashes in the GIF.
+        is_shape = tag == "path" and (not re.search(r'\bfill\s*=\s*["\']none["\']', attrs)
+                                      or re.search(r'\bd\s*=\s*"[^"]*[zZ]\s*"', attrs))
+        if "stroke=" in attrs and "stroke-dasharray" not in attrs and not attrs.startswith("rect") and not is_shape:
             attrs += ' stroke-dasharray="10 10"'
         return f"<{tag} {attrs} />" if is_self_closing else f"<{tag} {attrs}>"
 
@@ -409,7 +397,31 @@ def render_svg_to_gif(svg: str, path: Path, n_frames: int = 12, fps: int = 12) -
             frame_svg = frame_svg.replace("{pulse_r}", str(int(16 + pulse_r_delta)))
         if "{pulse_op}" in frame_svg:
             frame_svg = frame_svg.replace("{pulse_op}", str(pulse_op))
+        frames.append(frame_svg)
+    return frames
 
+
+def render_svg_to_gif(svg: str, path: Path, n_frames: int = 12, fps: int = 12) -> Path:
+    """Render a technical SVG infographic into a smooth, seamlessly looping animated GIF.
+    
+    Animation pipeline:
+    1. Detects connector lines and data flow paths. Auto-applies dashed stroke arrays if solid.
+    2. Generates 12 discrete animation frames by shifting stroke-dashoffset across a 20px period.
+    3. Substitutes dynamic pulse placeholders ({pulse_r}, {pulse_op}) for pulsing radar rings.
+    4. Renders each frame via CairoSVG to a bitmap, resizes with LANCZOS antialiasing to 720x900,
+       and quantizes to a 128-color median cut palette for compact file size and high fidelity.
+    5. Saves as a looping animated GIF.
+    """
+    import io
+    from PIL import Image
+
+    # Validate SVG validity before proceeding
+    issues = svg_checks(svg)
+    if issues:
+        raise ValueError("; ".join(issues))
+
+    frames = []
+    for frame_svg in gif_frame_svgs(svg, n_frames):
         # Render frame to PNG buffer, resize cleanly, and quantize palette
         png_bytes = cairosvg.svg2png(bytestring=frame_svg.encode("utf-8"), output_width=W, output_height=H)
         img = Image.open(io.BytesIO(png_bytes)).convert("RGB")

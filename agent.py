@@ -69,7 +69,8 @@ from dotenv import load_dotenv
 
 # Module Imports: Graphics, LinkedIn Distribution, Telegram Bot, Quality & Anti-Hallucination
 from infographic import (ICON_NAMES, design_quality_checks, extract_svg, finalize_svg,
-                         render_svg, render_svg_to_gif, svg_checks)
+                         gif_frame_svgs, render_svg, render_svg_to_gif, svg_checks)
+from layout_check import gif_issues, layout_issues
 from linkedin import LinkedInClient
 from linkedin_groups import post_to_groups
 from telegram_review import TelegramReviewer, get_status
@@ -911,6 +912,12 @@ def render_poster_files(svg: str, image_path: Path) -> Path:
     image_path.with_suffix(".svg").write_text(svg)
     gif_path = image_path.with_suffix(".gif")
     try:
+        # The GIF rewrites the drawing (moving dashes, pulsing rings), so check its frames too and
+        # send the clean static PNG instead when any frame has overlapping, hidden or clipped items.
+        problems = gif_issues(svg, gif_frame_svgs(svg))
+        if problems:
+            print("Animated GIF failed the layout check, using static PNG:", problems)
+            return image_path
         render_svg_to_gif(svg, gif_path)
         return gif_path
     except Exception as e:  # noqa: BLE001 - the GIF is a bonus; the PNG is always valid
@@ -925,8 +932,10 @@ def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: P
 
     Up to three tries: the first must pass the hard safety/readability checks (svg_checks); later
     tries also receive soft richness feedback (design_quality_checks) so sparse, empty or
-    overlapping drawings get redrawn denser and cleaner. Style problems never block a post: when
-    the last try is still imperfect, the best valid drawing is rendered anyway. media_path is None
+    overlapping drawings get redrawn denser and cleaner. Every try is also rendered and measured
+    (layout_check.layout_issues): a drawing with overlapping, hidden, cut-off or spilling items is
+    never published. Style problems never block a post: when the last try is still imperfect, the
+    best valid, layout-clean drawing is rendered anyway. media_path is None
     only when no valid drawing could be produced; last_feedback then explains why.
     """
     fallback_svg = None
@@ -942,7 +951,15 @@ def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: P
             feedback = "\n".join(hard_issues)
             print("Drawing checks failed:", hard_issues)
             continue
-        fallback_svg = svg  # Best valid drawing so far
+        # Measure the rendered poster: overlapping, hidden (covered or same colour as the background),
+        # clipped or spilling items. These are hard failures: such a drawing is never published.
+        layout = layout_issues(svg)
+        if layout:
+            feedback = ("The drawing has overlapping, hidden or cut-off items. Redraw it and fix:\n"
+                        + "\n".join(layout))
+            print("Layout check failed:", layout)
+            continue
+        fallback_svg = svg  # Best valid, layout-clean drawing so far
         soft_issues = design_quality_checks(svg)
         if soft_issues and try_no < 2:
             feedback = ("The drawing is valid but is not yet a rich, polished poster. "
