@@ -15,8 +15,9 @@ name: Daily LinkedIn post
 
 on:
   schedule:
-    # Schedule: Run daily at 9:00 AM UTC (Adjust cron as needed; GitHub Actions cron is strictly UTC)
-    - cron: "0 9 * * *"
+    # Run daily at 9:15 AM New York time, including daylight saving changes.
+    - cron: "15 9 * * *"
+      timezone: "America/New_York"
 
   # Manual on-demand execution via GitHub Web UI
   workflow_dispatch:
@@ -25,6 +26,15 @@ on:
         description: "Optional custom topic (leave empty for autonomous AI research)"
         required: false
         default: ""
+      run_mode:
+        description: "Manual runs: check fallback, generate without publishing, or publish"
+        required: true
+        type: choice
+        default: fallback-check
+        options:
+          - fallback-check
+          - dry-run
+          - publish
 
 permissions:
   contents: write            # Required to commit updated posted.json and topic_history.json
@@ -42,11 +52,11 @@ jobs:
     steps:
       # Step 1: Check out repository code
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # Step 2: Set up Python 3.12 runtime
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -67,30 +77,48 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPEN_AI_API_KEY: ${{ secrets.OPEN_AI_API_KEY }}
           LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           LI_AT: ${{ secrets.LI_AT }}
           TOPIC: ${{ inputs.topic }}
+          RUN_MODE: ${{ inputs.run_mode }}
         run: |
-          if [ -n "$TOPIC" ]; then
-            python agent.py --topic "$TOPIC"
-          else
-            python agent.py
-          fi
+          case "${RUN_MODE:-publish}" in
+            fallback-check)
+              python scripts/check_fallback.py
+              ;;
+            dry-run)
+              args=(--dry-run)
+              if [ -n "$TOPIC" ]; then args+=(--topic "$TOPIC"); fi
+              python agent.py "${args[@]}"
+              ;;
+            publish)
+              args=()
+              if [ -n "$TOPIC" ]; then args+=(--topic "$TOPIC"); fi
+              python agent.py "${args[@]}"
+              ;;
+            *)
+              echo "Unknown run mode: $RUN_MODE" >&2
+              exit 2
+              ;;
+          esac
 
       # Step 7: Upload generated SVGs, GIFs, and review logs as build artifacts
       - name: Upload Output Artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: output
           path: output/
+          if-no-files-found: ignore
 
       # Step 8: Commit updated publication logs and topic history back to remote git repo
       - name: Commit Post & Topic History
-        if: success()
+        if: success() && (github.event_name == 'schedule' || inputs.run_mode == 'publish')
         run: |
           git config user.name "linkedin-agent"
           git config user.email "agent@users.noreply.github.com"

@@ -417,6 +417,10 @@ Run completely free on GitHub's infrastructure without maintaining a dedicated s
 3. The included workflow [`.github/workflows/daily-post.yml`](file:///.github/workflows/daily-post.yml) automatically triggers every morning at **9:15 AM America/New_York**.
 4. The GitHub Actions runner generates the post, sends the review card to Telegram, and waits up to **4 hours** for your approval before publishing and committing the logs.
 
+To check both fallbacks safely, open **Actions → Daily LinkedIn post → Run workflow** and leave **Run mode** at `fallback-check`. It simulates an Anthropic failure and verifies a real OpenAI response, then simulates both Anthropic and OpenAI failures and verifies a real Gemini response. Look for both `1/2 passed` and `2/2 passed` in the **Run LinkedIn Agent** log. It does not contact Telegram or LinkedIn. Set `OPENAI_API_KEY` and `GOOGLE_API_KEY` (or their supported alternate names) as repository secrets with working API access.
+
+For a full generation check without publishing, select `dry-run`; the resulting files are uploaded as a workflow artifact. Select `publish` only when you want the Telegram approval flow. Scheduled runs always use the normal publish flow at 9:15 AM America/New_York, including daylight saving changes.
+
 ### Option B: Native macOS LaunchAgent Daemon
 
 If you prefer running locally on your Mac, use the native LaunchAgent daemon script:
