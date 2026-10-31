@@ -15,12 +15,8 @@ name: Daily LinkedIn post
 
 on:
   schedule:
-    # Schedule: Run daily at 9:15 AM New York time (EDT/EST)
-    - cron: "15 9 * * *"
-      timezone: "America/New_York"
-    # Optional evening schedule (uncomment to publish twice daily at 5:15 PM):
-    # - cron: "15 17 * * *"
-    #   timezone: "America/New_York"
+    # Schedule: Run daily at 9:00 AM UTC (Adjust cron as needed; GitHub Actions cron is strictly UTC)
+    - cron: "0 9 * * *"
 
   # Manual on-demand execution via GitHub Web UI
   workflow_dispatch:
