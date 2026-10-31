@@ -113,6 +113,8 @@ gemini_client = genai.Client(api_key=gemini_key) if gemini_key else None
 
 # Active LLM provider tracking ("anthropic", "openai" or "gemini")
 ACTIVE_LLM_PROVIDER = "anthropic"
+# The last request the Telegram bot ran, so the "Try again" button can repeat it.
+LAST_TG_REQUEST: dict = {}
 DISABLED_PROVIDERS: set[str] = set()
 # Failover order used when the active provider errors out
 PROVIDER_ORDER = ["anthropic", "openai", "gemini"]
@@ -821,10 +823,10 @@ Return ONLY JSON:
  "hero": {"form": "before_after | flow | layers | cycle",
           "caption": "at most 50 chars",
           "left_label": "before_after only: heading for the old way", "right_label": "before_after only: heading for the new way",
-          "nodes": [{"label": "at most 22 chars", "detail": "at most 32 chars", "icon": "ICON"}]},
+          "nodes": [{"label": "at most 18 chars", "detail": "at most 22 chars, a complete phrase", "icon": "ICON"}]},
  "modules": [{"kind": "code | checklist | stats | pros_cons | steps",
               "heading": "at most 26 chars", "icon": "ICON",
-              "lines": ["at most 36 chars each, 3-5 lines. For kind=code use real code lines from the post; for stats use 'value | caption'"]}],
+              "lines": ["at most 30 chars each, 3-4 lines, each a complete phrase; never end a line with an ellipsis. For kind=code use real code lines from the post; for stats use 'value | caption'"]}],
  "gotcha": {"heading": "Watch out", "text": "at most 70 chars: the limitation, tradeoff or breaking change"},
  "takeaway": "at most 70 chars: the one thing to remember"}
 
@@ -923,13 +925,23 @@ def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: P
     """
     Ask the designer for a poster, validate it, and render it. Returns (media_path, last_feedback).
 
-    Up to three tries: the first must pass the hard safety/readability checks (svg_checks); later
-    tries also receive soft richness feedback (design_quality_checks) so sparse, empty or
-    overlapping drawings get redrawn denser and cleaner. Style problems never block a post: when
-    the last try is still imperfect, the best valid drawing is rendered anyway. media_path is None
-    only when no valid drawing could be produced; last_feedback then explains why.
+    Prefer a predictable layout for a complete content blueprint. For other briefs, give the
+    designer three tries. Both safety and quality checks must pass before an image is used.
     """
-    fallback_svg = None
+    from poster_layout import poster_from_brief
+
+    structured_svg = poster_from_brief(brief, headline, footer)
+    if structured_svg:
+        structured_svg = finalize_svg(structured_svg)
+        issues = svg_checks(structured_svg) + design_quality_checks(structured_svg)
+        if not issues:
+            try:
+                return render_poster_files(structured_svg, image_path), None
+            except ValueError as e:
+                feedback = str(e)
+        else:
+            feedback = "Structured poster checks failed: " + "; ".join(issues)
+            print(feedback)
     for try_no in range(3):
         try:
             svg = design_svg(post, brief, headline, feedback, footer)
@@ -942,9 +954,8 @@ def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: P
             feedback = "\n".join(hard_issues)
             print("Drawing checks failed:", hard_issues)
             continue
-        fallback_svg = svg  # Best valid drawing so far
         soft_issues = design_quality_checks(svg)
-        if soft_issues and try_no < 2:
+        if soft_issues:
             feedback = ("The drawing is valid but is not yet a rich, polished poster. "
                         "Redraw it and fix:\n" + "\n".join(soft_issues))
             print("Design quality feedback:", soft_issues)
@@ -954,11 +965,6 @@ def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: P
         except ValueError as e:
             feedback = str(e)
             print("Render failed:", e)
-    if fallback_svg:  # Last resort: render the best valid drawing seen
-        try:
-            return render_poster_files(fallback_svg, image_path), feedback
-        except ValueError as e:
-            feedback = str(e)
     return None, feedback
 
 
@@ -1784,7 +1790,8 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
             tracker_id,
             f"❌ Could not produce an approved draft for '{current_topic or current_source}' after {CFG['review']['max_attempts']} attempts.\n\n"
             f"Last issue: {feedback[:150] if feedback else 'Checks could not be satisfied.'}\n\n"
-            "💡 Tip: Tap ✍️ Post from Topic to try another prompt or 📝 Direct Post to provide your own text directly."
+            "💡 Tip: Tap 🔁 Try again to retry the same request, or ✍️ Post from Topic to try another prompt.",
+            reply_markup={"inline_keyboard": [[{"text": "🔁 Try again", "callback_data": "retry_last"}]]},
         )
 
 
@@ -1852,6 +1859,8 @@ if __name__ == "__main__":
             remind_every_s=CFG["telegram"]["remind_every_minutes"] * 60,
         )
         def on_telegram_topic(t: str):
+            LAST_TG_REQUEST.clear()
+            LAST_TG_REQUEST.update(kind="topic", topic=t, source=None)
             tracker_id = tg.send_progress_tracker(f"Generating Post from Topic: {t[:40]}")
             try:
                 run(source_arg=None, dry_run=False, topic_arg=t, tg=tg, tracker_id=tracker_id)
@@ -1868,6 +1877,8 @@ if __name__ == "__main__":
                 tg.update_progress(tracker_id, f"⚠️ Error processing direct post: {str(e)[:250]}")
 
         def on_telegram_daily():
+            LAST_TG_REQUEST.clear()
+            LAST_TG_REQUEST.update(kind="daily")
             tracker_id = tg.send_progress_tracker("Daily LinkedIn Post Pipeline")
             try:
                 run(source_arg=None, dry_run=False, tg=tg, tracker_id=tracker_id)
@@ -1881,12 +1892,28 @@ if __name__ == "__main__":
                 choice = tg.choose_topic("suggest-" + uuid.uuid4().hex[:6], suggestions)
                 if choice.get("action") == "new_topic":
                     topic_title = choice.get("topic") or "Suggested Topic"
+                    LAST_TG_REQUEST.clear()
+                    LAST_TG_REQUEST.update(kind="topic", topic=choice.get("topic"), source=choice.get("source"))
                     tracker_id = tg.send_progress_tracker(f"Generating Post from Topic: {topic_title[:40]}")
                     run(source_arg=choice.get("source"), dry_run=False, topic_arg=choice.get("topic"), tg=tg, tracker_id=tracker_id)
             except Exception as e:
                 print("Error in on_telegram_suggest:", e)
 
+        def on_telegram_retry():
+            """Repeat the last Telegram request after a 'Could not produce an approved draft' failure."""
+            req = dict(LAST_TG_REQUEST)
+            if req.get("kind") == "topic" and req.get("topic"):
+                tracker_id = tg.send_progress_tracker(f"Trying again: {req['topic'][:40]}")
+                run(source_arg=req.get("source"), dry_run=False, topic_arg=req["topic"], tg=tg, tracker_id=tracker_id)
+            elif req.get("kind") == "daily":
+                tracker_id = tg.send_progress_tracker("Trying again: daily LinkedIn post")
+                run(source_arg=None, dry_run=False, tg=tg, tracker_id=tracker_id)
+            else:
+                tg._call("sendMessage", chat_id=tg.chat_id,
+                         text="Nothing to retry yet. Send a topic or run the daily post first.")
+
         tg.listen_for_commands(
+            on_retry_callback=on_telegram_retry,
             on_topic_callback=on_telegram_topic,
             on_direct_callback=on_telegram_direct,
             on_daily_callback=on_telegram_daily,

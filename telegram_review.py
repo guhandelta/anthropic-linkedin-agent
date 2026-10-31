@@ -255,11 +255,12 @@ class TelegramReviewer:
         msg = self._call("sendMessage", chat_id=self.chat_id, text=f"⏳ **{title}**\n\n🔄 Starting pipeline...")
         return msg["message_id"]
 
-    def update_progress(self, message_id: int, step_text: str):
-        """Update the existing progress tracker message text in real time."""
+    def update_progress(self, message_id: int, step_text: str, reply_markup=None):
+        """Update the existing progress tracker message text in real time (optionally with buttons)."""
         try:
+            extra = {"reply_markup": reply_markup} if reply_markup else {}
             self._call("editMessageText", chat_id=self.chat_id, message_id=message_id,
-                       text=step_text)
+                       text=step_text, **extra)
         except Exception:
             pass
 
@@ -631,6 +632,7 @@ class TelegramReviewer:
         self,
         on_topic_callback,
         on_direct_callback,
+        on_retry_callback=None,
         on_daily_callback=None,
         on_suggest_callback=None,
         on_status_callback=None,
@@ -682,6 +684,13 @@ class TelegramReviewer:
                 cq = up.get("callback_query")
                 if cq:
                     print(f"[Telegram] Received callback query: {cq.get('data')}")
+                    if cq.get("data") == "retry_last" and on_retry_callback:
+                        self._answer_cq(cq["id"], text="Trying again...")
+                        try:
+                            on_retry_callback()
+                        except Exception as e:
+                            self._call("sendMessage", chat_id=self.chat_id, text=f"⚠️ Error: {str(e)[:1000]}")
+                        continue
                     self._answer_cq(cq["id"], text="Received.")
                     continue
                 if not msg:
