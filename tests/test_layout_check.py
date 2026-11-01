@@ -101,3 +101,17 @@ def test_draw_poster_redraws_until_layout_is_clean(tmp_path, monkeypatch):
     media, feedback = agent.draw_poster("post", "brief", "Head", "foot", tmp_path / "p.png")
     assert media is not None and designer.call_count == 2
     assert "Hidden" in designer.call_args.args[3]  # the second call got the layout feedback
+
+
+def test_diagonal_strike_through_a_small_badge_is_not_flagged():
+    # A crossed-out XSS badge: a small rounded card with a diagonal line across its label.
+    svg = poster('<rect x="400" y="300" width="160" height="80" rx="10" fill="#FEE2E2" stroke="#DC2626"/>'
+                 '<text x="420" y="350" font-size="30" font-weight="bold" fill="#DC2626">XSS</text>'
+                 '<line x1="385" y1="395" x2="575" y2="290" stroke="#111827" stroke-width="8"/>')
+    assert not any("crosses text" in i for i in layout_issues(svg))
+
+
+def test_diagonal_line_through_plain_text_is_still_flagged():
+    svg = poster('<text x="100" y="600" font-size="40" fill="#111">A long label on the page</text>'
+                 '<line x1="60" y1="520" x2="900" y2="680" stroke="#111" stroke-width="6"/>')
+    assert any("crosses text" in i for i in layout_issues(svg))

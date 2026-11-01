@@ -146,6 +146,31 @@ def _is_stroke_line(el) -> bool:
     return False
 
 
+def _is_badge_strike(line_mask: Image.Image, card_masks: list) -> bool:
+    """True for a diagonal line that lies inside a small badge, like a crossed-out icon label.
+
+    A strike-through is drawn over one small card and its ends stay near that card. A line that cuts
+    through a label on a plain background is still reported. Angle 20-70 degrees counts as diagonal.
+    """
+    lb = line_mask.getbbox()
+    if not lb:
+        return False
+    lw, lh = lb[2] - lb[0], lb[3] - lb[1]
+    if lw < 1 or lh < 1 or not (0.36 <= lh / lw <= 2.75):
+        return False
+    margin = 40 * SCALE
+    for card in card_masks:
+        cb = card.getbbox()
+        if not cb:
+            continue
+        if cb[2] - cb[0] > 260 * SCALE or cb[3] - cb[1] > 200 * SCALE:
+            continue  # only small badges qualify
+        if (cb[0] - margin <= lb[0] and lb[2] <= cb[2] + margin
+                and cb[1] - margin <= lb[1] and lb[3] <= cb[3] + margin):
+            return True
+    return False
+
+
 def layout_issues(svg: str, max_items: int = 4) -> list[str]:
     """Return human-readable layout problems found in the rendered poster (empty list = clean).
 
@@ -208,6 +233,8 @@ def layout_issues(svg: str, max_items: int = 4) -> list[str]:
                 add("Icon overlaps text", f"{_label(icon)} on {_label(a)}")
         for line in lines:
             if _count(_and(grown[a], masks[line])) > MIN_OVERLAP_PX:
+                if _is_badge_strike(masks[line], [masks[c] for c in cards]):
+                    continue  # intentional diagonal strike-through over a small badge
                 add("Line or arrow crosses text", f"{_label(a)}")
     for i, a in enumerate(icons):
         for b in icons[i + 1:]:
