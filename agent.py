@@ -1716,20 +1716,17 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
         takeaway = str(draft.get("technical_takeaway") or "").strip()
         issues = hard_checks(post) + source_checks(
             sources, posted, is_custom_topic=bool(current_topic), topic_kind=topic_kind)
+        if removed_text:
+            # Never lose content silently: the writer must rewrite the post without the cut text
+            # and keep its key facts and takeaway.
+            issues.append(
+                "Your draft was too long, so these sentences were cut to fit the length window. "
+                "Rewrite the post so the key facts and the takeaway survive, staying within the "
+                "length window: " + " | ".join(removed_text)[:600])
         if len(takeaway.split()) < 6 or len(takeaway) < 35:
             issues.append("Provide a specific technical takeaway with an action and tradeoff.")
         elif len(topic_tokens(takeaway) & topic_tokens(post)) < 2:
             issues.append("The technical takeaway must be explained in the post.")
-        # Only a cut that touches the takeaway goes back to the writer. Any other trimmed sentence
-        # is logged, so a long draft isn't rejected over a line that carries no key point.
-        key_cut = [r for r in removed_text
-                   if len(topic_tokens(takeaway) & topic_tokens(r)) >= 2]
-        if key_cut:
-            issues.append(
-                "The length trim removed a sentence that carries the takeaway. Rewrite the post so the "
-                "key point survives, staying within the length window: " + " | ".join(key_cut)[:600])
-        elif removed_text:
-            print("Length trim removed non-key sentences:", " | ".join(removed_text)[:300])
         first_source = sources[0].get("url", "") if sources and isinstance(sources[0], dict) else ""
         if duplicate_topic(headline, prior_history,
                            first_source if domain_allowed(first_source) else "",

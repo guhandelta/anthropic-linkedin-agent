@@ -420,31 +420,3 @@ def test_drawing_failure_redraws_same_post_without_new_writer_call(tmp_path, mon
     agent.run(source_arg="react.dev/blog", dry_run=True, tg=None)
     assert writer.call_count == 1          # the post was not rewritten
     assert drawer.call_count == 2          # the same post was redrawn once
-
-
-def test_trim_of_non_key_sentence_does_not_fail_the_attempt(tmp_path, monkeypatch):
-    monkeypatch.setattr(agent, "ROOT", tmp_path)
-    monkeypatch.setattr(agent, "load_log", MagicMock(return_value=[]))
-    monkeypatch.setattr(agent, "pick_source", MagicMock(return_value="react.dev/blog"))
-    monkeypatch.setattr(agent, "select_model_for_run", MagicMock(return_value="x"))
-    monkeypatch.setattr(agent, "hard_checks", lambda post: [])
-    monkeypatch.setattr(agent, "source_checks", lambda *a, **k: [])
-    monkeypatch.setattr(agent, "duplicate_topic", lambda *a, **k: False)
-    monkeypatch.setattr(agent, "fit_with_report",
-                        lambda post, *a, **k: (post, ["An unrelated aside about lunch and weather."]))
-    monkeypatch.setattr(agent, "plan_infographic", MagicMock(side_effect=lambda p, h, i: i))
-    art = tmp_path / "p.png"
-    art.write_bytes(b"png")
-    monkeypatch.setattr(agent, "draw_poster", MagicMock(return_value=(art, None)))
-    monkeypatch.setattr(agent, "review_all", MagicMock(return_value=(True, [], {})))
-    body = "Rendering tradeoffs change how the frontend library behaves under load. " * 40
-    draft = {"post": body + "#Tech #Dev #Coding #Web",
-             "headline": "Frontend rendering tradeoffs",
-             "topic_kind": "evergreen",
-             "technical_takeaway": "Check rendering tradeoffs before choosing a large frontend library",
-             "sources": [{"url": "https://react.dev/blog/item", "published": "2026-10-30", "claim": "Fast builds"}],
-             "infographic_idea": "Diagram of the rendering steps."}
-    writer = MagicMock(return_value=draft)
-    monkeypatch.setattr(agent, "write_draft", writer)
-    agent.run(source_arg="react.dev/blog", dry_run=True, tg=None)
-    assert writer.call_count == 1  # the non-key trim did not cost a rewrite
