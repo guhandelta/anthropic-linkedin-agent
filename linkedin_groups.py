@@ -144,24 +144,24 @@ def post_to_single_group(page, group_url: str, text: str, image_path: Path | Non
     # 2. Upload image or GIF attachment if provided
     if image_path and image_path.exists():
         media_btn = page.locator("button[aria-label*='Add media' i], button[aria-label*='photo' i]").first
-        if not media_btn.is_visible():
-            print(f"  ⚠️ Media button unavailable for {group_url}; skipping text-only post")
-            return False
-        try:
-            # Intercept file chooser dialog
-            with page.expect_file_chooser(timeout=7000) as fc_info:
-                media_btn.click()
-            file_chooser = fc_info.value
-            file_chooser.set_files(str(image_path.resolve()))
-            page.wait_for_timeout(3000)
-            # Confirm preview modal by clicking 'Next'
-            next_btn = page.locator("button:has-text('Next'), button.share-box-footer__primary-btn").first
-            if next_btn.is_visible():
-                next_btn.click()
-                page.wait_for_timeout(2000)
-        except Exception as e:
-            print(f"  ⚠️ Media attachment failed on {group_url}: {e}; skipping text-only post")
-            return False
+        if media_btn.is_visible():
+            try:
+                # Intercept file chooser dialog
+                with page.expect_file_chooser(timeout=7000) as fc_info:
+                    media_btn.click()
+                file_chooser = fc_info.value
+                file_chooser.set_files(str(image_path.resolve()))
+                page.wait_for_timeout(3000)
+                # Confirm preview modal by clicking 'Next'
+                next_btn = page.locator("button:has-text('Next'), button.share-box-footer__primary-btn").first
+                if next_btn.is_visible():
+                    next_btn.click()
+                    page.wait_for_timeout(2000)
+            except Exception as e:
+                # Keep the group post: text-only is better than no post in the group.
+                print(f"  ⚠️ Warning: Image attachment failed on {group_url}: {e}; posting text only")
+        else:
+            print(f"  ⚠️ Media button not visible on {group_url}; posting text only")
 
     # 3. Enter post text into the contenteditable composer
     editor = page.locator("div[role='textbox'], div[contenteditable='true']").first
