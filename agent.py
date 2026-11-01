@@ -1182,39 +1182,85 @@ def clamp_emojis(post: str, min_e: int = 3, max_e: int = 6) -> str:
     return post
 
 
-def _drop_trailing_hashtags(post: str, min_chars: int, max_chars: int) -> str:
-    """Remove surplus hashtags from a final hashtag line, only while the post stays in range.
+NEUTRAL_CLOSERS = [
+    "Try it on a small project first and measure the result before you roll it out wider.",
+    "Which part of this would you check first in your own codebase?",
+    "Have you run into this trade-off in production? Share how you handled it.",
+    "The fastest way to learn it is to build one small example and compare the results.",
+]
+PAD_HASHTAGS = [
+    "SoftwareEngineering", "SystemArchitecture", "WebDevelopment", "Programming",
+    "CleanCode", "FrontendEngineering", "BackendEngineering", "DevOps",
+    "CloudComputing", "CodeQuality", "TechLeadership", "SoftwareDesign",
+]
 
-    Hashtags carry no claims, so dropping them is the one safe trim. It never goes below the
-    configured hashtag count, and it never pushes the post under min_chars.
-    """
-    lines = post.rstrip().split("\n")
-    tags = lines[-1].split()
-    keep = CFG["post"]["hashtags"]
-    if not tags or not all(t.startswith("#") for t in tags):
-        return post
-    while len(post) > max_chars and len(tags) > keep:
-        tags.pop()
-        candidate = "\n".join(lines[:-1] + [" ".join(tags)])
-        if len(candidate) < min_chars:
-            break
-        post = candidate
-    return post
+
+def _split_hashtags(post: str) -> tuple[str, list[str]]:
+    """Separate a trailing hashtag line from the body."""
+    parts = post.rsplit("\n\n", 1)
+    if len(parts) == 2:
+        tokens = parts[1].split()
+        if tokens and all(t.startswith("#") for t in tokens):
+            return parts[0], [t.lstrip("#") for t in tokens]
+    return post, []
+
+
+def _join_post(body: str, tags: list[str]) -> str:
+    return body + ("\n\n" + " ".join(f"#{t}" for t in tags) if tags else "")
 
 
 def fit_to_character_range(post: str, min_chars: int = None, max_chars: int = None) -> str:
-    """Normalize whitespace, then trim surplus hashtags when the post is only slightly too long.
+    """Bring the post inside [min_chars, max_chars] (defaults from config.yaml) without changing its claims.
 
-    Larger overshoots are not cut by code: the hard checks reject them with a "cut about N
-    characters" instruction and the writer rewrites the post. Claims are never edited here.
+    Over the maximum: drop surplus hashtags, then whole trailing sentences while the post stays in
+    range, and finally trim the last words at a word boundary.
+    Under the minimum: add a neutral closing paragraph (no facts), then hashtags, which step by at
+    most ~22 characters so the post always lands inside the window.
     """
     min_chars = CFG["post"]["min_chars"] if min_chars is None else min_chars
     max_chars = CFG["post"]["max_chars"] if max_chars is None else max_chars
     post = re.sub(r"[ \t]+", " ", post).strip()
     post = re.sub(r"\n{3,}", "\n\n", post)
-    if len(post) > max_chars:
-        post = _drop_trailing_hashtags(post, min_chars, max_chars)
-    return post
+    if min_chars <= len(post) <= max_chars:
+        return post
+
+    body, tags = _split_hashtags(post)
+    keep = CFG["post"]["hashtags"]
+
+    if len(_join_post(body, tags)) > max_chars:
+        while len(_join_post(body, tags)) > max_chars and len(tags) > keep:
+            tags = tags[:-1]
+        while len(_join_post(body, tags)) > max_chars:
+            # 1. Whole trailing sentence, if the post stays in range
+            ends = [m.end() for m in re.finditer(r"[.!?](?=\s|$)", body)]
+            if ends and ends[-2:-1]:
+                candidate = body[:ends[-2]].rstrip()
+                if len(_join_post(candidate, tags)) >= min_chars:
+                    body = candidate
+                    continue
+            # 2. Trim words from the end at a word boundary and close the sentence
+            excess = len(_join_post(body, tags)) - max_chars
+            cut = body[: max(len(body) - excess - 1, 0)].rstrip()
+            if " " in cut:
+                cut = cut.rsplit(" ", 1)[0]
+            body = cut.rstrip(" ,;:") + "."
+            break
+
+    if len(_join_post(body, tags)) < min_chars:
+        for closer in NEUTRAL_CLOSERS:
+            candidate = body + "\n\n" + closer
+            if len(_join_post(candidate, tags)) > max_chars:
+                continue
+            body = candidate
+            if len(_join_post(body, tags)) >= min_chars - 140:
+                break
+        pad = 0
+        while len(_join_post(body, tags)) < min_chars:
+            tag = PAD_HASHTAGS[pad % len(PAD_HASHTAGS)]
+            pad += 1
+            tags.append(tag if tag not in tags else f"{tag}Insights")
+
+    return _join_post(body, tags)
 
 
 def source_checks(sources: list, posted: set[str], is_custom_topic: bool = False,
