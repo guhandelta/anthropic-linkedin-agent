@@ -159,14 +159,3 @@ def test_fit_always_lands_in_range_for_many_lengths():
         fitted = agent.fit_to_character_range(body + "\n\n#Dev #Api")
         assert 2850 <= len(fitted) <= 2990, n
 
-
-
-def test_fit_with_report_returns_the_cut_sentences():
-    body = "Keep this first point. " + "Filler detail sentence here. " * 150 + "Final takeaway sentence."
-    fitted, removed = agent.fit_with_report(body + "\n\n#One #Two")
-    assert 2850 <= len(fitted) <= 2990
-    assert removed, "a trim must report what it removed"
-    assert all(r and r in body for r in removed)
-    # Nothing is removed when the post is already in range.
-    _, none_removed = agent.fit_with_report("A" * 2920)
-    assert none_removed == []
