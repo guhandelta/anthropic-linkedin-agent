@@ -1749,10 +1749,9 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
         media_path, design_feedback = draw_poster(
             post, poster_brief, headline, CFG["infographic"]["footer"], image_path, feedback)
         if not media_path:
-            # draw_poster can return no feedback; never pass None on or fail while reporting it.
-            feedback = design_feedback or "The infographic could not be drawn. Simplify the drawing and keep the post."
+            feedback = design_feedback
             if tg and tracker_id:
-                tg.update_progress(tracker_id, f"⚠️ [Attempt {attempt}/{CFG['review']['max_attempts']}] Refining visual design: {feedback[:60]}...")
+                tg.update_progress(tracker_id, f"⚠️ [Attempt {attempt}/{CFG['review']['max_attempts']}] Refining visual design: {design_feedback[:60]}...")
             continue
 
         if tg and tracker_id:

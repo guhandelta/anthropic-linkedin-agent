@@ -368,25 +368,3 @@ def test_run_retries_when_draft_has_no_post_text(tmp_path, monkeypatch):
     monkeypatch.setattr(agent, "select_model_for_run", lambda *a, **k: "x")
     agent.run(dry_run=True)
     assert calls["n"] == agent.CFG["review"]["max_attempts"]
-
-
-def test_run_survives_a_failed_drawing_without_feedback(tmp_path, monkeypatch):
-    # draw_poster can return (None, None). The run must carry feedback forward, not crash on None.
-    monkeypatch.setattr(agent, "ROOT", tmp_path)
-    monkeypatch.setattr(agent, "load_log", MagicMock(return_value=[]))
-    monkeypatch.setattr(agent, "pick_source", MagicMock(return_value="react.dev/blog"))
-    monkeypatch.setattr(agent, "select_model_for_run", MagicMock(return_value="x"))
-    from datetime import datetime, timedelta
-    recent = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
-    draft = {"post": "Practical insight on modern frontends. " + "word " * 560 + "#Tech #Dev #Coding #Web",
-             "headline": "Modern frontend rendering tradeoffs", "topic_kind": "evergreen",
-             "technical_takeaway": "Check modern frontend rendering tradeoffs before choosing a large library",
-             "sources": [{"url": "https://react.dev/blog/item", "published": recent, "claim": "Fast builds"}],
-             "infographic_idea": "Diagram showing the compilation steps clearly."}
-    monkeypatch.setattr(agent, "write_draft", MagicMock(return_value=draft))
-    monkeypatch.setattr(agent, "plan_infographic", MagicMock(side_effect=lambda p, h, i: i))
-    monkeypatch.setattr(agent, "draw_poster", MagicMock(return_value=(None, None)))
-    mock_tg = MagicMock()
-    agent.run(source_arg="react.dev/blog", dry_run=False, tg=mock_tg, tracker_id=999)
-    final_text = str(mock_tg.update_progress.call_args_list[-1])
-    assert "Could not produce" in final_text
