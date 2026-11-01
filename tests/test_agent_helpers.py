@@ -122,40 +122,37 @@ def test_web_tools():
     assert "react.dev" in tools[0]["allowed_domains"]
 
 
-def test_hard_checks_tell_the_writer_how_much_to_cut():
-    issues = agent.hard_checks("word " * 700)  # about 3500 characters
-    assert any("must be <= 2990" in i and "Cut about" in i for i in issues)
-
-
 def test_fit_to_character_range():
-    # Short posts are padded into the configured window with neutral text, never with new facts.
-    short_post = "A researched point. " * 30 + "\n\n#One #Two"
-    fitted_short = agent.fit_to_character_range(short_post)
-    assert 2850 <= len(fitted_short) <= 2990
-    assert fitted_short.startswith(short_post.split("\n\n")[0])
+    # Short posts are not padded with filler; hard_checks asks the writer to add real content.
+    short_post = "🚀 Modern frontend architecture insight! " + "word " * 100 + "\n\n#React #Dev"
+    assert agent.fit_to_character_range(short_post) == short_post.strip()
+    assert any("Add about" in i for i in agent.hard_checks(short_post))
 
-    # Long posts are trimmed into the window at sentence or word boundaries.
-    long_post = "A longer researched point. " * 150 + "\n\n#One #Two"
-    fitted_long = agent.fit_to_character_range(long_post)
-    assert 2850 <= len(fitted_long) <= 2990
-    assert fitted_long.startswith("A longer researched point.")
-
-    # A post already in range is returned unchanged.
+    # Posts already in the configured range are left intact.
     exact_post = "A" * 2920
     assert agent.fit_to_character_range(exact_post, min_chars=2850, max_chars=2990) == exact_post
 
+    # Config range is 2850-2990.
+    assert agent.CFG["post"]["min_chars"] == 2850
+    assert agent.CFG["post"]["max_chars"] == 2990
 
-def test_fit_keeps_configured_hashtags_when_trimming():
+
+def test_fit_trims_surplus_hashtags_when_slightly_over_the_max():
     tags = "#one #two #three #four #five #six"
-    post = "Sentence one is here. " * 130 + "\n\n" + tags
-    fitted = agent.fit_to_character_range(post)
-    assert 2850 <= len(fitted) <= 2990
-    assert fitted.split("\n\n")[-1].count("#") >= agent.CFG["post"]["hashtags"]
+    post = "x" * 2960 + "\n" + tags  # 2994 chars: just over the 2990 maximum
+    fitted = agent.fit_to_character_range(post, min_chars=2850, max_chars=2990)
+    assert len(fitted) <= 2990 and len(fitted) >= 2850
+    assert fitted.endswith("#five")
 
 
-def test_fit_always_lands_in_range_for_many_lengths():
-    for n in range(2000, 3700, 37):
-        body = ("Practical detail about the API. " * (n // 31 + 1))[:n].rstrip()
-        fitted = agent.fit_to_character_range(body + "\n\n#Dev #Api")
-        assert 2850 <= len(fitted) <= 2990, n
+def test_fit_never_cuts_text_and_keeps_the_configured_hashtags():
+    post = "x" * 3100 + "\n#one #two #three #four #five #six"  # far too long: only the writer can fix it
+    fitted = agent.fit_to_character_range(post, min_chars=2850, max_chars=2990)
+    assert fitted.startswith("x" * 3100)            # no text is removed
+    assert fitted.endswith("#one #two #three #four")  # trimmed only down to the configured 4 hashtags
+    assert len(fitted) > 2990                        # still too long, so the writer must cut text
 
+
+def test_hard_checks_tell_the_writer_how_much_to_cut():
+    issues = agent.hard_checks("word " * 700)  # about 3500 characters
+    assert any("must be <= 2990" in i and "Cut about" in i for i in issues)
