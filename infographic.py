@@ -82,6 +82,9 @@ ICONS = {
 }
 ICON_NAMES = sorted(ICONS)
 
+# Friendly names the designer may use for library icons that have a different name
+ICON_ALIASES = {"balance": "shield", "users": "user", "people": "user", "team": "user", "scale": "shield"}
+
 # Matches references such as href="#icon-bolt" inside <use> elements
 ICON_REF_RE = re.compile(r"""href\s*=\s*["']#icon-([A-Za-z0-9_-]+)["']""")
 
@@ -199,6 +202,9 @@ def finalize_svg(svg: str) -> str:
     - Injects the icon library definitions that the drawing references.
     """
     svg = svg.replace("xlink:href=", "href=")
+    # Common names a designer reaches for that the icon library spells differently
+    svg = re.sub(r'href\s*=\s*"#icon-([A-Za-z0-9_-]+)"',
+                 lambda m: f'href="#icon-{ICON_ALIASES.get(m.group(1), m.group(1))}"', svg)
     svg = re.sub(r'font-size\s*=\s*["\'](1[89]|2[01])(?:\.\d+)?["\']', 'font-size="22"', svg)
     return inject_icon_defs(svg)
 

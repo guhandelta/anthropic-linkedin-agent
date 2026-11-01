@@ -312,3 +312,10 @@ def test_design_quality_checks_handles_anchors_tspans_inherited_fonts_and_transf
 def test_design_quality_checks_ignores_malformed_xml():
     assert design_quality_checks("<svg><unclosed>") == []
 
+
+def test_common_icon_names_are_mapped_to_library_icons():
+    svg = finalize_svg(f'<svg viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg">'
+                       '<use href="#icon-balance"/><use href="#icon-users"/></svg>')
+    assert 'href="#icon-shield"' in svg and 'href="#icon-user"' in svg
+    assert "#icon-balance" not in svg and "#icon-users" not in svg
+    assert not any("Unknown icon" in i for i in design_quality_checks(svg))
