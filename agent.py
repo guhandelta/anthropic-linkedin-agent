@@ -1641,6 +1641,11 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
             current_source, feedback = None, None
             continue
 
+        if not isinstance(draft.get("post"), str) or not draft["post"].strip():
+            # The model returned JSON without a usable post. Ask again instead of crashing the run.
+            print("Draft had no post text; retrying.")
+            feedback = "Return the complete post text in the \"post\" field."
+            continue
         post = clamp_emojis(draft["post"].strip().replace("**", "").replace("__", ""))
         post = fit_to_character_range(post, min_chars=CFG["post"]["min_chars"], max_chars=CFG["post"]["max_chars"])
         idea = draft.get("infographic_idea", "")

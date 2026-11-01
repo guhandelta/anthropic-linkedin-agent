@@ -351,3 +351,20 @@ def test_draw_poster_returns_none_only_when_no_valid_drawing_exists(tmp_path, mo
     monkeypatch.setattr(agent, "design_svg", MagicMock(return_value="<svg><unclosed>"))
     media, feedback = agent.draw_poster("post", "plain idea", "Head", "foot", tmp_path / "p.png")
     assert media is None and feedback
+
+
+def test_run_retries_when_draft_has_no_post_text(tmp_path, monkeypatch):
+    # A draft without a "post" key must not crash the run with KeyError: 'post'.
+    calls = {"n": 0}
+
+    def fake_draft(*a, **k):
+        calls["n"] += 1
+        return {"headline": "x"}  # no "post" key
+
+    monkeypatch.setattr(agent, "write_draft", fake_draft)
+    monkeypatch.setattr(agent, "pick_source", lambda *a, **k: "https://example.com")
+    monkeypatch.setattr(agent, "ROOT", tmp_path)
+    monkeypatch.setattr(agent, "load_log", lambda: [])
+    monkeypatch.setattr(agent, "select_model_for_run", lambda *a, **k: "x")
+    agent.run(dry_run=True)
+    assert calls["n"] == agent.CFG["review"]["max_attempts"]
