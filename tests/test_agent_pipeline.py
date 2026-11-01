@@ -390,3 +390,33 @@ def test_run_survives_a_failed_drawing_without_feedback(tmp_path, monkeypatch):
     agent.run(source_arg="react.dev/blog", dry_run=False, tg=mock_tg, tracker_id=999)
     final_text = str(mock_tg.update_progress.call_args_list[-1])
     assert "Could not produce" in final_text
+
+
+def test_drawing_failure_redraws_same_post_without_new_writer_call(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent, "ROOT", tmp_path)
+    monkeypatch.setattr(agent, "load_log", MagicMock(return_value=[]))
+    monkeypatch.setattr(agent, "pick_source", MagicMock(return_value="react.dev/blog"))
+    monkeypatch.setattr(agent, "select_model_for_run", MagicMock(return_value="x"))
+    from datetime import datetime, timedelta
+    recent = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+    body = " ".join(f"Point {n}: rendering tradeoffs change how the frontend library behaves at step {n}." for n in range(1, 33))
+    draft = {"post": "🚀 " + body + " ✅ Check the rendering tradeoffs before choosing a large library. 💡 Measure it. #Tech #Dev #Coding #Web",
+             "headline": "Modern frontend rendering tradeoffs", "topic_kind": "evergreen",
+             "technical_takeaway": "Check modern frontend rendering tradeoffs before choosing a large library",
+             "sources": [{"url": "https://react.dev/blog/item", "published": recent, "claim": "Fast builds"}],
+             "infographic_idea": "Diagram showing the compilation steps clearly."}
+    writer = MagicMock(return_value=draft)
+    # Isolate the redraw logic: the text checks are covered by their own tests.
+    monkeypatch.setattr(agent, "hard_checks", lambda post: [])
+    monkeypatch.setattr(agent, "source_checks", lambda *a, **k: [])
+    monkeypatch.setattr(agent, "duplicate_topic", lambda *a, **k: False)
+    monkeypatch.setattr(agent, "write_draft", writer)
+    monkeypatch.setattr(agent, "plan_infographic", MagicMock(side_effect=lambda p, h, i: i))
+    art = tmp_path / "p.png"
+    art.write_bytes(b"png")
+    drawer = MagicMock(side_effect=[(None, "icons wrong"), (art, None)])
+    monkeypatch.setattr(agent, "draw_poster", drawer)
+    monkeypatch.setattr(agent, "review_all", MagicMock(return_value=(True, [], {})))
+    agent.run(source_arg="react.dev/blog", dry_run=True, tg=None)
+    assert writer.call_count == 1          # the post was not rewritten
+    assert drawer.call_count == 2          # the same post was redrawn once

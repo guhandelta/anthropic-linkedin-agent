@@ -1663,6 +1663,7 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
     out_dir.mkdir(parents=True, exist_ok=True)
 
     feedback, tried = None, set()
+    last_reason = None  # the most recent concrete problem, kept even when a source is skipped
     current_source = source_arg
     current_topic = topic_arg
 
@@ -1697,6 +1698,7 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
             print("Nothing fresh on this source:", draft.get("reason"))
             if tg and tracker_id:
                 tg.update_progress(tracker_id, f"ℹ️ Nothing fresh on `{current_source}`. Checking next source...")
+            last_reason = draft.get("reason") or last_reason
             current_source, feedback = None, None
             continue
 
@@ -1737,6 +1739,7 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
             if tg and tracker_id:
                 tg.update_progress(tracker_id, f"⚠️ [Attempt {attempt}/{CFG['review']['max_attempts']}] Refining draft: {issues[0][:60]}...")
             feedback = "\n".join(issues)
+            last_reason = feedback
             continue
 
         if tg and tracker_id:
@@ -1748,9 +1751,19 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
         poster_brief = plan_infographic(post, headline, idea)
         media_path, design_feedback = draw_poster(
             post, poster_brief, headline, CFG["infographic"]["footer"], image_path, feedback)
+        # A drawing failure keeps the same post: redraw it once more with the drawing feedback
+        # instead of sending the writer back, so the text that was approved stays as it is.
+        redraw_feedback = design_feedback
+        for _ in range(CFG["review"].get("redraw_attempts", 1)):
+            if media_path:
+                break
+            media_path, design_feedback = draw_poster(
+                post, poster_brief, headline, CFG["infographic"]["footer"], image_path, redraw_feedback)
+            redraw_feedback = design_feedback or redraw_feedback
         if not media_path:
             # draw_poster can return no feedback; never pass None on or fail while reporting it.
             feedback = design_feedback or "The infographic could not be drawn. Simplify the drawing and keep the post."
+            last_reason = feedback
             if tg and tracker_id:
                 tg.update_progress(tracker_id, f"⚠️ [Attempt {attempt}/{CFG['review']['max_attempts']}] Refining visual design: {feedback[:60]}...")
             continue
@@ -1811,7 +1824,7 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
         tg.update_progress(
             tracker_id,
             f"❌ Could not produce an approved draft for '{current_topic or current_source}' after {CFG['review']['max_attempts']} attempts.\n\n"
-            f"Last issue: {feedback[:150] if feedback else 'Checks could not be satisfied.'}\n\n"
+            f"Last issue: {(feedback or last_reason or 'no specific check was recorded')[:150]}\n\n"
             "💡 Tip: Tap 🔁 Try again to retry the same request, or ✍️ Post from Topic to try another prompt.",
             reply_markup={"inline_keyboard": [[{"text": "🔁 Try again", "callback_data": "retry_last"}]]},
         )
