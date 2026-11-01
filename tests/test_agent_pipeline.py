@@ -333,3 +333,21 @@ def test_run_dry_run_success(tmp_path: Path, monkeypatch):
     agent.run(source_arg="react.dev/blog", topic_arg="Modern frontend rendering tradeoffs",
               dry_run=True, tg=mock_tg, tracker_id=999)
 
+
+def test_draw_poster_publishes_best_valid_drawing_when_every_try_has_a_soft_issue(tmp_path, monkeypatch):
+    # A valid but sparse drawing: passes the hard checks, always fails the richness checks.
+    sparse = ('<svg viewBox="0 0 1080 1350" xmlns="http://www.w3.org/2000/svg">'
+              '<text x="60" y="100" font-size="40">One</text>'
+              '<text x="60" y="180" font-size="40">Two</text>'
+              '<text x="60" y="260" font-size="40">Three</text></svg>')
+    designer = MagicMock(return_value=sparse)
+    monkeypatch.setattr(agent, "design_svg", designer)
+    media, feedback = agent.draw_poster("post", "plain idea", "Head", "foot", tmp_path / "p.png")
+    assert media is not None and media.exists()
+    assert designer.call_count == 3
+
+
+def test_draw_poster_returns_none_only_when_no_valid_drawing_exists(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent, "design_svg", MagicMock(return_value="<svg><unclosed>"))
+    media, feedback = agent.draw_poster("post", "plain idea", "Head", "foot", tmp_path / "p.png")
+    assert media is None and feedback

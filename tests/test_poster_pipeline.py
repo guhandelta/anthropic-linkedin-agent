@@ -82,10 +82,11 @@ def test_draw_poster_structured_render_error_goes_to_designer(monkeypatch, tmp_p
 
 
 def test_draw_poster_structured_failing_checks_fall_to_designer(monkeypatch, tmp_path):
+    # Soft issues on every try still publish the best valid drawing rather than nothing.
     monkeypatch.setattr(agent, "design_quality_checks", lambda s: ["sparse"])
     monkeypatch.setattr(agent, "design_svg", MagicMock(side_effect=ValueError("cut off")))
     media, feedback = agent.draw_poster("post", BRIEF, "Head", "Footer", tmp_path / "p.png")
-    assert media is None and "cut off" in feedback
+    assert media is not None
 
 
 def test_draw_poster_designer_retries_then_succeeds(monkeypatch, tmp_path):

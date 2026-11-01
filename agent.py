@@ -623,7 +623,7 @@ If the source has no credible, distinct idea, return {{"no_item": true, "reason"
 Step 2 - WRITE the post, using ONLY facts stated in the sources you read.
 
 Post rules:
-- Strictly between {min_chars} and {max_chars} characters total (ideal target: ~2985 chars), including hashtags. LinkedIn limit is 3000 chars.
+- Strictly between {min_chars} and {max_chars} characters total (ideal target: ~2920 chars), including hashtags. LinkedIn limit is 3000 chars.
 - To achieve publication-grade depth, write an exhaustive, comprehensive technical breakdown:
   1. Compelling 1-line hook: a surprising fact, sharp question, or vivid analogy. Never open with "Excited to share" or "Big news".
   2. The real-world problem and why traditional approaches fall short.
@@ -681,7 +681,7 @@ Avoid repeating these prior topics or their core ideas: {json.dumps(prior_topics
 If the sources cannot support a useful, distinct post, return {{"no_item": true, "reason": "..."}}.
 
 Post rules:
-- Strictly between {CFG['post']['min_chars']} and {CFG['post']['max_chars']} characters total (ideal target: ~2985 chars), including hashtags. LinkedIn limit is 3000 chars.
+- Strictly between {CFG['post']['min_chars']} and {CFG['post']['max_chars']} characters total (ideal target: ~2920 chars), including hashtags. LinkedIn limit is 3000 chars.
 - Comprehensive technical depth: explain why it matters to developers, provide 3-4 key architecture/code principles, code snippets, edge cases, and gotchas.
 - Include a specific technical takeaway with an action and a limitation or tradeoff.
 - Sound like a practitioner: clean, concise paragraphs.
@@ -930,6 +930,9 @@ def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: P
     """
     from poster_layout import poster_from_brief
 
+    # Best drawing that passes the hard checks. It is published when no designer try ends clean, so a
+    # soft warning (such as an unknown icon name) can never block a post entirely.
+    fallback_svg = None
     structured_svg = poster_from_brief(brief, headline, footer)
     if structured_svg:
         structured_svg = finalize_svg(structured_svg)
@@ -942,6 +945,8 @@ def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: P
         else:
             feedback = "Structured poster checks failed: " + "; ".join(issues)
             print(feedback)
+        if not svg_checks(structured_svg):
+            fallback_svg = structured_svg
     for try_no in range(3):
         try:
             svg = design_svg(post, brief, headline, feedback, footer)
@@ -954,8 +959,9 @@ def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: P
             feedback = "\n".join(hard_issues)
             print("Drawing checks failed:", hard_issues)
             continue
+        fallback_svg = svg  # best valid drawing so far
         soft_issues = design_quality_checks(svg)
-        if soft_issues:
+        if soft_issues and try_no < 2:
             feedback = ("The drawing is valid but is not yet a rich, polished poster. "
                         "Redraw it and fix:\n" + "\n".join(soft_issues))
             print("Design quality feedback:", soft_issues)
@@ -965,6 +971,11 @@ def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: P
         except ValueError as e:
             feedback = str(e)
             print("Render failed:", e)
+    if fallback_svg:  # last resort: publish the best valid drawing instead of nothing
+        try:
+            return render_poster_files(fallback_svg, image_path), feedback
+        except ValueError as e:
+            feedback = str(e)
     return None, feedback
 
 
@@ -1112,9 +1123,13 @@ def hard_checks(post: str) -> list[str]:
     issues = []
     n = len(post)
     if n > CFG["post"]["max_chars"]:
-        issues.append(f"Post is {n} chars; must be <= {CFG['post']['max_chars']}.")
+        cut = n - CFG["post"]["max_chars"]
+        issues.append(f"Post is {n} chars; must be <= {CFG['post']['max_chars']}. "
+                      f"Cut about {cut} characters: shorten a sentence or remove a filler phrase.")
     if n < CFG["post"]["min_chars"]:
-        issues.append(f"Post is {n} chars; must be >= {CFG['post']['min_chars']}.")
+        add = CFG["post"]["min_chars"] - n
+        issues.append(f"Post is {n} chars; must be >= {CFG['post']['min_chars']}. "
+                      f"Add about {add} characters with a concrete, sourced detail.")
     if n > 3000:
         issues.append("LinkedIn hard limit is 3000 characters.")
     if re.search(r"(\b\w+\b)(\s+\1\b){2,}", post, re.I):
@@ -1167,103 +1182,38 @@ def clamp_emojis(post: str, min_e: int = 3, max_e: int = 6) -> str:
     return post
 
 
-def fit_to_character_range(post: str, min_chars: int = 2970, max_chars: int = 2999) -> str:
+def _drop_trailing_hashtags(post: str, min_chars: int, max_chars: int) -> str:
+    """Remove surplus hashtags from a final hashtag line, only while the post stays in range.
+
+    Hashtags carry no claims, so dropping them is the one safe trim. It never goes below the
+    configured hashtag count, and it never pushes the post under min_chars.
     """
-    Deterministically fits the post character length strictly between min_chars and max_chars (2970 - 2999).
-    
-    LinkedIn enforces a hard limit of 3,000 characters. This function ensures maximum
-    content density, technical depth, and engagement while strictly adhering to the
-    2970-2999 character window across all generated posts.
-    
-    Mechanisms:
-      - Normalizes whitespace and removes excess blank lines.
-      - If under min_chars by a substantial margin (>120 chars), injects high-value
-        architectural takeaways, production checklists, and scalability gotchas.
-      - Fine-tunes micro-character adjustments using granular professional hashtags
-        and refined closing discussion prompts (step sizes <= 20 chars).
-      - If over max_chars, safely trims redundant whitespace, trims excess hashtags,
-        or condenses secondary sentence clauses while preserving clean paragraph structure.
+    lines = post.rstrip().split("\n")
+    tags = lines[-1].split()
+    keep = CFG["post"]["hashtags"]
+    if not tags or not all(t.startswith("#") for t in tags):
+        return post
+    while len(post) > max_chars and len(tags) > keep:
+        tags.pop()
+        candidate = "\n".join(lines[:-1] + [" ".join(tags)])
+        if len(candidate) < min_chars:
+            break
+        post = candidate
+    return post
+
+
+def fit_to_character_range(post: str, min_chars: int = None, max_chars: int = None) -> str:
+    """Normalize whitespace, then trim surplus hashtags when the post is only slightly too long.
+
+    Larger overshoots are not cut by code: the hard checks reject them with a "cut about N
+    characters" instruction and the writer rewrites the post. Claims are never edited here.
     """
+    min_chars = CFG["post"]["min_chars"] if min_chars is None else min_chars
+    max_chars = CFG["post"]["max_chars"] if max_chars is None else max_chars
     post = re.sub(r"[ \t]+", " ", post).strip()
     post = re.sub(r"\n{3,}", "\n\n", post)
-
-    if min_chars <= len(post) <= max_chars:
-        return post
-
-    # Curated technical insight paragraphs to bridge large deficits naturally
-    DEEP_DIVE_PARAGRAPHS = [
-        "Production Architecture Considerations:\n• Scalability: Evaluate state synchronization overhead under peak concurrent loads.\n• Resilience: Implement circuit breakers and graceful fallbacks for transient failures.\n• Observability: Track p99 latency metrics and error rates across all critical endpoints.",
-        "Engineering Migration Checklist:\n• Audit existing dependencies and APIs for potential version incompatibilities.\n• Establish comprehensive integration tests covering critical user workflows.\n• Deploy behind a progressive feature flag with automated rollback triggers configured.",
-        "Implementation Best Practices:\n• Enforce strict type contracts and schema validation at all module boundaries.\n• Maintain a clean separation of concerns between core business logic and presentation.\n• Profile memory consumption and garbage collection cycles during staging load tests.",
-        "Key Architectural Tradeoffs:\n• Simplicity vs Flexibility: Avoid premature abstractions before domain patterns stabilize.\n• Latency vs Consistency: Choose the appropriate data consistency model for your workload.\n• Operational Overhead: Ensure the team has sufficient monitoring and runbook documentation."
-    ]
-
-    TAG_POOL = [
-        "SoftwareEngineering", "SystemArchitecture", "WebDevelopment", "Programming",
-        "CleanCode", "FrontendEngineering", "BackendEngineering", "DevOps",
-        "CloudComputing", "FullStackDevelopment", "CodeQuality", "TechLeadership",
-        "ComputerScience", "SoftwareDesign", "TechInnovation", "DeveloperCommunity"
-    ]
-
-    # 1. If too short and deficit is large, insert relevant deep-dive paragraphs
-    p_idx = 0
-    while len(post) < min_chars - 140 and p_idx < len(DEEP_DIVE_PARAGRAPHS):
-        parts = post.split("\n\n")
-        if len(parts) >= 2:
-            parts.insert(-1, DEEP_DIVE_PARAGRAPHS[p_idx])
-            post = "\n\n".join(parts)
-        else:
-            post = post + "\n\n" + DEEP_DIVE_PARAGRAPHS[p_idx]
-        p_idx += 1
-
-    # 2. Separate main body from trailing hashtags
-    parts = post.split("\n\n")
-    hashtags = []
-    if parts and all(w.startswith("#") for w in parts[-1].split() if w):
-        hashtags = [w.lstrip("#") for w in parts[-1].split() if w]
-        body = "\n\n".join(parts[:-1])
-    else:
-        body = post
-
-    # 3. Fine-tuning using professional hashtags (step size <= 20 chars guarantees landing in [min_chars, max_chars])
-    tag_idx = 0
-    while len(post) < min_chars:
-        tag = TAG_POOL[tag_idx % len(TAG_POOL)]
-        tag_idx += 1
-        if tag not in hashtags:
-            hashtags.append(tag)
-        else:
-            hashtags.append(f"{tag}Insights")
-        post = body + "\n\n" + " ".join(f"#{t}" for t in hashtags)
-
-    # 4. If it overshoots max_chars, prune trailing hashtags first
-    while len(post) > max_chars and hashtags:
-        hashtags.pop()
-        post = body + ("\n\n" + " ".join(f"#{t}" for t in hashtags) if hashtags else "")
-
-    # 5. If body itself is still too long, trim cleanly at word boundaries
     if len(post) > max_chars:
-        target_len = (min_chars + max_chars) // 2
-        excess = len(post) - target_len
-        body = body[:-excess].rstrip()
-        if " " in body[-25:]:
-            body = body.rsplit(" ", 1)[0]
-        post = body + ("\n\n" + " ".join(f"#{t}" for t in hashtags) if hashtags else "")
-
-    # 6. Final fine-tuning pass to ensure strict range [min_chars, max_chars]
-    while len(post) < min_chars:
-        tag = TAG_POOL[tag_idx % len(TAG_POOL)]
-        tag_idx += 1
-        if tag not in hashtags:
-            hashtags.append(tag)
-        else:
-            hashtags.append(f"{tag}Pro")
-        post = body + "\n\n" + " ".join(f"#{t}" for t in hashtags)
-
-    while len(post) > max_chars and len(hashtags) > 1:
-        hashtags.pop()
-        post = body + "\n\n" + " ".join(f"#{t}" for t in hashtags)
-
+        post = _drop_trailing_hashtags(post, min_chars, max_chars)
     return post
 
 
