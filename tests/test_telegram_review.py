@@ -286,3 +286,48 @@ def test_notify_commit_inactivity_if_due(monkeypatch):
     assert banner == "Banner!"
     mock_call.assert_called_with("sendMessage", chat_id="12345", text="Alert!")
 
+
+
+def test_commit_reminder_intervals_and_urgency(monkeypatch, tmp_path):
+    from telegram_review import check_commit_reminder
+    import telegram_review
+    state_file = tmp_path / "test_cron_reminder.json"
+
+    # Day 10 -> No reminder
+    monkeypatch.setattr(telegram_review, "get_last_human_commit_days", lambda *_: 10)
+    res = check_commit_reminder(repo_dir=tmp_path, state_file=state_file, force=False)
+    assert not res["should_remind"] and not res["is_urgent"]
+
+    # Day 20 -> Reminder due (20-day interval)
+    monkeypatch.setattr(telegram_review, "get_last_human_commit_days", lambda *_: 20)
+    res = check_commit_reminder(repo_dir=tmp_path, state_file=state_file, force=False)
+    assert res["should_remind"] and not res["is_urgent"]
+    assert "20 days" in res["alert_message"] and "Maintenance Reminder" in res["header_banner"]
+
+    # Day 40 -> Reminder due (40-day interval)
+    monkeypatch.setattr(telegram_review, "get_last_human_commit_days", lambda *_: 40)
+    res = check_commit_reminder(repo_dir=tmp_path, state_file=state_file, force=False)
+    assert res["should_remind"] and not res["is_urgent"]
+
+    # Day 51 -> No reminder (between 40 and 52)
+    monkeypatch.setattr(telegram_review, "get_last_human_commit_days", lambda *_: 51)
+    res = check_commit_reminder(repo_dir=tmp_path, state_file=state_file, force=False)
+    assert not res["should_remind"] and not res["is_urgent"]
+
+    # Day 52 -> Urgent reminder due (everyday after 52)
+    monkeypatch.setattr(telegram_review, "get_last_human_commit_days", lambda *_: 52)
+    res = check_commit_reminder(repo_dir=tmp_path, state_file=state_file, force=False)
+    assert res["should_remind"] and res["is_urgent"]
+    assert "URGENT" in res["alert_message"] and "URGENT" in res["header_banner"]
+
+    # Day 53 -> Everyday reminder continues
+    monkeypatch.setattr(telegram_review, "get_last_human_commit_days", lambda *_: 53)
+    res = check_commit_reminder(repo_dir=tmp_path, state_file=state_file, force=False)
+    assert res["should_remind"] and res["is_urgent"]
+
+    # Day 59 -> Approaching 60-day limit
+    monkeypatch.setattr(telegram_review, "get_last_human_commit_days", lambda *_: 59)
+    res = check_commit_reminder(repo_dir=tmp_path, state_file=state_file, force=False)
+    assert res["should_remind"] and res["is_urgent"]
+    # Days are bolded for Telegram, so match the bold count and the wording around it.
+    assert "**1 day** remaining" in res["alert_message"]

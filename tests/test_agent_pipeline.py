@@ -333,3 +333,55 @@ def test_run_dry_run_success(tmp_path: Path, monkeypatch):
     agent.run(source_arg="react.dev/blog", topic_arg="Modern frontend rendering tradeoffs",
               dry_run=True, tg=mock_tg, tracker_id=999)
 
+
+def test_draw_poster_publishes_best_valid_drawing_when_every_try_has_a_soft_issue(tmp_path, monkeypatch):
+    # A valid but sparse drawing: passes the hard checks, always fails the richness checks.
+    sparse = ('<svg viewBox="0 0 1080 1350" xmlns="http://www.w3.org/2000/svg">'
+              '<text x="60" y="100" font-size="40">One</text>'
+              '<text x="60" y="180" font-size="40">Two</text>'
+              '<text x="60" y="260" font-size="40">Three</text></svg>')
+    designer = MagicMock(return_value=sparse)
+    monkeypatch.setattr(agent, "design_svg", designer)
+    media, feedback = agent.draw_poster("post", "plain idea", "Head", "foot", tmp_path / "p.png")
+    assert media is not None and media.exists()
+    assert designer.call_count == 3
+
+
+def test_draw_poster_returns_none_only_when_no_valid_drawing_exists(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent, "design_svg", MagicMock(return_value="<svg><unclosed>"))
+    media, feedback = agent.draw_poster("post", "plain idea", "Head", "foot", tmp_path / "p.png")
+    assert media is None and feedback
+
+
+def test_failed_topic_run_raises_draft_not_produced_and_keeps_retry_button(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent, "ROOT", tmp_path)
+    monkeypatch.setattr(agent, "load_log", MagicMock(return_value=[]))
+    monkeypatch.setattr(agent, "pick_source", MagicMock(return_value="react.dev/blog"))
+
+    from datetime import datetime, timedelta
+    recent_date = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+    mock_draft = {
+        "post": "Practical insight on modern frontends. " + "word " * 180 + "#Tech #Dev #Coding",
+        "headline": "Modern frontend rendering tradeoffs",
+        "topic_kind": "evergreen",
+        "technical_takeaway": "Check modern frontend rendering tradeoffs before choosing a large library",
+        "sources": [{"url": "https://react.dev/blog/item", "published": recent_date, "claim": "Fast builds"}],
+        "infographic_idea": "Diagram showing the compilation steps clearly."
+    }
+    monkeypatch.setattr(agent, "write_draft", MagicMock(return_value=mock_draft))
+    monkeypatch.setattr(agent, "design_svg", MagicMock(return_value="<svg viewBox='0 0 1080 1350'><text font-size='24'>Title</text><text font-size='22'>A</text><text font-size='22'>B</text></svg>"))
+    monkeypatch.setattr(agent, "render_svg", MagicMock())
+    monkeypatch.setattr(agent, "render_svg_to_gif", MagicMock())
+    monkeypatch.setattr(agent, "plan_infographic", MagicMock(side_effect=lambda post, headline, idea: idea))
+    monkeypatch.setattr(agent, "design_quality_checks", MagicMock(return_value=[]))
+    # Every editorial review rejects the draft, so no try ever succeeds.
+    monkeypatch.setattr(agent, "review_all", MagicMock(return_value=(False, ["Needs better sources."], {"scores": {}})))
+
+    mock_tg = MagicMock()
+    with pytest.raises(agent.DraftNotProduced):
+        agent.run(source_arg="react.dev/blog", dry_run=False, tg=mock_tg, tracker_id=999)
+
+    # The final Telegram update must carry the Try again button, so the error handler can't drop it.
+    final = mock_tg.update_progress.call_args_list[-1]
+    assert "retry_last" in str(final.kwargs.get("reply_markup"))
+

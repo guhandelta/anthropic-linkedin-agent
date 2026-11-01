@@ -13,7 +13,7 @@ It orchestrates:
        and blogs (e.g., react.dev, developer.mozilla.org, python.org, web.dev).
      - Deterministically filters out recently used sources, duplicate topics, and prior posts.
   3. Ghostwriting & Practitioner Voice:
-     - Formats high-signal, practitioner-focused technical insights (1,000–1,500 characters).
+     - Formats high-signal, practitioner-focused technical insights (2,800–2,999 characters).
      - Incorporates concrete code examples, API tradeoffs, limitations, and discussion hooks.
      - Clamps emoji usage to professional standards (3–6 per post, never adjacent).
   4. Vector Graphic Design (SVG) & Animated GIF Generation:
@@ -113,6 +113,8 @@ gemini_client = genai.Client(api_key=gemini_key) if gemini_key else None
 
 # Active LLM provider tracking ("anthropic", "openai" or "gemini")
 ACTIVE_LLM_PROVIDER = "anthropic"
+# The last request the Telegram bot ran, so the "Try again" button can repeat it.
+LAST_TG_REQUEST: dict = {}
 DISABLED_PROVIDERS: set[str] = set()
 # Failover order used when the active provider errors out
 PROVIDER_ORDER = ["anthropic", "openai", "gemini"]
@@ -621,7 +623,7 @@ If the source has no credible, distinct idea, return {{"no_item": true, "reason"
 Step 2 - WRITE the post, using ONLY facts stated in the sources you read.
 
 Post rules:
-- Strictly between {min_chars} and {max_chars} characters total (ideal target: ~2985 chars), including hashtags. LinkedIn limit is 3000 chars.
+- Strictly between {min_chars} and {max_chars} characters total (ideal target: ~2920 chars), including hashtags. LinkedIn limit is 3000 chars.
 - To achieve publication-grade depth, write an exhaustive, comprehensive technical breakdown:
   1. Compelling 1-line hook: a surprising fact, sharp question, or vivid analogy. Never open with "Excited to share" or "Big news".
   2. The real-world problem and why traditional approaches fall short.
@@ -679,7 +681,7 @@ Avoid repeating these prior topics or their core ideas: {json.dumps(prior_topics
 If the sources cannot support a useful, distinct post, return {{"no_item": true, "reason": "..."}}.
 
 Post rules:
-- Strictly between {CFG['post']['min_chars']} and {CFG['post']['max_chars']} characters total (ideal target: ~2985 chars), including hashtags. LinkedIn limit is 3000 chars.
+- Strictly between {CFG['post']['min_chars']} and {CFG['post']['max_chars']} characters total (ideal target: ~2920 chars), including hashtags. LinkedIn limit is 3000 chars.
 - Comprehensive technical depth: explain why it matters to developers, provide 3-4 key architecture/code principles, code snippets, edge cases, and gotchas.
 - Include a specific technical takeaway with an action and a limitation or tradeoff.
 - Sound like a practitioner: clean, concise paragraphs.
@@ -713,20 +715,25 @@ infographic_idea. Never use an example or placeholder URL as a source."""
                 f"or keep the same item:\n{feedback}")
     res = call_json(system, msg, tools=web_tools(list(dict.fromkeys(tool_domains))), max_tokens=8000)
 
-    # If the draft post was produced but is shorter than 2600 chars, perform an expansion pass
+    # Ask for deeper sourced writing when the first draft misses the requested length.
     if isinstance(res, dict) and "post" in res and not res.get("no_item"):
         post_text = res["post"]
-        if len(post_text) < 2600:
+        if len(post_text) < CFG["post"]["min_chars"]:
             expand_sys = (
                 f"You are a LinkedIn ghostwriter for {a['name']}, {a['role']}. "
                 f"LinkedIn posts should be comprehensive, in-depth technical deep-dives strictly between "
                 f"{CFG['post']['min_chars']} and {CFG['post']['max_chars']} characters. "
-                "Expand the provided post with deeper technical analysis, architectural trade-offs, "
-                "code explanations, edge cases, and actionable takeaways so that the total character count "
-                f"is approximately 2980 characters. Maintain the author voice. Return ONLY valid JSON: {{\"post\": \"...\"}}"
+                "Expand with concrete API behavior, code explanations, trade-offs, and limitations "
+                "supported by the supplied source claims. Do not introduce new factual claims, "
+                "generic filler, extra hashtags, or invented dates. Keep the author voice. "
+                "Return ONLY valid JSON: {\"post\": \"...\"}"
             )
             try:
-                expanded = call_json(expand_sys, f"Current post ({len(post_text)} chars):\n\n{post_text}", max_tokens=8000)
+                expanded = call_json(
+                    expand_sys,
+                    f"Current post ({len(post_text)} chars):\n\n{post_text}\n\n"
+                    f"Source claims:\n{json.dumps(res.get('sources', []), ensure_ascii=False)}",
+                    max_tokens=8000)
                 if expanded.get("post") and len(expanded["post"]) > len(post_text):
                     res["post"] = expanded["post"]
             except Exception:
@@ -821,10 +828,10 @@ Return ONLY JSON:
  "hero": {"form": "before_after | flow | layers | cycle",
           "caption": "at most 50 chars",
           "left_label": "before_after only: heading for the old way", "right_label": "before_after only: heading for the new way",
-          "nodes": [{"label": "at most 22 chars", "detail": "at most 32 chars", "icon": "ICON"}]},
+          "nodes": [{"label": "at most 18 chars", "detail": "at most 22 chars, a complete phrase", "icon": "ICON"}]},
  "modules": [{"kind": "code | checklist | stats | pros_cons | steps",
               "heading": "at most 26 chars", "icon": "ICON",
-              "lines": ["at most 36 chars each, 3-5 lines. For kind=code use real code lines from the post; for stats use 'value | caption'"]}],
+              "lines": ["at most 30 chars each, 3-4 lines, each a complete phrase; never end a line with an ellipsis. For kind=code use real code lines from the post; for stats use 'value | caption'"]}],
  "gotcha": {"heading": "Watch out", "text": "at most 70 chars: the limitation, tradeoff or breaking change"},
  "takeaway": "at most 70 chars: the one thing to remember"}
 
@@ -904,18 +911,18 @@ def render_poster_files(svg: str, image_path: Path) -> Path:
     Render a validated SVG to disk and return the media file to send.
 
     Writes the PNG (image_path), the SVG source beside it, and an animated GIF beside it.
-    Returns the GIF when it renders, otherwise the static PNG. Raises ValueError when the SVG
-    itself cannot be rendered, so callers can feed the error back to the designer.
+    GIF rendering is required when configured; failure blocks publication.
     """
     render_svg(svg, image_path)
     image_path.with_suffix(".svg").write_text(svg)
     gif_path = image_path.with_suffix(".gif")
-    try:
-        render_svg_to_gif(svg, gif_path)
+    if CFG["infographic"].get("animated_gif", True):
+        try:
+            render_svg_to_gif(svg, gif_path)
+        except Exception as e:
+            raise ValueError(f"Animated GIF generation failed: {e}") from e
         return gif_path
-    except Exception as e:  # noqa: BLE001 - the GIF is a bonus; the PNG is always valid
-        print(f"Animated GIF generation failed ({e}), using static PNG.")
-        return image_path
+    return image_path
 
 
 def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: Path,
@@ -923,13 +930,28 @@ def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: P
     """
     Ask the designer for a poster, validate it, and render it. Returns (media_path, last_feedback).
 
-    Up to three tries: the first must pass the hard safety/readability checks (svg_checks); later
-    tries also receive soft richness feedback (design_quality_checks) so sparse, empty or
-    overlapping drawings get redrawn denser and cleaner. Style problems never block a post: when
-    the last try is still imperfect, the best valid drawing is rendered anyway. media_path is None
-    only when no valid drawing could be produced; last_feedback then explains why.
+    Prefer a predictable layout for a complete content blueprint. For other briefs, give the
+    designer three tries. Both safety and quality checks must pass before an image is used.
     """
+    from poster_layout import poster_from_brief
+
+    # Best drawing that passes the hard checks. It is published when no designer try ends clean, so a
+    # soft warning (such as an unknown icon name) can never block a post entirely.
     fallback_svg = None
+    structured_svg = poster_from_brief(brief, headline, footer)
+    if structured_svg:
+        structured_svg = finalize_svg(structured_svg)
+        issues = svg_checks(structured_svg) + design_quality_checks(structured_svg)
+        if not issues:
+            try:
+                return render_poster_files(structured_svg, image_path), None
+            except ValueError as e:
+                feedback = str(e)
+        else:
+            feedback = "Structured poster checks failed: " + "; ".join(issues)
+            print(feedback)
+        if not svg_checks(structured_svg):
+            fallback_svg = structured_svg
     for try_no in range(3):
         try:
             svg = design_svg(post, brief, headline, feedback, footer)
@@ -942,7 +964,7 @@ def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: P
             feedback = "\n".join(hard_issues)
             print("Drawing checks failed:", hard_issues)
             continue
-        fallback_svg = svg  # Best valid drawing so far
+        fallback_svg = svg  # best valid drawing so far
         soft_issues = design_quality_checks(svg)
         if soft_issues and try_no < 2:
             feedback = ("The drawing is valid but is not yet a rich, polished poster. "
@@ -954,7 +976,7 @@ def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: P
         except ValueError as e:
             feedback = str(e)
             print("Render failed:", e)
-    if fallback_svg:  # Last resort: render the best valid drawing seen
+    if fallback_svg:  # last resort: publish the best valid drawing instead of nothing
         try:
             return render_poster_files(fallback_svg, image_path), feedback
         except ValueError as e:
@@ -1097,7 +1119,7 @@ def hard_checks(post: str) -> list[str]:
     Deterministic validation rules that the LLM cannot hallucinate past.
     
     Enforces:
-      - Character length bounds (1,000 to 1,500 chars).
+      - Character length bounds from config.yaml (currently 2,850 to 2,990 chars).
       - Absolute LinkedIn character limit (3,000 chars).
       - Repeated word detection (e.g. "the the").
       - Emoji density and spacing (no adjacent emojis).
@@ -1106,9 +1128,13 @@ def hard_checks(post: str) -> list[str]:
     issues = []
     n = len(post)
     if n > CFG["post"]["max_chars"]:
-        issues.append(f"Post is {n} chars; must be <= {CFG['post']['max_chars']}.")
+        cut = n - CFG["post"]["max_chars"]
+        issues.append(f"Post is {n} chars; must be <= {CFG['post']['max_chars']}. "
+                      f"Cut about {cut} characters: shorten a sentence or remove a filler phrase.")
     if n < CFG["post"]["min_chars"]:
-        issues.append(f"Post is {n} chars; must be >= {CFG['post']['min_chars']}.")
+        add = CFG["post"]["min_chars"] - n
+        issues.append(f"Post is {n} chars; must be >= {CFG['post']['min_chars']}. "
+                      f"Add about {add} characters with a concrete, sourced detail.")
     if n > 3000:
         issues.append("LinkedIn hard limit is 3000 characters.")
     if re.search(r"(\b\w+\b)(\s+\1\b){2,}", post, re.I):
@@ -1161,103 +1187,38 @@ def clamp_emojis(post: str, min_e: int = 3, max_e: int = 6) -> str:
     return post
 
 
-def fit_to_character_range(post: str, min_chars: int = 2970, max_chars: int = 2999) -> str:
+def _drop_trailing_hashtags(post: str, min_chars: int, max_chars: int) -> str:
+    """Remove surplus hashtags from a final hashtag line, only while the post stays in range.
+
+    Hashtags carry no claims, so dropping them is the one safe trim. It never goes below the
+    configured hashtag count, and it never pushes the post under min_chars.
     """
-    Deterministically fits the post character length strictly between min_chars and max_chars (2970 - 2999).
-    
-    LinkedIn enforces a hard limit of 3,000 characters. This function ensures maximum
-    content density, technical depth, and engagement while strictly adhering to the
-    2970-2999 character window across all generated posts.
-    
-    Mechanisms:
-      - Normalizes whitespace and removes excess blank lines.
-      - If under min_chars by a substantial margin (>120 chars), injects high-value
-        architectural takeaways, production checklists, and scalability gotchas.
-      - Fine-tunes micro-character adjustments using granular professional hashtags
-        and refined closing discussion prompts (step sizes <= 20 chars).
-      - If over max_chars, safely trims redundant whitespace, trims excess hashtags,
-        or condenses secondary sentence clauses while preserving clean paragraph structure.
+    lines = post.rstrip().split("\n")
+    tags = lines[-1].split()
+    keep = CFG["post"]["hashtags"]
+    if not tags or not all(t.startswith("#") for t in tags):
+        return post
+    while len(post) > max_chars and len(tags) > keep:
+        tags.pop()
+        candidate = "\n".join(lines[:-1] + [" ".join(tags)])
+        if len(candidate) < min_chars:
+            break
+        post = candidate
+    return post
+
+
+def fit_to_character_range(post: str, min_chars: int = None, max_chars: int = None) -> str:
+    """Normalize whitespace, then trim surplus hashtags when the post is only slightly too long.
+
+    Larger overshoots are not cut by code: the hard checks reject them with a "cut about N
+    characters" instruction and the writer rewrites the post. Claims are never edited here.
     """
+    min_chars = CFG["post"]["min_chars"] if min_chars is None else min_chars
+    max_chars = CFG["post"]["max_chars"] if max_chars is None else max_chars
     post = re.sub(r"[ \t]+", " ", post).strip()
     post = re.sub(r"\n{3,}", "\n\n", post)
-
-    if min_chars <= len(post) <= max_chars:
-        return post
-
-    # Curated technical insight paragraphs to bridge large deficits naturally
-    DEEP_DIVE_PARAGRAPHS = [
-        "Production Architecture Considerations:\n• Scalability: Evaluate state synchronization overhead under peak concurrent loads.\n• Resilience: Implement circuit breakers and graceful fallbacks for transient failures.\n• Observability: Track p99 latency metrics and error rates across all critical endpoints.",
-        "Engineering Migration Checklist:\n• Audit existing dependencies and APIs for potential version incompatibilities.\n• Establish comprehensive integration tests covering critical user workflows.\n• Deploy behind a progressive feature flag with automated rollback triggers configured.",
-        "Implementation Best Practices:\n• Enforce strict type contracts and schema validation at all module boundaries.\n• Maintain a clean separation of concerns between core business logic and presentation.\n• Profile memory consumption and garbage collection cycles during staging load tests.",
-        "Key Architectural Tradeoffs:\n• Simplicity vs Flexibility: Avoid premature abstractions before domain patterns stabilize.\n• Latency vs Consistency: Choose the appropriate data consistency model for your workload.\n• Operational Overhead: Ensure the team has sufficient monitoring and runbook documentation."
-    ]
-
-    TAG_POOL = [
-        "SoftwareEngineering", "SystemArchitecture", "WebDevelopment", "Programming",
-        "CleanCode", "FrontendEngineering", "BackendEngineering", "DevOps",
-        "CloudComputing", "FullStackDevelopment", "CodeQuality", "TechLeadership",
-        "ComputerScience", "SoftwareDesign", "TechInnovation", "DeveloperCommunity"
-    ]
-
-    # 1. If too short and deficit is large, insert relevant deep-dive paragraphs
-    p_idx = 0
-    while len(post) < min_chars - 140 and p_idx < len(DEEP_DIVE_PARAGRAPHS):
-        parts = post.split("\n\n")
-        if len(parts) >= 2:
-            parts.insert(-1, DEEP_DIVE_PARAGRAPHS[p_idx])
-            post = "\n\n".join(parts)
-        else:
-            post = post + "\n\n" + DEEP_DIVE_PARAGRAPHS[p_idx]
-        p_idx += 1
-
-    # 2. Separate main body from trailing hashtags
-    parts = post.split("\n\n")
-    hashtags = []
-    if parts and all(w.startswith("#") for w in parts[-1].split() if w):
-        hashtags = [w.lstrip("#") for w in parts[-1].split() if w]
-        body = "\n\n".join(parts[:-1])
-    else:
-        body = post
-
-    # 3. Fine-tuning using professional hashtags (step size <= 20 chars guarantees landing in [min_chars, max_chars])
-    tag_idx = 0
-    while len(post) < min_chars:
-        tag = TAG_POOL[tag_idx % len(TAG_POOL)]
-        tag_idx += 1
-        if tag not in hashtags:
-            hashtags.append(tag)
-        else:
-            hashtags.append(f"{tag}Insights")
-        post = body + "\n\n" + " ".join(f"#{t}" for t in hashtags)
-
-    # 4. If it overshoots max_chars, prune trailing hashtags first
-    while len(post) > max_chars and hashtags:
-        hashtags.pop()
-        post = body + ("\n\n" + " ".join(f"#{t}" for t in hashtags) if hashtags else "")
-
-    # 5. If body itself is still too long, trim cleanly at word boundaries
     if len(post) > max_chars:
-        target_len = (min_chars + max_chars) // 2
-        excess = len(post) - target_len
-        body = body[:-excess].rstrip()
-        if " " in body[-25:]:
-            body = body.rsplit(" ", 1)[0]
-        post = body + ("\n\n" + " ".join(f"#{t}" for t in hashtags) if hashtags else "")
-
-    # 6. Final fine-tuning pass to ensure strict range [min_chars, max_chars]
-    while len(post) < min_chars:
-        tag = TAG_POOL[tag_idx % len(TAG_POOL)]
-        tag_idx += 1
-        if tag not in hashtags:
-            hashtags.append(tag)
-        else:
-            hashtags.append(f"{tag}Pro")
-        post = body + "\n\n" + " ".join(f"#{t}" for t in hashtags)
-
-    while len(post) > max_chars and len(hashtags) > 1:
-        hashtags.pop()
-        post = body + "\n\n" + " ".join(f"#{t}" for t in hashtags)
-
+        post = _drop_trailing_hashtags(post, min_chars, max_chars)
     return post
 
 
@@ -1446,7 +1407,12 @@ def publish_to_linkedin_and_groups(
                 progress_callback=on_group_progress
             )
             success_count = len(group_res.get("success", []))
-            summary_msg = f"🎉 Successfully published to personal wall + {success_count}/{len(target_groups)} LinkedIn groups!"
+            if success_count == len(target_groups):
+                summary_msg = f"🎉 Published to personal wall and all {success_count} LinkedIn groups."
+            else:
+                failed = group_res.get("failed", [])
+                summary_msg = (f"⚠️ Published to personal wall, but only {success_count}/{len(target_groups)} "
+                               "LinkedIn groups. Failed groups: " + ", ".join(failed))
             if tg and grp_tracker_id:
                 tg.update_progress(grp_tracker_id, summary_msg)
             elif tg and success_count > 0 and message_id:
@@ -1621,6 +1587,10 @@ def publish_after_approval(headline, source, post, sources, image_path,
 # -----------------------------------------------------------------------------
 # Main Autonomous Pipeline Orchestrator
 # -----------------------------------------------------------------------------
+class DraftNotProduced(RuntimeError):
+    """No draft passed the checks. The failure was already reported to Telegram with a Try again button."""
+
+
 def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | None = None,
         tg: TelegramReviewer | None = None, tracker_id: int | None = None):
     """
@@ -1667,7 +1637,9 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
             print("No source available today: all were used recently or already tried.")
             if tg and tracker_id:
                 tg.update_progress(tracker_id, "⚠️ All sources were used recently or tried. Please try a different topic.")
-            sys.exit(0)
+            if dry_run:
+                return
+            raise RuntimeError("No eligible research source was available; nothing was sent or published.")
 
         tried.add(current_source)
         action_verb = "revising draft on" if feedback else "browsing"
@@ -1691,6 +1663,11 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
         headline = draft.get("headline", current_topic or current_source)
         sources = draft.get("sources", [])
         topic_kind = draft.get("topic_kind")
+        if topic_kind == "evergreen" and isinstance(sources, list):
+            # Reference pages often have no verifiable article publication date.
+            # The live fact checker still checks any date claimed in the post.
+            sources = [{**source, "published": None} if isinstance(source, dict) else source
+                       for source in sources]
         takeaway = str(draft.get("technical_takeaway") or "").strip()
         issues = hard_checks(post) + source_checks(
             sources, posted, is_custom_topic=bool(current_topic), topic_kind=topic_kind)
@@ -1784,8 +1761,11 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
             tracker_id,
             f"❌ Could not produce an approved draft for '{current_topic or current_source}' after {CFG['review']['max_attempts']} attempts.\n\n"
             f"Last issue: {feedback[:150] if feedback else 'Checks could not be satisfied.'}\n\n"
-            "💡 Tip: Tap ✍️ Post from Topic to try another prompt or 📝 Direct Post to provide your own text directly."
+            "💡 Tip: Tap 🔁 Try again to retry the same request, or ✍️ Post from Topic to try another prompt.",
+            reply_markup={"inline_keyboard": [[{"text": "🔁 Try again", "callback_data": "retry_last"}]]},
         )
+    if not dry_run:
+        raise DraftNotProduced("No draft passed the required checks; nothing was sent or published.")
 
 
 def get_agent_status_text() -> str:
@@ -1852,9 +1832,13 @@ if __name__ == "__main__":
             remind_every_s=CFG["telegram"]["remind_every_minutes"] * 60,
         )
         def on_telegram_topic(t: str):
+            LAST_TG_REQUEST.clear()
+            LAST_TG_REQUEST.update(kind="topic", topic=t, source=None)
             tracker_id = tg.send_progress_tracker(f"Generating Post from Topic: {t[:40]}")
             try:
                 run(source_arg=None, dry_run=False, topic_arg=t, tg=tg, tracker_id=tracker_id)
+            except DraftNotProduced as e:
+                print("Draft not produced:", e)  # run() already showed the failure and its Try again button
             except Exception as e:
                 print("Error in on_telegram_topic:", e)
                 tg.update_progress(tracker_id, f"⚠️ Error generating post: {str(e)[:250]}")
@@ -1868,9 +1852,13 @@ if __name__ == "__main__":
                 tg.update_progress(tracker_id, f"⚠️ Error processing direct post: {str(e)[:250]}")
 
         def on_telegram_daily():
+            LAST_TG_REQUEST.clear()
+            LAST_TG_REQUEST.update(kind="daily")
             tracker_id = tg.send_progress_tracker("Daily LinkedIn Post Pipeline")
             try:
                 run(source_arg=None, dry_run=False, tg=tg, tracker_id=tracker_id)
+            except DraftNotProduced as e:
+                print("Draft not produced:", e)
             except Exception as e:
                 print("Error in on_telegram_daily:", e)
                 tg.update_progress(tracker_id, f"⚠️ Error in daily post: {str(e)[:250]}")
@@ -1881,12 +1869,28 @@ if __name__ == "__main__":
                 choice = tg.choose_topic("suggest-" + uuid.uuid4().hex[:6], suggestions)
                 if choice.get("action") == "new_topic":
                     topic_title = choice.get("topic") or "Suggested Topic"
+                    LAST_TG_REQUEST.clear()
+                    LAST_TG_REQUEST.update(kind="topic", topic=choice.get("topic"), source=choice.get("source"))
                     tracker_id = tg.send_progress_tracker(f"Generating Post from Topic: {topic_title[:40]}")
                     run(source_arg=choice.get("source"), dry_run=False, topic_arg=choice.get("topic"), tg=tg, tracker_id=tracker_id)
             except Exception as e:
                 print("Error in on_telegram_suggest:", e)
 
+        def on_telegram_retry():
+            """Repeat the last Telegram request after a 'Could not produce an approved draft' failure."""
+            req = dict(LAST_TG_REQUEST)
+            if req.get("kind") == "topic" and req.get("topic"):
+                tracker_id = tg.send_progress_tracker(f"Trying again: {req['topic'][:40]}")
+                run(source_arg=req.get("source"), dry_run=False, topic_arg=req["topic"], tg=tg, tracker_id=tracker_id)
+            elif req.get("kind") == "daily":
+                tracker_id = tg.send_progress_tracker("Trying again: daily LinkedIn post")
+                run(source_arg=None, dry_run=False, tg=tg, tracker_id=tracker_id)
+            else:
+                tg._call("sendMessage", chat_id=tg.chat_id,
+                         text="Nothing to retry yet. Send a topic or run the daily post first.")
+
         tg.listen_for_commands(
+            on_retry_callback=on_telegram_retry,
             on_topic_callback=on_telegram_topic,
             on_direct_callback=on_telegram_direct,
             on_daily_callback=on_telegram_daily,

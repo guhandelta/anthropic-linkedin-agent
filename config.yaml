@@ -12,8 +12,8 @@ author:
     Explains concepts simply, avoids hype.
 
 post:
-  min_chars: 2970      # strictly between 2970 - 2999 characters in all posts
-  max_chars: 2999      # LinkedIn allows 3000; strictly cap at 2999
+  min_chars: 2850      # LinkedIn post target: 2850-2990 characters
+  max_chars: 2990      # LinkedIn allows 3000; keep a safety margin below it
   hashtags: 4
   min_emojis: 3        # meaningful emojis sprinkled across the post
   max_emojis: 6

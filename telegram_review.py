@@ -98,7 +98,7 @@ def get_last_human_commit_days(repo_dir: Path | None = None) -> int | None:
     return None
 
 
-def check_commit_reminder(repo_dir: Path | None = None, force: bool = False) -> dict:
+def check_commit_reminder(repo_dir: Path | None = None, state_file: Path | None = None, force: bool = False) -> dict:
     """Checks whether a GitHub Actions inactivity warning should be delivered.
     Rules:
       - Remind every 20 days (e.g. day 20, 40)
@@ -129,9 +129,10 @@ def check_commit_reminder(repo_dir: Path | None = None, force: bool = False) -> 
     # Avoid duplicate alert delivery on the same calendar day unless forced
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     state = {}
-    if REMINDER_STATE_FILE.exists():
+    effective_state_file = state_file or REMINDER_STATE_FILE
+    if effective_state_file.exists():
         try:
-            state = json.loads(REMINDER_STATE_FILE.read_text())
+            state = json.loads(effective_state_file.read_text())
         except Exception:
             pass
 
@@ -171,11 +172,12 @@ def check_commit_reminder(repo_dir: Path | None = None, force: bool = False) -> 
     }
 
 
-def record_commit_reminder_sent(days: int):
+def record_commit_reminder_sent(days: int, state_file: Path | None = None):
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    effective_state_file = state_file or REMINDER_STATE_FILE
     try:
-        REMINDER_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        REMINDER_STATE_FILE.write_text(json.dumps({
+        effective_state_file.parent.mkdir(parents=True, exist_ok=True)
+        effective_state_file.write_text(json.dumps({
             "last_notified_date": today_str,
             "last_notified_days": days,
             "updated_at": datetime.now(timezone.utc).isoformat()
@@ -255,11 +257,12 @@ class TelegramReviewer:
         msg = self._call("sendMessage", chat_id=self.chat_id, text=f"⏳ **{title}**\n\n🔄 Starting pipeline...")
         return msg["message_id"]
 
-    def update_progress(self, message_id: int, step_text: str):
-        """Update the existing progress tracker message text in real time."""
+    def update_progress(self, message_id: int, step_text: str, reply_markup=None):
+        """Update the existing progress tracker message text in real time (optionally with buttons)."""
         try:
+            extra = {"reply_markup": reply_markup} if reply_markup else {}
             self._call("editMessageText", chat_id=self.chat_id, message_id=message_id,
-                       text=step_text)
+                       text=step_text, **extra)
         except Exception:
             pass
 
@@ -631,6 +634,7 @@ class TelegramReviewer:
         self,
         on_topic_callback,
         on_direct_callback,
+        on_retry_callback=None,
         on_daily_callback=None,
         on_suggest_callback=None,
         on_status_callback=None,
@@ -682,6 +686,13 @@ class TelegramReviewer:
                 cq = up.get("callback_query")
                 if cq:
                     print(f"[Telegram] Received callback query: {cq.get('data')}")
+                    if cq.get("data") == "retry_last" and on_retry_callback:
+                        self._answer_cq(cq["id"], text="Trying again...")
+                        try:
+                            on_retry_callback()
+                        except Exception as e:
+                            self._call("sendMessage", chat_id=self.chat_id, text=f"⚠️ Error: {str(e)[:1000]}")
+                        continue
                     self._answer_cq(cq["id"], text="Received.")
                     continue
                 if not msg:
