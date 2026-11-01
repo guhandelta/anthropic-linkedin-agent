@@ -114,6 +114,8 @@ gemini_client = genai.Client(api_key=gemini_key) if gemini_key else None
 
 # Active LLM provider tracking ("anthropic", "openai" or "gemini")
 ACTIVE_LLM_PROVIDER = "anthropic"
+# The last request the Telegram bot ran, so the "Try again" button can repeat it.
+LAST_TG_REQUEST: dict = {}
 DISABLED_PROVIDERS: set[str] = set()
 # Failover order used when the active provider errors out
 PROVIDER_ORDER = ["anthropic", "openai", "gemini"]
@@ -1801,7 +1803,8 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
             tracker_id,
             f"❌ Could not produce an approved draft for '{current_topic or current_source}' after {CFG['review']['max_attempts']} attempts.\n\n"
             f"Last issue: {feedback[:150] if feedback else 'Checks could not be satisfied.'}\n\n"
-            "💡 Tip: Tap ✍️ Post from Topic to try another prompt or 📝 Direct Post to provide your own text directly."
+            "💡 Tip: Tap 🔁 Try again to retry the same request, or ✍️ Post from Topic to try another prompt.",
+            reply_markup={"inline_keyboard": [[{"text": "🔁 Try again", "callback_data": "retry_last"}]]},
         )
 
 
@@ -1869,6 +1872,8 @@ if __name__ == "__main__":
             remind_every_s=CFG["telegram"]["remind_every_minutes"] * 60,
         )
         def on_telegram_topic(t: str):
+            LAST_TG_REQUEST.clear()
+            LAST_TG_REQUEST.update(kind="topic", topic=t, source=None)
             tracker_id = tg.send_progress_tracker(f"Generating Post from Topic: {t[:40]}")
             try:
                 run(source_arg=None, dry_run=False, topic_arg=t, tg=tg, tracker_id=tracker_id)
@@ -1885,6 +1890,8 @@ if __name__ == "__main__":
                 tg.update_progress(tracker_id, f"⚠️ Error processing direct post: {str(e)[:250]}")
 
         def on_telegram_daily():
+            LAST_TG_REQUEST.clear()
+            LAST_TG_REQUEST.update(kind="daily")
             tracker_id = tg.send_progress_tracker("Daily LinkedIn Post Pipeline")
             try:
                 run(source_arg=None, dry_run=False, tg=tg, tracker_id=tracker_id)
@@ -1898,12 +1905,28 @@ if __name__ == "__main__":
                 choice = tg.choose_topic("suggest-" + uuid.uuid4().hex[:6], suggestions)
                 if choice.get("action") == "new_topic":
                     topic_title = choice.get("topic") or "Suggested Topic"
+                    LAST_TG_REQUEST.clear()
+                    LAST_TG_REQUEST.update(kind="topic", topic=choice.get("topic"), source=choice.get("source"))
                     tracker_id = tg.send_progress_tracker(f"Generating Post from Topic: {topic_title[:40]}")
                     run(source_arg=choice.get("source"), dry_run=False, topic_arg=choice.get("topic"), tg=tg, tracker_id=tracker_id)
             except Exception as e:
                 print("Error in on_telegram_suggest:", e)
 
+        def on_telegram_retry():
+            """Repeat the last Telegram request after a 'Could not produce an approved draft' failure."""
+            req = dict(LAST_TG_REQUEST)
+            if req.get("kind") == "topic" and req.get("topic"):
+                tracker_id = tg.send_progress_tracker(f"Trying again: {req['topic'][:40]}")
+                run(source_arg=req.get("source"), dry_run=False, topic_arg=req["topic"], tg=tg, tracker_id=tracker_id)
+            elif req.get("kind") == "daily":
+                tracker_id = tg.send_progress_tracker("Trying again: daily LinkedIn post")
+                run(source_arg=None, dry_run=False, tg=tg, tracker_id=tracker_id)
+            else:
+                tg._call("sendMessage", chat_id=tg.chat_id,
+                         text="Nothing to retry yet. Send a topic or run the daily post first.")
+
         tg.listen_for_commands(
+            on_retry_callback=on_telegram_retry,
             on_topic_callback=on_telegram_topic,
             on_direct_callback=on_telegram_direct,
             on_daily_callback=on_telegram_daily,
