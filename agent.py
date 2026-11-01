@@ -1210,6 +1210,11 @@ def _join_post(body: str, tags: list[str]) -> str:
 
 
 def fit_to_character_range(post: str, min_chars: int = None, max_chars: int = None) -> str:
+    """Return the fitted post. See fit_with_report for what was removed."""
+    return fit_with_report(post, min_chars, max_chars)[0]
+
+
+def fit_with_report(post: str, min_chars: int = None, max_chars: int = None) -> tuple[str, list[str]]:
     """Bring the post inside [min_chars, max_chars] (defaults from config.yaml) without changing its claims.
 
     Over the maximum: drop surplus hashtags, then whole trailing sentences while the post stays in
@@ -1222,11 +1227,12 @@ def fit_to_character_range(post: str, min_chars: int = None, max_chars: int = No
     post = re.sub(r"[ \t]+", " ", post).strip()
     post = re.sub(r"\n{3,}", "\n\n", post)
     if min_chars <= len(post) <= max_chars:
-        return post
+        return post, []
 
     body, tags = _split_hashtags(post)
     keep = CFG["post"]["hashtags"]
 
+    removed: list[str] = []
     if len(_join_post(body, tags)) > max_chars:
         while len(_join_post(body, tags)) > max_chars and len(tags) > keep:
             tags = tags[:-1]
@@ -1236,6 +1242,7 @@ def fit_to_character_range(post: str, min_chars: int = None, max_chars: int = No
             if ends and ends[-2:-1]:
                 candidate = body[:ends[-2]].rstrip()
                 if len(_join_post(candidate, tags)) >= min_chars:
+                    removed.append(body[ends[-2]:].strip())
                     body = candidate
                     continue
             # 2. Trim words from the end at a word boundary and close the sentence
@@ -1243,6 +1250,7 @@ def fit_to_character_range(post: str, min_chars: int = None, max_chars: int = No
             cut = body[: max(len(body) - excess - 1, 0)].rstrip()
             if " " in cut:
                 cut = cut.rsplit(" ", 1)[0]
+            removed.append(body[len(cut):].strip())
             body = cut.rstrip(" ,;:") + "."
             break
 
@@ -1260,7 +1268,7 @@ def fit_to_character_range(post: str, min_chars: int = None, max_chars: int = No
             pad += 1
             tags.append(tag if tag not in tags else f"{tag}Insights")
 
-    return _join_post(body, tags)
+    return _join_post(body, tags), [r for r in removed if r]
 
 
 def source_checks(sources: list, posted: set[str], is_custom_topic: bool = False,
@@ -1698,7 +1706,7 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
             feedback = "Return the complete post text in the \"post\" field."
             continue
         post = clamp_emojis(draft["post"].strip().replace("**", "").replace("__", ""))
-        post = fit_to_character_range(post, min_chars=CFG["post"]["min_chars"], max_chars=CFG["post"]["max_chars"])
+        post, removed_text = fit_with_report(post, min_chars=CFG["post"]["min_chars"], max_chars=CFG["post"]["max_chars"])
         idea = draft.get("infographic_idea", "")
         headline = draft.get("headline", current_topic or current_source)
         sources = draft.get("sources", [])
@@ -1706,6 +1714,13 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
         takeaway = str(draft.get("technical_takeaway") or "").strip()
         issues = hard_checks(post) + source_checks(
             sources, posted, is_custom_topic=bool(current_topic), topic_kind=topic_kind)
+        if removed_text:
+            # Never lose content silently: the writer must rewrite the post without the cut text
+            # and keep its key facts and takeaway.
+            issues.append(
+                "Your draft was too long, so these sentences were cut to fit the length window. "
+                "Rewrite the post so the key facts and the takeaway survive, staying within the "
+                "length window: " + " | ".join(removed_text)[:600])
         if len(takeaway.split()) < 6 or len(takeaway) < 35:
             issues.append("Provide a specific technical takeaway with an action and tradeoff.")
         elif len(topic_tokens(takeaway) & topic_tokens(post)) < 2:
