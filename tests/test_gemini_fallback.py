@@ -122,3 +122,22 @@ def test_design_svg_claude_cutoff_does_not_fail_over(monkeypatch):
     monkeypatch.setattr(agent, "_call_claude_svg", MagicMock(side_effect=ValueError("cut off")))
     with pytest.raises(ValueError, match="cut off"):
         agent.design_svg("post", "idea", "Head", None, "foot")
+
+
+def test_gemini_calls_have_a_request_timeout(monkeypatch):
+    seen = {}
+
+    class FakeModels:
+        def generate_content(self, **kwargs):
+            seen.update(kwargs)
+            class R:
+                text = "<svg></svg>"
+            return R()
+
+    class FakeClient:
+        models = FakeModels()
+
+    monkeypatch.setattr(agent, "gemini_client", FakeClient())
+    agent.call_gemini_svg("system", "msg")
+    timeout = seen["config"].http_options.timeout
+    assert timeout == agent.GEMINI_TIMEOUT_MS and 0 < timeout <= 600_000

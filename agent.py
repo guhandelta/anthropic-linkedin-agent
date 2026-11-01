@@ -510,6 +510,9 @@ def call_openai_svg(system: str, msg: str, max_tokens: int = 8000) -> str:
     return finalize_svg(svg)
 
 
+GEMINI_TIMEOUT_MS = 180_000  # per-request limit for Gemini calls (3 minutes)
+
+
 def call_gemini_json(system: str, content, tools: list | None = None, max_tokens: int = 4000) -> dict:
     """
     Invokes Google Gemini and returns a parsed JSON object (the last-resort fallback provider).
@@ -537,7 +540,9 @@ def call_gemini_json(system: str, content, tools: list | None = None, max_tokens
         contents = str(content)
 
     instruction = system
-    config_kwargs = {"max_output_tokens": max(max_tokens, 8192) * 4}
+    # Bound each Gemini request so a stuck call fails and the run moves on instead of hanging.
+    config_kwargs = {"max_output_tokens": max(max_tokens, 8192) * 4,
+                     "http_options": genai_types.HttpOptions(timeout=GEMINI_TIMEOUT_MS)}
     if tools:
         domains = []
         for t in tools:
@@ -567,7 +572,8 @@ def call_gemini_svg(system: str, msg: str, max_tokens: int = 16000) -> str:
     resp = gemini_client.models.generate_content(
         model=model_name, contents=msg,
         config=genai_types.GenerateContentConfig(system_instruction=system + rules,
-                                                 max_output_tokens=max_tokens * 2))
+                                                 max_output_tokens=max_tokens * 2,
+                                                 http_options=genai_types.HttpOptions(timeout=GEMINI_TIMEOUT_MS)))
     return finalize_svg(EMOJI_RE.sub("", extract_svg(resp.text or "")))
 
 
