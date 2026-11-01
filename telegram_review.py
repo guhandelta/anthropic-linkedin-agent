@@ -98,7 +98,7 @@ def get_last_human_commit_days(repo_dir: Path | None = None) -> int | None:
     return None
 
 
-def check_commit_reminder(repo_dir: Path | None = None, force: bool = False) -> dict:
+def check_commit_reminder(repo_dir: Path | None = None, state_file: Path | None = None, force: bool = False) -> dict:
     """Checks whether a GitHub Actions inactivity warning should be delivered.
     Rules:
       - Remind every 20 days (e.g. day 20, 40)
@@ -129,9 +129,10 @@ def check_commit_reminder(repo_dir: Path | None = None, force: bool = False) -> 
     # Avoid duplicate alert delivery on the same calendar day unless forced
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     state = {}
-    if REMINDER_STATE_FILE.exists():
+    effective_state_file = state_file or REMINDER_STATE_FILE
+    if effective_state_file.exists():
         try:
-            state = json.loads(REMINDER_STATE_FILE.read_text())
+            state = json.loads(effective_state_file.read_text())
         except Exception:
             pass
 
@@ -171,11 +172,12 @@ def check_commit_reminder(repo_dir: Path | None = None, force: bool = False) -> 
     }
 
 
-def record_commit_reminder_sent(days: int):
+def record_commit_reminder_sent(days: int, state_file: Path | None = None):
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    effective_state_file = state_file or REMINDER_STATE_FILE
     try:
-        REMINDER_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        REMINDER_STATE_FILE.write_text(json.dumps({
+        effective_state_file.parent.mkdir(parents=True, exist_ok=True)
+        effective_state_file.write_text(json.dumps({
             "last_notified_date": today_str,
             "last_notified_days": days,
             "updated_at": datetime.now(timezone.utc).isoformat()

@@ -1402,7 +1402,12 @@ def publish_to_linkedin_and_groups(
                 progress_callback=on_group_progress
             )
             success_count = len(group_res.get("success", []))
-            summary_msg = f"🎉 Successfully published to personal wall + {success_count}/{len(target_groups)} LinkedIn groups!"
+            if success_count == len(target_groups):
+                summary_msg = f"🎉 Published to personal wall and all {success_count} LinkedIn groups."
+            else:
+                failed = group_res.get("failed", [])
+                summary_msg = (f"⚠️ Published to personal wall, but only {success_count}/{len(target_groups)} "
+                               "LinkedIn groups. Failed groups: " + ", ".join(failed))
             if tg and grp_tracker_id:
                 tg.update_progress(grp_tracker_id, summary_msg)
             elif tg and success_count > 0 and message_id:

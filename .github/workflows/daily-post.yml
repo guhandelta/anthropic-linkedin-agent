@@ -54,6 +54,27 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v6
 
+      - name: Validate publish credentials
+        if: github.event_name == 'schedule' || inputs.run_mode == 'publish'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPEN_AI_API_KEY: ${{ secrets.OPEN_AI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          LI_AT: ${{ secrets.LI_AT }}
+        run: |
+          for name in LINKEDIN_ACCESS_TOKEN TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID LI_AT; do
+            if [ -z "${!name}" ]; then echo "Missing required secret: $name" >&2; exit 1; fi
+          done
+          if [ -z "${ANTHROPIC_API_KEY}${OPENAI_API_KEY}${OPEN_AI_API_KEY}${GOOGLE_API_KEY}${GEMINI_API_KEY}" ]; then
+            echo "At least one AI provider key is required" >&2
+            exit 1
+          fi
+
       # Step 2: Set up Python 3.12 runtime
       - name: Set up Python
         uses: actions/setup-python@v6
