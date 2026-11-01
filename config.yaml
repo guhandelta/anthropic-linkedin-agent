@@ -22,7 +22,6 @@ review:
   min_score: 4         # every review criterion must score >= 4 out of 5
   max_attempts: 3      # each attempt uses a different source; after 3, nothing is posted
   passes: 3            # independent editorial reviews, all must pass, plus one fact-check
-  redraw_attempts: 1   # extra drawing tries on the same post before the writer is asked again
 
 infographic:
   bg: "#FFFFFF"
