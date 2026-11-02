@@ -368,3 +368,34 @@ def test_run_retries_when_draft_has_no_post_text(tmp_path, monkeypatch):
     monkeypatch.setattr(agent, "select_model_for_run", lambda *a, **k: "x")
     agent.run(dry_run=True)
     assert calls["n"] == agent.CFG["review"]["max_attempts"]
+
+
+def test_unsourced_rejection_moves_to_another_source(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent, "ROOT", tmp_path)
+    monkeypatch.setattr(agent, "load_log", MagicMock(return_value=[]))
+    monkeypatch.setattr(agent, "select_model_for_run", MagicMock(return_value="x"))
+    monkeypatch.setattr(agent, "hard_checks", lambda post: [])
+    monkeypatch.setattr(agent, "source_checks", lambda *a, **k: [])
+    monkeypatch.setattr(agent, "duplicate_topic", lambda *a, **k: False)
+    monkeypatch.setattr(agent, "plan_infographic", MagicMock(side_effect=lambda p, h, i: i))
+    art = tmp_path / "p.png"
+    art.write_bytes(b"png")
+    monkeypatch.setattr(agent, "draw_poster", MagicMock(return_value=(art, None)))
+    monkeypatch.setattr(agent, "review_all", MagicMock(side_effect=[
+        (False, ["[review 1] The claim about INP is not supported by the provided sources."], {}),
+        (True, [], {}),
+    ]))
+    picks = iter(["web.dev/learn", "react.dev/blog"])
+    monkeypatch.setattr(agent, "pick_source", MagicMock(side_effect=lambda *a, **k: next(picks)))
+    body = "Rendering tradeoffs change how the frontend library behaves under load. " * 40
+    draft = {"post": body + "#Tech #Dev #Coding #Web", "headline": "Frontend rendering tradeoffs",
+             "topic_kind": "evergreen",
+             "technical_takeaway": "Check rendering tradeoffs before choosing a large frontend library",
+             "sources": [{"url": "https://react.dev/blog/item", "published": "2026-10-30", "claim": "Fast builds"}],
+             "infographic_idea": "Diagram of the rendering steps."}
+    writer = MagicMock(return_value=draft)
+    monkeypatch.setattr(agent, "write_draft", writer)
+    agent.run(dry_run=True, tg=None)
+    second_source, second_feedback = writer.call_args_list[1][0][0], writer.call_args_list[1][0][1]
+    assert second_source == "react.dev/blog"   # moved to the next source
+    assert second_feedback is None              # no retry on the thin page

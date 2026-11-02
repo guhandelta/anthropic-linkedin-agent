@@ -1588,6 +1588,10 @@ def publish_after_approval(headline, source, post, sources, image_path,
 # -----------------------------------------------------------------------------
 # Main Autonomous Pipeline Orchestrator
 # -----------------------------------------------------------------------------
+# Reviewer wording that means the source itself is too thin for the claims in the post.
+THIN_SOURCE_MARKERS = ("unsourced", "not supported by the provided sources", "not supported by the sources")
+
+
 def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | None = None,
         tg: TelegramReviewer | None = None, tracker_id: int | None = None):
     """
@@ -1747,6 +1751,11 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
 
         feedback = "\n".join(issues) or "Improve quality and image match."
         print("Rejected:\n" + feedback)
+        if source_arg is None and any(marker in feedback.lower() for marker in THIN_SOURCE_MARKERS):
+            # The page can't back the claims. Retrying the same page repeats the failure, so move on.
+            print(f"Skipping {current_source}: its material does not support the post.")
+            current_source, feedback = None, None
+            continue
         if tg and tracker_id:
             tg.update_progress(tracker_id, f"⚠️ [Attempt {attempt}/{CFG['review']['max_attempts']}] Editorial reviewer requested changes: {feedback[:60]}...")
 
