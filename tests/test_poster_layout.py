@@ -44,3 +44,14 @@ def test_structured_poster_passes_readability_checks(tmp_path):
 
 def test_incomplete_blueprint_uses_designer_fallback():
     assert poster_from_brief(MARKER + "\n{}", "Heading", "Author") is None
+
+
+def test_long_takeaway_wraps_inside_the_banner_instead_of_clipping():
+    src = open(__file__).read()
+    start = src.index("plan = {") + len("plan = ")
+    end = src.index("\n    }\n", start) + len("\n    }")
+    plan = eval(src[start:end].replace("\n", " "))
+    plan["takeaway"] = "Measure server components first, then keep client caches only where users feel the latency change."
+    svg = finalize_svg(poster_from_brief(MARKER + "\n" + json.dumps(plan), "Heading", "Author"))
+    assert design_quality_checks(svg) == []
+    assert "…" not in " ".join(t for t in svg.split("<text")[1:] if "latency" in t)
