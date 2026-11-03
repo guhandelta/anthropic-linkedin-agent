@@ -368,17 +368,8 @@ def render_svg(svg: str, path: Path) -> Path:
     return path
 
 
-def render_svg_to_gif(svg: str, path: Path, n_frames: int = 12, fps: int = 12) -> Path:
-    """Render a technical SVG infographic into a smooth, seamlessly looping animated GIF.
-    
-    Animation pipeline:
-    1. Detects connector lines and data flow paths. Auto-applies dashed stroke arrays if solid.
-    2. Generates 12 discrete animation frames by shifting stroke-dashoffset across a 20px period.
-    3. Substitutes dynamic pulse placeholders ({pulse_r}, {pulse_op}) for pulsing radar rings.
-    4. Renders each frame via CairoSVG at the poster's full 1080x1350 resolution,
-       and quantizes to a 128-color median cut palette for compact file size and high fidelity.
-    5. Saves as a looping animated GIF.
-    """
+def gif_frame_svgs(svg: str, n_frames: int = 12) -> list[str]:
+    """Build the per-frame SVGs the animated GIF is rendered from (see render_svg_to_gif)."""
     import math
     import io
     from PIL import Image
@@ -402,7 +393,7 @@ def render_svg_to_gif(svg: str, path: Path, n_frames: int = 12, fps: int = 12) -
     base_svg = re.sub(r'<(line|polyline|path)\s+([^>]*(?:x1=|d="M|points=)[^>]*)>', _ensure_dashed, svg)
     motion_steps = sorted({int(step) for step in re.findall(r'data-motion-step="(\d+)"', svg)})
 
-    frames = []
+    frame_svgs = []
     dash_period = 20  # 20 matches dash pattern "10 10" and loops seamlessly without jump cuts
 
     for i in range(n_frames):
@@ -451,13 +442,24 @@ def render_svg_to_gif(svg: str, path: Path, n_frames: int = 12, fps: int = 12) -
         if "{pulse_op}" in frame_svg:
             frame_svg = frame_svg.replace("{pulse_op}", str(pulse_op))
 
-        # Render frame to PNG buffer, resize cleanly, and quantize palette
+        frame_svgs.append(frame_svg)
+    return frame_svgs
+
+
+def render_svg_to_gif(svg: str, path: Path, n_frames: int = 12, fps: int = 12) -> Path:
+    """Render a technical SVG infographic into a smooth, seamlessly looping animated GIF."""
+    import io
+    from PIL import Image
+
+    issues = svg_checks(svg)
+    if issues:
+        raise ValueError("; ".join(issues))
+    frames = []
+    for frame_svg in gif_frame_svgs(svg, n_frames):
         png_bytes = cairosvg.svg2png(bytestring=frame_svg.encode("utf-8"), output_width=W, output_height=H)
         img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
-        quantized = img.quantize(colors=128, method=Image.Quantize.MEDIANCUT)
-        frames.append(quantized)
+        frames.append(img.quantize(colors=128, method=Image.Quantize.MEDIANCUT))
 
-    # Save animated GIF with loop=0 (infinite loop)
     path.parent.mkdir(parents=True, exist_ok=True)
     frames[0].save(
         path,

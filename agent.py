@@ -70,6 +70,7 @@ from dotenv import load_dotenv
 # Module Imports: Graphics, LinkedIn Distribution, Telegram Bot, Quality & Anti-Hallucination
 from infographic import (ICON_NAMES, design_quality_checks, extract_svg, finalize_svg,
                          render_svg, render_svg_to_gif, svg_checks)
+from layout_check import layout_issues
 from linkedin import LinkedInClient
 from linkedin_groups import post_to_groups
 from telegram_review import TelegramReviewer, get_status
@@ -969,7 +970,14 @@ def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: P
             feedback = "\n".join(hard_issues)
             print("Drawing checks failed:", hard_issues)
             continue
-        fallback_svg = svg  # best valid drawing so far
+        # Measure the rendered poster: overlapping, hidden, clipped or spilling items are hard failures.
+        layout = layout_issues(svg)
+        if layout:
+            feedback = ("The drawing has overlapping, hidden or cut-off items. Redraw it and fix:\n"
+                        + "\n".join(layout))
+            print("Layout check failed:", layout)
+            continue
+        fallback_svg = svg  # best valid, layout-clean drawing so far
         soft_issues = design_quality_checks(svg)
         if soft_issues and try_no < 2:
             feedback = ("The drawing is valid but is not yet a rich, polished poster. "

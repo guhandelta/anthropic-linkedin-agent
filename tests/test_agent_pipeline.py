@@ -313,7 +313,7 @@ def test_run_dry_run_success(tmp_path: Path, monkeypatch):
         "infographic_idea": "Diagram showing the compilation steps clearly."
     }
     monkeypatch.setattr(agent, "write_draft", MagicMock(return_value=mock_draft))
-    monkeypatch.setattr(agent, "design_svg", MagicMock(return_value=f"<svg viewBox='0 0 1080 1350'><text font-size='24'>Title</text><text font-size='22'>A</text><text font-size='22'>B</text></svg>"))
+    monkeypatch.setattr(agent, "design_svg", MagicMock(return_value=f"<svg viewBox='0 0 1080 1350'><rect width='1080' height='1350' fill='#ffffff'/><text x='60' y='120' font-size='40' fill='#111111'>Title</text><text x='60' y='400' font-size='36' fill='#111111'>Alpha step</text><text x='60' y='680' font-size='36' fill='#111111'>Beta step</text></svg>"))
     monkeypatch.setattr(agent, "render_svg", MagicMock())
     monkeypatch.setattr(agent, "render_svg_to_gif", MagicMock())
     monkeypatch.setattr(agent, "plan_infographic", MagicMock(side_effect=lambda post, headline, idea: idea))
@@ -337,6 +337,7 @@ def test_run_dry_run_success(tmp_path: Path, monkeypatch):
 def test_draw_poster_publishes_best_valid_drawing_when_every_try_has_a_soft_issue(tmp_path, monkeypatch):
     # A valid but sparse drawing: passes the hard checks, always fails the richness checks.
     sparse = ('<svg viewBox="0 0 1080 1350" xmlns="http://www.w3.org/2000/svg">'
+              '<rect width="1080" height="1350" fill="#ffffff"/>'
               '<text x="60" y="100" font-size="40">One</text>'
               '<text x="60" y="180" font-size="40">Two</text>'
               '<text x="60" y="260" font-size="40">Three</text></svg>')
@@ -402,7 +403,7 @@ def test_run_moves_to_another_source_when_cited_page_is_gone(tmp_path, monkeypat
     pick = MagicMock(side_effect=["web.dev/blog", "react.dev/blog"])
     monkeypatch.setattr(agent, "pick_source", pick)
     monkeypatch.setattr(agent, "write_draft", MagicMock(return_value=mock_draft))
-    monkeypatch.setattr(agent, "design_svg", MagicMock(return_value="<svg viewBox='0 0 1080 1350'><text font-size='24'>Title</text><text font-size='22'>A</text><text font-size='22'>B</text></svg>"))
+    monkeypatch.setattr(agent, "design_svg", MagicMock(return_value="<svg viewBox='0 0 1080 1350'><rect width='1080' height='1350' fill='#ffffff'/><text x='60' y='120' font-size='40' fill='#111111'>Title</text><text x='60' y='400' font-size='36' fill='#111111'>Alpha step</text><text x='60' y='680' font-size='36' fill='#111111'>Beta step</text></svg>"))
     monkeypatch.setattr(agent, "render_svg", MagicMock())
     monkeypatch.setattr(agent, "render_svg_to_gif", MagicMock())
     monkeypatch.setattr(agent, "plan_infographic", MagicMock(side_effect=lambda post, headline, idea: idea))
