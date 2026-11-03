@@ -98,14 +98,18 @@ def topic_history_path() -> Path:
 # -----------------------------------------------------------------------------
 # LLM Provider Initialization (Anthropic Claude + OpenAI Fallback)
 # -----------------------------------------------------------------------------
+# Per-request limit for Claude and OpenAI calls, matching the Gemini limit below.
+# Without it a stalled connection can block the bot indefinitely.
+LLM_TIMEOUT_S = 180
+
 # Primary LLM Client (Anthropic Claude)
-anthropic_client = Anthropic()
+anthropic_client = Anthropic(timeout=LLM_TIMEOUT_S)
 
 # Fallback LLM Client (OpenAI - supports both standard OPENAI_API_KEY and OPEN_AI_API_KEY)
 openai_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("OPEN_AI_API_KEY")
 if openai_key and not os.environ.get("OPENAI_API_KEY"):
     os.environ["OPENAI_API_KEY"] = openai_key
-openai_client = OpenAI(api_key=openai_key) if openai_key else None
+openai_client = OpenAI(api_key=openai_key, timeout=LLM_TIMEOUT_S) if openai_key else None
 
 # Second fallback LLM Client (Google Gemini - supports GOOGLE_API_KEY or GEMINI_API_KEY)
 gemini_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
