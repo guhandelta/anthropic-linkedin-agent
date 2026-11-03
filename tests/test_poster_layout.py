@@ -55,3 +55,15 @@ def test_long_takeaway_wraps_inside_the_banner_instead_of_clipping():
     svg = finalize_svg(poster_from_brief(MARKER + "\n" + json.dumps(plan), "Heading", "Author"))
     assert design_quality_checks(svg) == []
     assert "…" not in " ".join(t for t in svg.split("<text")[1:] if "latency" in t)
+
+
+def test_long_module_item_wraps_instead_of_ellipsis():
+    src = open(__file__).read()
+    start = src.index("plan = {") + len("plan = ")
+    end = src.index("\n    }\n", start) + len("\n    }")
+    plan = eval(src[start:end].replace("\n", " "))
+    plan["modules"][0] = {"kind": "steps", "heading": "Rollout", "icon": "layers",
+                          "lines": ["Open the fetch request and check every header before you send reasons to the server"]}
+    svg = finalize_svg(poster_from_brief(MARKER + "\n" + json.dumps(plan), "Heading", "Author"))
+    assert design_quality_checks(svg) == []
+    assert "…" not in " ".join(t for t in svg.split("<text")[1:] if "fetch" in t)
