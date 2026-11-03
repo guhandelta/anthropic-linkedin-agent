@@ -142,11 +142,15 @@ def _module(parts: list[str], module: dict, x: int, y: int, w: int, h: int,
             parts.append(_text(x + 24 + 175, y + 86 + i * 28, caption, size=22, fill=muted))
         return
     for raw in raw_lines:
-        wrapped = (_wrap_code if code else _wrap)(raw, w - 60, 22, 2)
+        # An item wraps onto up to three lines. Anything longer, or past the four-line budget,
+        # is dropped whole rather than cut mid-sentence.
+        wrapped = (_wrap_code if code else _wrap)(raw, w - 60, 22, 10)
+        if len(wrapped) > 3:
+            continue
         group = [("• " if j == 0 and not code else "  " if not code else "") + line
                  for j, line in enumerate(wrapped)]
         if len(content) + len(group) > 4:
-            break  # Drop whole overflow items instead of cutting text mid-sentence
+            break
         content.extend(group)
     for i, line in enumerate(content[:4]):
         parts.append(_text(x + 24, y + 84 + i * 28, line, size=22,
