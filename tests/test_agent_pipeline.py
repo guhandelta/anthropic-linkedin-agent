@@ -368,3 +368,55 @@ def test_run_retries_when_draft_has_no_post_text(tmp_path, monkeypatch):
     monkeypatch.setattr(agent, "select_model_for_run", lambda *a, **k: "x")
     agent.run(dry_run=True)
     assert calls["n"] == agent.CFG["review"]["max_attempts"]
+
+
+def test_review_all_flags_a_404_source_page_as_unavailable(monkeypatch):
+    import requests
+
+    monkeypatch.setattr(agent, "editorial_review",
+                        lambda *a, **k: {"approved": True, "scores": {}, "issues": []})
+
+    response = MagicMock(status_code=404)
+    error = requests.HTTPError("404 Client Error: Not Found", response=response)
+    monkeypatch.setattr(agent, "fact_check", MagicMock(side_effect=error))
+
+    ok, issues, detail = agent.review_all("Headline", "post text", [{"url": "https://web.dev/gone"}], None)
+    assert ok is False
+    assert detail["fact_check"]["source_unavailable"] is True
+    assert any("404" in issue for issue in issues)
+
+
+def test_run_moves_to_another_source_when_cited_page_is_gone(tmp_path, monkeypatch, capsys):
+    from datetime import datetime, timedelta
+    recent_date = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+    mock_draft = {
+        "post": "🚀 Check modern frontend rendering tradeoffs before choosing a large library. " + "Real detail about bundles. " * 40 + "#Tech #Dev #Coding",
+        "headline": "Modern frontend rendering tradeoffs",
+        "topic_kind": "evergreen",
+        "technical_takeaway": "Check modern frontend rendering tradeoffs before choosing a large library",
+        "sources": [{"url": "https://react.dev/blog/item", "published": recent_date, "claim": "Fast builds"}],
+        "infographic_idea": "Diagram showing the compilation steps clearly."
+    }
+    monkeypatch.setattr(agent, "ROOT", tmp_path)
+    monkeypatch.setattr(agent, "load_log", MagicMock(return_value=[]))
+    pick = MagicMock(side_effect=["web.dev/blog", "react.dev/blog"])
+    monkeypatch.setattr(agent, "pick_source", pick)
+    monkeypatch.setattr(agent, "write_draft", MagicMock(return_value=mock_draft))
+    monkeypatch.setattr(agent, "design_svg", MagicMock(return_value="<svg viewBox='0 0 1080 1350'><text font-size='24'>Title</text><text font-size='22'>A</text><text font-size='22'>B</text></svg>"))
+    monkeypatch.setattr(agent, "render_svg", MagicMock())
+    monkeypatch.setattr(agent, "render_svg_to_gif", MagicMock())
+    monkeypatch.setattr(agent, "plan_infographic", MagicMock(side_effect=lambda post, headline, idea: idea))
+    monkeypatch.setattr(agent, "design_quality_checks", MagicMock(return_value=[]))
+    review = MagicMock(side_effect=[
+        (False, ["[fact-check] Source page not found (404)"], {"fact_check": {"source_unavailable": True}}),
+        (True, [], {"scores": {}}),
+    ])
+    monkeypatch.setattr(agent, "review_all", review)
+    monkeypatch.setattr(agent, "hard_checks", MagicMock(return_value=[]))
+    monkeypatch.setattr(agent, "source_checks", MagicMock(return_value=[]))
+
+    agent.run(dry_run=True, tg=MagicMock(), tracker_id=1)
+
+    assert pick.call_count == 2
+    assert review.call_count == 2
+    assert "Trying another source" in capsys.readouterr().out

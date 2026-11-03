@@ -1106,6 +1106,15 @@ def review_all(headline, post, sources, image_path, is_custom_topic: bool = Fals
             issues += [f"[review {i}] {x}" for x in r.get("issues", [])]
     try:
         fc = fact_check(post, sources)
+    except requests.HTTPError as error:
+        status = getattr(error.response, "status_code", None)
+        if status == 404:
+            # The cited page is gone, so the claim cannot be checked. Flag it so the run can move to another source.
+            fc = {"approved": False, "claims_checked": 0, "source_unavailable": True,
+                  "issues": [f"Source page not found (404): {error.request.url if error.request else ''}".strip()]}
+        else:
+            fc = {"approved": False, "claims_checked": 0,
+                  "issues": [f"Source verification failed: {error}"]}
     except (ValueError, KeyError, requests.RequestException) as error:
         fc = {"approved": False, "claims_checked": 0,
               "issues": [f"Source verification failed: {error}"]}
@@ -1748,6 +1757,12 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
             else:
                 print("User declined or skipped post.")
                 return
+
+        if detail.get("fact_check", {}).get("source_unavailable") and source_arg is None:
+            # A dead source page is not the writer's fault: pick another source instead of revising this one.
+            print("Rejected: cited source page is gone (404). Trying another source.")
+            current_source, feedback = None, None
+            continue
 
         feedback = "\n".join(issues) or "Improve quality and image match."
         print("Rejected:\n" + feedback)
