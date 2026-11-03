@@ -264,9 +264,10 @@ def poster_from_brief(brief: str, headline: str, footer: str) -> str | None:
     parts.extend(_lines(110, 1165, gotcha.get("text"), 900, size=22, max_lines=1,
                         fill="#5B421E"))
 
-    parts.append(_rect(40, 1192, 1000, 72, "#315DA5"))
-    parts.append(_icon("bulb", 60, 1208, "#FFFFFF", 1.5))
-    parts.extend(_lines(110, 1235, plan["takeaway"], 900, size=25, max_lines=1,
+    # The takeaway may wrap to two lines inside the banner, so it is not clipped with an ellipsis.
+    parts.append(_rect(40, 1192, 1000, 84, "#315DA5"))
+    parts.append(_icon("bulb", 60, 1217, "#FFFFFF", 1.5))
+    parts.extend(_lines(110, 1226, plan["takeaway"], 900, size=23, max_lines=2, step=26,
                         fill="#FFFFFF", weight="bold"))
     parts.append('<line x1="60" y1="1285" x2="1020" y2="1285" stroke="#CBD5E1" '
                  'stroke-width="2" stroke-dasharray="none"/>')
