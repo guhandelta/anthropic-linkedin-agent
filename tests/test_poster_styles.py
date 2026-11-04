@@ -7,8 +7,9 @@ import pytest
 
 from infographic import design_quality_checks, finalize_svg, gif_frame_svgs, svg_checks
 from layout_check import layout_issues
-from poster_layout import (MARKER, STYLES, THEME_HINTS, THEMES, _apply_theme, choose_style,
-                           choose_theme, poster_from_brief)
+from poster_layout import (LAYOUT_HINTS, MARKER, POST_TYPES, STYLES, THEME_HINTS, THEMES,
+                           _apply_theme, _style_candidates, choose_style, choose_theme,
+                           poster_from_brief)
 
 NODES = [
     {"label": "Find usage", "detail": "Inspect one library's calls", "icon": "search"},
@@ -49,7 +50,7 @@ def _svg(plan, **kw):
 
 
 def _style(svg):
-    return re.search(r'data-style="([a-z]+)"', svg).group(1)
+    return re.search(r'data-style="([a-z_]+)"', svg).group(1)
 
 
 def _theme(svg):
@@ -62,6 +63,11 @@ SHAPES = {
     "timeline": _plan("flow", 4, (CODE, CHECKS, STEPS, STATS)),
     "spotlight": _plan("flow", 4, (CODE, CHECKS, STATS)),
     "comparison": _plan("before_after", 4, (CODE, CHECKS, STEPS, STATS)),
+    "dashboard": _plan("flow", 4, (CODE, CHECKS, STATS)),
+    "code_focus": _plan("flow", 4, (CODE, CHECKS, STEPS)),
+    "incident": _plan("flow", 5, (CODE, CHECKS, STEPS), post_type="bug_fix"),
+    "stack": _plan("layers", 5, (CODE, CHECKS, STEPS, STATS)),
+    "sidebar": _plan("flow", 4, (CODE, CHECKS, STEPS), title="Native APIs for leaner apps"),
 }
 
 
@@ -83,6 +89,17 @@ def test_every_layout_in_every_theme_passes_all_checks(style, theme):
     ("spotlight", _plan("flow", 3, badge="v2.1 release", tagline="")),
     ("comparison", _plan("before_after", 4)),                # three modules: APPLICATION card
     ("guide", _plan("flow", 5)),
+    ("dashboard", _plan("flow", 3, (CODE, CHECKS, STEPS, STATS))),  # three details: 2x2 grid
+    ("dashboard", _plan("flow", 4, (CHECKS, {**STATS, "lines": STATS["lines"] + ["9 | regions"]},
+                                    STEPS), tagline="")),         # four tiles, caption as lead
+    ("code_focus", _plan("flow", 4, ({**CODE, "lines": [
+        "const res = await fetch(url, { method: 'POST' })", "if (!res.ok) throw new Error(res.status)",
+        "const data = await res.json()", "cache.set(url, data)"]}, CHECKS, STEPS))),  # long snippet
+    ("code_focus", _plan("flow", 3, ({**CODE, "heading": ""}, CHECKS, STEPS))),
+    ("incident", _plan("flow", 3, post_type="bug_fix")),
+    ("stack", _plan("flow", 3, post_type="architecture")),
+    ("sidebar", _plan("flow", 3, title="Native APIs", tagline="", badge="Explainer")),
+    ("sidebar", _plan("flow", 5, title="Native APIs")),
 ])
 def test_layout_variants_stay_clean(style, plan):
     svg = _svg(plan, style=style, theme="midnight")
@@ -94,7 +111,7 @@ def test_layouts_are_structurally_different():
     # Same theme, tags only (no coordinates or words): each layout is a different drawing.
     shapes = {style: tuple(re.findall(r"<(\w+)", _svg(SHAPES[style], style=style, theme="ocean")))
               for style in STYLES}
-    assert len(set(shapes.values())) == 4
+    assert len(set(shapes.values())) == len(STYLES) == 9
 
 
 def test_timeline_fills_spare_room_with_the_tagline_and_drops_a_long_caption():
@@ -123,11 +140,16 @@ def test_comparison_shows_both_sides_with_their_labels():
 
 @pytest.mark.parametrize("plan, expected", [
     (_plan("before_after", 4), "comparison"),
-    (_plan("flow", 3, (CODE, CHECKS, STATS)), "spotlight"),
-    (_plan("layers", 3), "timeline"),
-    (_plan("flow", 4), "timeline"),
-    (_plan("flow", 3), "spotlight"),
-    (_plan("flow", 5, (CODE, CHECKS, STATS)), "timeline"),  # five steps never go in the ribbon
+    (_plan("flow", 3, (CHECKS, STEPS, STATS)), "dashboard"),
+    (_plan("flow", 3, (CODE, CHECKS, STEPS)), "code_focus"),
+    (_plan("flow", 4, (CODE, CHECKS, STEPS), post_type="bug_fix"), "incident"),
+    (_plan("layers", 4, (CHECKS, STEPS, CHECKS)), "stack"),
+    (_plan("flow", 4, (CHECKS, STEPS, CHECKS), post_type="how_to"), "timeline"),
+    (_plan("flow", 3, (CHECKS, STEPS, CHECKS), title="Native APIs"), "sidebar"),
+    (_plan("flow", 3, (CHECKS, STEPS, CHECKS), post_type="release"), "spotlight"),
+    (_plan("flow", 5, (CODE, CHECKS, STATS)), "timeline"),  # five steps never go in a ribbon
+    (_plan("flow", 3, (CHECKS, STEPS, CHECKS), layout="stack"), "stack"),  # the planner's pick
+    (_plan("flow", 3, (CHECKS, STEPS, CHECKS), layout="dashboard"), "sidebar"),  # no stats
 ])
 def test_layout_follows_the_content(plan, expected):
     assert choose_style(plan) == expected
@@ -135,16 +157,46 @@ def test_layout_follows_the_content(plan, expected):
 
 
 @pytest.mark.parametrize("plan", [_plan("before_after", 4), _plan("flow", 3), _plan("flow", 5),
-                                  _plan("layers", 4), _plan("flow", 3, (CODE, STATS, STEPS))])
+                                  _plan("layers", 4), _plan("flow", 3, (CODE, STATS, STEPS)),
+                                  _plan("flow", 4, post_type="bug_fix")])
 def test_layout_never_repeats_the_last_one(plan):
     for last in STYLES:
         assert choose_style(plan, last) != last
 
 
+def test_layout_avoids_the_last_three_when_it_can():
+    plan = _plan("flow", 3, (CODE, CHECKS, STATS))
+    first = choose_style(plan)
+    second = choose_style(plan, [first])
+    third = choose_style(plan, [first, second])
+    assert len({first, second, third}) == 3
+    # Only three layouts fit five steps with stats; once all were used, only the last is avoided.
+    five = _plan("flow", 5, (CHECKS, STEPS, STATS))
+    assert choose_style(five, ["stack", "guide", "timeline"]) == "guide"
+
+
 def test_a_forced_layout_that_does_not_suit_the_content_is_replaced():
     svg = _svg(_plan("flow", 3), style="comparison", theme="ocean")
-    assert _style(svg) == "spotlight"
+    assert _style(svg) == "code_focus"
     assert _style(_svg(_plan("flow", 5), style="spotlight", theme="ocean")) == "timeline"
+
+
+def test_code_focus_skips_a_row_too_narrow_for_stats():
+    plan = _plan("flow", 3, (CODE, CHECKS, STEPS, STATS))
+    assert choose_style(plan) == "dashboard"
+    assert "code_focus" not in _style_candidates(plan)
+
+
+def test_long_titles_skip_the_sidebar():
+    plan = _plan("flow", 3, (CHECKS, STEPS, CHECKS), title="Internationalization done right")
+    assert "sidebar" not in _style_candidates(plan)
+    many = _plan("flow", 3, (CHECKS, STEPS, CHECKS), title="Alpha bravo delta gamma omega sigma kappa theta zeta lambda")
+    assert "sidebar" not in _style_candidates(many)
+
+
+def test_every_layout_has_a_hint_for_the_planner():
+    assert set(LAYOUT_HINTS) == set(STYLES)
+    assert "bug_fix" in POST_TYPES
 
 
 # --- Choosing a colour theme ---
@@ -158,6 +210,11 @@ def test_theme_never_repeats_the_last_one():
     for last in THEMES:
         assert choose_theme(_plan(theme=last), last) != last
         assert choose_theme(_plan(), last) != last
+
+
+def test_theme_avoids_the_last_two():
+    assert choose_theme(_plan(theme="forest"), ["forest", "ocean"]) not in ("forest", "ocean")
+    assert choose_theme(_plan(theme="forest"), ["forest", "ocean", "grape"]) not in ("ocean", "grape")
 
 
 def test_unknown_theme_hint_gets_a_stable_pick():
@@ -217,3 +274,16 @@ def test_gif_highlight_uses_the_theme_colour():
 def test_gif_frames_refuse_an_invalid_drawing():
     with pytest.raises(ValueError):
         gif_frame_svgs("<svg", 2)
+
+
+def test_code_focus_shows_at_most_six_code_lines():
+    lines = [f"step{i}()" for i in range(9)]
+    svg = _svg(_plan("flow", 3, ({**CODE, "lines": lines}, CHECKS, STEPS)), style="code_focus",
+               theme="ocean")
+    assert "step5()" in svg and "step6()" not in svg
+    assert svg_checks(svg) + design_quality_checks(svg) == []
+
+
+def test_concept_posts_prefer_the_sidebar_then_the_stack():
+    plan = _plan("flow", 3, (CHECKS, STEPS, CHECKS), post_type="concept", title="Native APIs")
+    assert _style_candidates(plan)[:2] == ["sidebar", "stack"]

@@ -840,9 +840,11 @@ Return ONLY JSON:
               "lines": ["at most 30 chars each, 3-4 lines, each a complete phrase; never end a line with an ellipsis. For kind=code use real code lines from the post; for stats use 'value | caption'"]}],
  "gotcha": {"heading": "Watch out", "text": "at most 70 chars: the limitation, tradeoff or breaking change"},
  "takeaway": "at most 70 chars: the one thing to remember",
+ "post_type": "POST_TYPES",
+ "layout": "LAYOUT_LIST",
  "theme": "THEME_LIST"}
 
-Rules: choose hero.form from the content: before_after when the post contrasts an old way with a new way (exactly 4 nodes, 2 per side, with left_label and right_label); layers when the post is an ordered stack of levels or layers (3-4 nodes); otherwise flow (a sequence of steps). hero.nodes has 3-5 items (2 per side for before_after). modules has 3-4 items and must include a "code" module when the post has code, and a "stats" module when the post has numbers or versions. Each ICON must be one of: ICON_LIST. Choose theme, the colour palette, to suit the topic: THEME_HINTS."""
+Rules: choose hero.form from the content: before_after when the post contrasts an old way with a new way (exactly 4 nodes, 2 per side, with left_label and right_label); layers when the post is an ordered stack of levels or layers (3-4 nodes); otherwise flow (a sequence of steps). hero.nodes has 3-5 items (2 per side for before_after). modules has 3-4 items and must include a "code" module when the post has code, and a "stats" module when the post has numbers or versions. Each ICON must be one of: ICON_LIST. Choose theme, the colour palette, to suit the topic: THEME_HINTS. Set post_type to what the post is. Suggest the page layout that best fits the post: LAYOUT_HINTS."""
 
 
 def plan_infographic(post: str, headline: str, idea: str) -> str:
@@ -854,11 +856,14 @@ def plan_infographic(post: str, headline: str, idea: str) -> str:
     idea, and only has to focus on layout. Any failure falls back to the plain idea.
     """
     try:
-        from poster_layout import THEME_HINTS
+        from poster_layout import LAYOUT_HINTS, POST_TYPES, THEME_HINTS
 
         system = (BLUEPRINT_SYSTEM.replace("ICON_LIST", ", ".join(ICON_NAMES))
                   .replace("THEME_LIST", " | ".join(THEME_HINTS))
-                  .replace("THEME_HINTS", "; ".join(f"{k} for {v}" for k, v in THEME_HINTS.items())))
+                  .replace("THEME_HINTS", "; ".join(f"{k} for {v}" for k, v in THEME_HINTS.items()))
+                  .replace("POST_TYPES", " | ".join(POST_TYPES))
+                  .replace("LAYOUT_LIST", " | ".join(LAYOUT_HINTS))
+                  .replace("LAYOUT_HINTS", "; ".join(f"{k} for {v}" for k, v in LAYOUT_HINTS.items())))
         plan = call_json(system, f"HEADLINE: {headline}\n\nPOST:\n{post}\n\nWRITER'S IDEA:\n{idea}", max_tokens=2500)
     except Exception as e:  # noqa: BLE001 - planning is an enhancement, never a blocker
         print(f"Infographic planning skipped ({e}); using the writer's idea only.")
@@ -941,23 +946,33 @@ def poster_style_path() -> Path:
     return ROOT / "state" / "poster_style.json"
 
 
-def _last_poster_style() -> dict:
+def _recent_poster_styles() -> dict:
+    """Layouts and themes of the last few posters, oldest first (empty when unknown)."""
     try:
         data = json.loads(poster_style_path().read_text())
     except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    out = {}
+    for key, single in (("styles", "style"), ("themes", "theme")):
+        values = data.get(key, [data[single]] if single in data else [])
+        out[key] = [str(v) for v in values] if isinstance(values, list) else []
+    return out
 
 
 def _remember_poster_style(svg: str) -> None:
-    style = re.search(r'data-style="([a-z]+)"', svg)
-    theme = re.search(r'data-theme="([a-z]+)"', svg)
+    style = re.search(r'data-style="([a-z_]+)"', svg)
+    theme = re.search(r'data-theme="([a-z_]+)"', svg)
     if not (style and theme):
         return
+    recent = _recent_poster_styles()
+    data = {"styles": (recent["styles"] + [style.group(1)])[-4:],
+            "themes": (recent["themes"] + [theme.group(1)])[-4:]}
     try:
         path = poster_style_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"style": style.group(1), "theme": theme.group(1)}))
+        path.write_text(json.dumps(data))
     except OSError as e:  # remembering is a nicety; never fail a post over it
         print(f"Could not save the poster style ({e}).")
 
@@ -975,9 +990,9 @@ def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: P
     # Best drawing that passes the hard checks. It is published when no designer try ends clean, so a
     # soft warning (such as an unknown icon name) can never block a post entirely.
     fallback_svg = None
-    last = _last_poster_style()
-    structured_svg = poster_from_brief(brief, headline, footer, last_style=last.get("style"),
-                                       last_theme=last.get("theme"))
+    recent = _recent_poster_styles()
+    structured_svg = poster_from_brief(brief, headline, footer, recent_styles=recent["styles"],
+                                       recent_themes=recent["themes"])
     if structured_svg:
         structured_svg = finalize_svg(structured_svg)
         issues = svg_checks(structured_svg) + design_quality_checks(structured_svg)

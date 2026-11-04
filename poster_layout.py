@@ -75,7 +75,8 @@ THEME_HINTS = {
     "ember": "bugs, breaking changes, incidents and pitfalls",
 }
 ACCENTS = ("@a1@", "@a2@", "@a3@", "@a4@", "@a5@")
-STYLES = ("guide", "timeline", "spotlight", "comparison")
+STYLES = ("guide", "timeline", "spotlight", "comparison", "dashboard", "code_focus", "incident",
+          "stack", "sidebar")
 
 
 def _clean(value: object) -> str:
@@ -191,9 +192,11 @@ def _module(parts: list[str], module: dict, x: int, y: int, w: int, h: int,
     parts.append(_rect(x, y, w, h, bg, stroke="@card_stroke@" if not code else "@code_bg@"))
     parts.append(_rect(x, y, w, 7, accent, radius=3))
     parts.append(_icon(module.get("icon"), x + 20, y + 22, "@code_icon@" if code else accent, 1.5))
-    heading = _fit_words(module.get("heading"), w - 100, 25)
+    # Narrow cards use a smaller heading; the fit leaves room for the "N. " prefix.
+    size = 25 if w >= 400 else 22
+    heading = _fit_words(module.get("heading"), int(w - 88 - 3 * size * 0.61), size)
     parts.append(_text(x + 68, y + 52, f"{number}. {heading or 'Key point'}",
-                       size=25, fill=ink, weight="bold"))
+                       size=size, fill=ink, weight="bold"))
     raw_lines = module.get("lines")
     if not isinstance(raw_lines, list):
         raw_lines = []
@@ -333,19 +336,21 @@ def _arrow(x1: int, y1: int, x2: int, y2: int) -> str:
 
 
 def _modules_grid(parts: list[str], plan: dict, modules: list, accent: list[str],
-                  top: int, h: int, gap: int = 16) -> None:
+                  top: int, h: int, gap: int = 16, left: int = 40, width: int = 490,
+                  col_gap: int = 20) -> None:
     """Two columns of modules; a third module gets an APPLICATION card beside it."""
+    right = left + width + col_gap
     for i, module in enumerate(modules):
-        x = 40 if i % 2 == 0 else 550
+        x = left if i % 2 == 0 else right
         y = top if i < 2 else top + h + gap
-        _module(parts, module, x, y, 490, h, i + 1, accent[i % len(accent)])
+        _module(parts, module, x, y, width, h, i + 1, accent[i % len(accent)])
     if len(modules) == 3:
         y = top + h + gap
-        parts.append(_rect(550, y, 490, h, "@soft2@", stroke="@card_stroke@"))
-        parts.append(_icon("target", 575, y + 25, "@primary@", 1.5))
-        parts.append(_text(620, y + 52, "APPLICATION", size=25, fill="@ink@", weight="bold"))
-        parts.extend(_lines(575, y + 95, plan.get("tagline") or plan.get("takeaway"), 430,
-                            size=22, max_lines=(h - 80) // 29, step=29))
+        parts.append(_rect(right, y, width, h, "@soft2@", stroke="@card_stroke@"))
+        parts.append(_icon("target", right + 25, y + 25, "@primary@", 1.5))
+        parts.append(_text(right + 70, y + 52, "APPLICATION", size=25, fill="@ink@", weight="bold"))
+        parts.extend(_lines(right + 25, y + 95, plan.get("tagline") or plan.get("takeaway"),
+                            width - 60, size=22, max_lines=(h - 80) // 29, step=29))
 
 
 def _bottom(parts: list[str], plan: dict, footer: str) -> None:
@@ -367,17 +372,22 @@ def _bottom(parts: list[str], plan: dict, footer: str) -> None:
     parts.append(_text(60, 1321, footer, size=22, fill="@footer@"))
 
 
-def _layout_guide(parts: list[str], plan: dict, headline: str, accent: list[str]) -> None:
-    """Soft header card, one framed hero diagram, then a 2x2 grid of details."""
-    hero, nodes = plan["hero"], plan["hero"]["nodes"]
+def _soft_header(parts: list[str], plan: dict, headline: str, kicker: str, icon: str) -> None:
+    """Tinted header card (y 35-220): kicker, title of up to two lines and a subtitle."""
     parts.append(_rect(40, 35, 1000, 185, "@soft@", stroke="@soft_stroke@"))
-    parts.append(_icon("sparkle", 65, 55, "@primary@", 1.4))
-    parts.append(_text(110, 83, "TECHNICAL FIELD GUIDE", size=22, fill="@primary@", weight="bold"))
+    parts.append(_icon(icon, 65, 55, "@primary@", 1.4))
+    parts.append(_text(110, 83, kicker, size=22, fill="@primary@", weight="bold"))
     title = _wrap(plan.get("title") or headline, 940, 46, 2)
     for i, line in enumerate(title):
         parts.append(_text(65, 132 + i * 51, line, size=46, fill="@ink@", weight="bold"))
     subtitle_y = 193 if len(title) == 1 else 211
     parts.extend(_lines(65, subtitle_y, plan.get("subtitle"), 940, size=22, max_lines=1))
+
+
+def _layout_guide(parts: list[str], plan: dict, headline: str, accent: list[str]) -> None:
+    """Soft header card, one framed hero diagram, then a 2x2 grid of details."""
+    hero, nodes = plan["hero"], plan["hero"]["nodes"]
+    _soft_header(parts, plan, headline, "TECHNICAL FIELD GUIDE", "sparkle")
 
     parts.append(_rect(40, 242, 1000, 388, "@card@", stroke="@card_stroke@"))
     parts.append(_text(65, 280, "HOW IT WORKS", size=26, fill="@primary@", weight="bold"))
@@ -425,7 +435,7 @@ def _layout_timeline(parts: list[str], plan: dict, headline: str, accent: list[s
     for i, node in enumerate(nodes):
         y, colour = 315 + i * (h + 14), accent[i % len(accent)]
         parts.append(f'<circle cx="70" cy="{centres[i]}" r="22" fill="{colour}"/>')
-        parts.append(_text(64, centres[i] + 8, str(i + 1), size=22, fill="@on_strong@", weight="bold"))
+        parts.append(_text(64, centres[i] + 8, str(i + 1), size=22, fill="@bg@", weight="bold"))
         parts.append(_rect(110, y, 410, h, "@card@", stroke="@card_stroke@", radius=15)
                      .replace("<rect ", f'<rect data-motion-step="{i + 1}" ', 1))
         parts.append(_rect(110, y, 6, h, colour, radius=3))
@@ -446,6 +456,26 @@ def _layout_timeline(parts: list[str], plan: dict, headline: str, accent: list[s
     mh = (770 - 16 * (m - 1)) // m
     for i, module in enumerate(modules):
         _module(parts, module, 550, 315 + i * (mh + 16), 490, mh, i + 1, accent[i % len(accent)])
+
+
+def _ribbon(parts: list[str], nodes: list, accent: list[str], top: int, h: int) -> None:
+    """A row of 3-4 step cards joined by arrows (h >= 200 leaves room for every line)."""
+    n, gap = len(nodes), 24
+    w = (1000 - gap * (n - 1)) // n
+    for i, node in enumerate(nodes):
+        x, colour = 40 + i * (w + gap), accent[i % len(accent)]
+        parts.append(_rect(x, top, w, h, "@card@", stroke="@card_stroke@", radius=15)
+                     .replace("<rect ", f'<rect data-motion-step="{i + 1}" ', 1))
+        parts.append(_rect(x, top, w, 7, colour, radius=3))
+        parts.append(_icon(node.get("icon"), x + 18, top + 22, colour, 1.5))
+        parts.append(_text(x + w - 44, top + 52, str(i + 1), size=26, fill=colour, weight="bold"))
+        label = _wrap(node.get("label"), w - 40, 23, 2) or ["Step"]
+        for j, line in enumerate(label):
+            parts.append(_text(x + 18, top + 95 + j * 28, line, size=23, fill="@ink@", weight="bold"))
+        parts.extend(_lines(x + 18, top + 95 + len(label) * 28 + 8, node.get("detail"), w - 40,
+                            size=22, max_lines=4 - len(label), step=28))
+        if i < n - 1:
+            parts.append(_arrow(x + w + 3, top + 105, x + w + gap - 3, top + 105))
 
 
 def _layout_spotlight(parts: list[str], plan: dict, headline: str, accent: list[str]) -> None:
@@ -471,38 +501,29 @@ def _layout_spotlight(parts: list[str], plan: dict, headline: str, accent: list[
         parts.append(_text(112, 377, _fit_words(hero.get("caption"), 900, 22), size=22,
                            fill="@on_strong@"))
 
-    n, gap = len(nodes), 24
-    w = (1000 - gap * (n - 1)) // n
-    for i, node in enumerate(nodes):
-        x, colour = 40 + i * (w + gap), accent[i % len(accent)]
-        parts.append(_rect(x, 430, w, 210, "@card@", stroke="@card_stroke@", radius=15)
-                     .replace("<rect ", f'<rect data-motion-step="{i + 1}" ', 1))
-        parts.append(_rect(x, 430, w, 7, colour, radius=3))
-        parts.append(_icon(node.get("icon"), x + 18, 452, colour, 1.5))
-        parts.append(_text(x + w - 44, 482, str(i + 1), size=26, fill=colour, weight="bold"))
-        label = _wrap(node.get("label"), w - 40, 23, 2) or ["Step"]
-        for j, line in enumerate(label):
-            parts.append(_text(x + 18, 525 + j * 28, line, size=23, fill="@ink@", weight="bold"))
-        parts.extend(_lines(x + 18, 525 + len(label) * 28 + 8, node.get("detail"), w - 40,
-                            size=22, max_lines=4 - len(label), step=28))
-        if i < n - 1:
-            parts.append(_arrow(x + w + 3, 535, x + w + gap - 3, 535))
+    _ribbon(parts, nodes, accent, 430, 210)
     parts.append(_text(45, 684, "IN PRACTICE", size=24, fill="@ink@", weight="bold"))
     _modules_grid(parts, plan, plan["modules"], accent, 700, 186, gap=10)
 
 
-def _layout_comparison(parts: list[str], plan: dict, headline: str, accent: list[str]) -> None:
-    """Old way and new way side by side in tinted panels, then a 2x2 detail grid."""
-    hero, nodes = plan["hero"], plan["hero"]["nodes"]
+def _card_header(parts: list[str], plan: dict, headline: str, kicker: str, icon: str,
+                 stripe: str = "@primary@") -> None:
+    """White header card (y 35-215) with a coloured stripe on its left edge."""
     parts.append(_rect(40, 35, 1000, 180, "@card@", stroke="@card_stroke@"))
-    parts.append(_rect(40, 35, 12, 180, "@primary@", radius=6))
-    parts.append(_icon("loop", 72, 52, "@primary@", 1.3))
-    parts.append(_text(114, 78, "WHAT CHANGED", size=22, fill="@primary@", weight="bold"))
+    parts.append(_rect(40, 35, 12, 180, stripe, radius=6))
+    parts.append(_icon(icon, 72, 52, stripe, 1.3))
+    parts.append(_text(114, 78, kicker, size=22, fill=stripe, weight="bold"))
     title = _wrap(plan.get("title") or headline, 930, 44, 2)
     for i, line in enumerate(title):
         parts.append(_text(72, 128 + i * 48, line, size=44, fill="@ink@", weight="bold"))
     parts.extend(_lines(72, 178 if len(title) == 1 else 203, plan.get("subtitle"), 930,
                         size=22, max_lines=1))
+
+
+def _layout_comparison(parts: list[str], plan: dict, headline: str, accent: list[str]) -> None:
+    """Old way and new way side by side in tinted panels, then a 2x2 detail grid."""
+    hero, nodes = plan["hero"], plan["hero"]["nodes"]
+    _card_header(parts, plan, headline, "WHAT CHANGED", "loop")
 
     columns = [(40, "@bad@", "@bad_soft@", "x", hero.get("left_label") or "Before", nodes[:2], 1),
                (560, "@good@", "@good_soft@", "check", hero.get("right_label") or "After", nodes[2:], 3)]
@@ -526,50 +547,300 @@ def _layout_comparison(parts: list[str], plan: dict, headline: str, accent: list
     _modules_grid(parts, plan, plan["modules"], accent, 700, 186, gap=10)
 
 
+def _stats_module(plan: dict) -> dict | None:
+    """The first stats module with at least two 'value | caption' lines."""
+    for module in plan["modules"]:
+        lines = module.get("lines") if isinstance(module.get("lines"), list) else []
+        if (_clean(module.get("kind")).lower() == "stats"
+                and sum("|" in str(line) for line in lines) >= 2):
+            return module
+    return None
+
+
+def _code_module(plan: dict) -> dict | None:
+    """The first code module that has at least one line of code."""
+    for module in plan["modules"]:
+        lines = module.get("lines") if isinstance(module.get("lines"), list) else []
+        if _clean(module.get("kind")).lower() == "code" and any(_clean(x) for x in lines):
+            return module
+    return None
+
+
+def _module_row(parts: list[str], modules: list, accent: list[str], top: int, h: int) -> None:
+    """Two or three modules side by side."""
+    k = len(modules)
+    w = (1000 - 20 * (k - 1)) // k
+    for i, module in enumerate(modules):
+        _module(parts, module, 40 + i * (w + 20), top, w, h, i + 1, accent[i % len(accent)])
+
+
+def _layout_dashboard(parts: list[str], plan: dict, headline: str, accent: list[str]) -> None:
+    """Big number tiles first, then how it works, then the remaining details."""
+    stats = _stats_module(plan)
+    rest = [m for m in plan["modules"] if m is not stats]
+    _card_header(parts, plan, headline, "BY THE NUMBERS", "chart")
+    pairs = [str(line).partition("|") for line in stats["lines"] if "|" in str(line)][:4]
+    k = len(pairs)
+    w, size = (1000 - 16 * (k - 1)) // k, 44 if k <= 3 else 36
+    for i, (value, _, caption) in enumerate(pairs):
+        x, colour = 40 + i * (w + 16), accent[i % len(accent)]
+        parts.append(_rect(x, 235, w, 170, "@card@", stroke="@card_stroke@"))
+        parts.append(_rect(x, 235, w, 7, colour, radius=3))
+        parts.append(_text(x + 22, 300, _fit_words(value, w - 44, size), size=size, fill=colour,
+                           weight="bold"))
+        parts.extend(_lines(x + 22, 342, caption, w - 44, size=22, max_lines=2, step=28))
+    parts.append(_text(45, 445, "HOW IT WORKS", size=24, fill="@primary@", weight="bold"))
+    _ribbon(parts, plan["hero"]["nodes"], accent, 460, 200)
+    if len(rest) == 3:
+        _modules_grid(parts, plan, rest, accent, 700, 186, gap=10)
+        return
+    _module_row(parts, rest, accent, 700, 186)
+    lead = _clean(plan.get("tagline")) or _clean(plan["hero"].get("caption")) or plan["takeaway"]
+    parts.append(_rect(40, 906, 1000, 176, "@soft@", stroke="@soft_stroke@"))
+    parts.append(_icon("target", 64, 932, "@primary@", 1.5))
+    parts.append(_text(114, 960, "WHY IT MATTERS", size=24, fill="@primary@", weight="bold"))
+    parts.extend(_lines(64, 1010, lead, 940, size=28, max_lines=2, step=36,
+                        fill="@soft_ink@", weight="bold"))
+
+
+def _layout_code_focus(parts: list[str], plan: dict, headline: str, accent: list[str]) -> None:
+    """The code takes centre stage in a wide panel; steps and details follow."""
+    code = _code_module(plan)
+    rest = [m for m in plan["modules"] if m is not code]
+    _band_header(parts, plan, headline, "IN CODE", "terminal")
+    parts.append(_rect(40, 275, 1000, 280, "@code_bg@", stroke="@code_bg@"))
+    parts.append(_rect(40, 275, 1000, 7, "@a1@", radius=3))
+    parts.append(_icon("code", 64, 298, "@code_icon@", 1.5))
+    parts.append(_text(112, 327, _fit_words(code.get("heading") or "The code", 880, 25) or "The code",
+                       size=25, fill="@code_ink@", weight="bold"))
+    shown: list[str] = []
+    for raw in code["lines"]:
+        wrapped = _wrap_code(raw, 940, 22, 3)
+        if len(shown) + len(wrapped) > 6:
+            break
+        shown.extend(wrapped)
+    for i, line in enumerate(shown):
+        parts.append(_text(64, 372 + i * 30, line, size=22, fill="@code_muted@",
+                           family="Menlo, Courier New, monospace"))
+    caption = _clean(plan["hero"].get("caption"))
+    if len(shown) <= 3 and caption:
+        # A short snippet leaves room to say what it is for, below a divider.
+        parts.append('<line x1="64" y1="488" x2="1016" y2="488" stroke="@code_icon@" '
+                     'stroke-width="1" stroke-dasharray="none"/>')
+        parts.extend(_lines(64, 528, caption, 940, size=22, max_lines=1, fill="@code_ink@",
+                            weight="bold"))
+    parts.append(_text(45, 592, "HOW IT WORKS", size=24, fill="@primary@", weight="bold"))
+    _ribbon(parts, plan["hero"]["nodes"], accent, 608, 200)
+    _module_row(parts, rest, accent, 830, 255)
+
+
+def _layout_incident(parts: list[str], plan: dict, headline: str, accent: list[str]) -> None:
+    """Bug-fix story: what broke, how it was traced and the fix, one full-width row per step."""
+    nodes = plan["hero"]["nodes"]
+    _card_header(parts, plan, headline, "THE BUG AND THE FIX", "bug", stripe="@bad@")
+    parts.append(_text(45, 262, "FROM SYMPTOM TO FIX", size=24, fill="@ink@", weight="bold"))
+    n = len(nodes)
+    h = (400 - 12 * (n - 1)) // n
+    for i, node in enumerate(nodes):
+        y = 280 + i * (h + 12)
+        cy = y + h // 2
+        colour = "@bad@" if i == 0 else "@good@" if i == n - 1 else accent[i % len(accent)]
+        parts.append(_rect(40, y, 1000, h, "@card@", stroke="@card_stroke@", radius=14)
+                     .replace("<rect ", f'<rect data-motion-step="{i + 1}" ', 1))
+        parts.append(_rect(40, y, 8, h, colour, radius=4))
+        parts.append(f'<circle cx="90" cy="{cy}" r="20" fill="{colour}"/>')
+        parts.append(_text(84, cy + 8, str(i + 1), size=22, fill="@bg@", weight="bold"))
+        parts.append(_icon(node.get("icon"), 126, cy - 17, colour, 1.4))
+        parts.append(_text(172, cy + 8, _fit_words(node.get("label"), 280, 24) or "Step",
+                           size=24, fill="@ink@", weight="bold"))
+        parts.append(_text(470, cy + 8, _fit_words(node.get("detail"), 545, 22), size=22,
+                           fill="@muted@"))
+    _modules_grid(parts, plan, plan["modules"], accent, 700, 186, gap=10)
+
+
+def _layout_stack(parts: list[str], plan: dict, headline: str, accent: list[str]) -> None:
+    """A pyramid of layers, narrowest on top, then a 2x2 detail grid."""
+    hero, nodes = plan["hero"], plan["hero"]["nodes"]
+    layered = _clean(hero.get("form")).lower() == "layers"
+    _soft_header(parts, plan, headline, "LAYER BY LAYER" if layered else "THE BIG PICTURE",
+                 "layers")
+    parts.append(_text(45, 266, _fit_words(hero.get("caption") or "How it fits together", 990, 24),
+                       size=24, fill="@ink@", weight="bold"))
+    n = len(nodes)
+    h = (395 - 10 * (n - 1)) // n
+    for i, node in enumerate(nodes):
+        inset = (n - 1 - i) * 30
+        x, y, w = 40 + inset, 285 + i * (h + 10), 1000 - 2 * inset
+        cy, colour = 285 + i * (h + 10) + h // 2, accent[i % len(accent)]
+        parts.append(_rect(x, y, w, h, "@card@" if i % 2 else "@soft2@", stroke="@card_stroke@",
+                           radius=12).replace("<rect ", f'<rect data-motion-step="{i + 1}" ', 1))
+        parts.append(_rect(x, y, 8, h, colour, radius=4))
+        parts.append(_icon(node.get("icon"), x + 24, cy - 17, colour, 1.4))
+        parts.append(_text(x + 70, cy + 8, str(i + 1), size=22, fill=colour, weight="bold"))
+        parts.append(_text(x + 105, cy + 8, _fit_words(node.get("label"), 230, 24) or "Layer",
+                           size=24, fill="@ink@", weight="bold"))
+        parts.append(_text(x + 350, cy + 8, _fit_words(node.get("detail"), w - 370, 22),
+                           size=22, fill="@muted@"))
+    _modules_grid(parts, plan, plan["modules"], accent, 700, 186, gap=10)
+
+
+_SIDEBAR_TITLE = (270, 34)  # wrap width and font size of the sidebar title
+
+
+def _sidebar_fits(plan: dict, headline: str) -> bool:
+    """The narrow sidebar title needs short words and at most four lines."""
+    width, size = _SIDEBAR_TITLE
+    limit = max(7, int(width / (size * 0.61)))
+    title = _clean(plan.get("title") or headline)
+    return (all(len(word) <= limit for word in title.split())
+            and len(_wrap(title, width, size, 99)) <= 4)
+
+
+def _layout_sidebar(parts: list[str], plan: dict, headline: str, accent: list[str]) -> None:
+    """A tall coloured sidebar holds the title and hook; steps and details fill the right."""
+    hero, nodes = plan["hero"], plan["hero"]["nodes"]
+    parts.append(_rect(40, 35, 330, 1050, "@strong@"))
+    parts.append(_icon("sparkle", 64, 62, "@on_strong@", 1.3))
+    parts.append(_text(104, 86, _fit_words(plan.get("badge"), 230, 22).upper() or "EXPLAINER",
+                       size=22, fill="@on_strong@", weight="bold"))
+    title = _wrap(plan.get("title") or headline, *_SIDEBAR_TITLE, 4)
+    for i, line in enumerate(title):
+        parts.append(_text(64, 160 + i * 44, line, size=34, fill="@on_strong@", weight="bold"))
+    bar = 160 + (len(title) - 1) * 44 + 26
+    parts.append(_rect(64, bar, 80, 6, "@on_strong@", radius=3))
+    parts.extend(_lines(64, bar + 46, plan.get("subtitle"), 280, size=22, max_lines=4, step=29,
+                        fill="@on_strong@"))
+    parts.append(_icon("bulb", 64, 640, "@on_strong@", 1.5))
+    lead = _clean(plan.get("tagline")) or _clean(hero.get("caption")) or plan["takeaway"]
+    parts.extend(_lines(64, 712, lead, 280, size=26, max_lines=4, step=34, fill="@on_strong@",
+                        weight="bold"))
+    if _clean(plan.get("tagline")) and _clean(hero.get("caption")):
+        parts.extend(_lines(64, 900, hero.get("caption"), 280, size=22, max_lines=3, step=29,
+                            fill="@on_strong@"))
+
+    parts.append(_text(395, 72, "HOW IT WORKS", size=24, fill="@primary@", weight="bold"))
+    n = len(nodes)
+    h = min(180, (590 - 12 * (n - 1)) // n)
+    for i, node in enumerate(nodes):
+        y, colour = 90 + i * (h + 12), accent[i % len(accent)]
+        parts.append(_rect(390, y, 650, h, "@card@", stroke="@card_stroke@", radius=14)
+                     .replace("<rect ", f'<rect data-motion-step="{i + 1}" ', 1))
+        parts.append(_rect(390, y, 6, h, colour, radius=3))
+        parts.append(_icon(node.get("icon"), 412, y + 18, colour, 1.4))
+        parts.append(_text(996, y + 44, str(i + 1), size=24, fill=colour, weight="bold"))
+        parts.append(_text(460, y + 44, _fit_words(node.get("label"), 500, 24) or "Step",
+                           size=24, fill="@ink@", weight="bold"))
+        parts.extend(_lines(412, y + 82, node.get("detail"), 600, size=22,
+                            max_lines=max(1, min(3, (h - 70) // 29)), step=29))
+    _modules_grid(parts, plan, plan["modules"], accent, 700, 186, gap=10, left=390, width=315)
+
+
 _LAYOUTS = {"guide": _layout_guide, "timeline": _layout_timeline,
-            "spotlight": _layout_spotlight, "comparison": _layout_comparison}
+            "spotlight": _layout_spotlight, "comparison": _layout_comparison,
+            "dashboard": _layout_dashboard, "code_focus": _layout_code_focus,
+            "incident": _layout_incident, "stack": _layout_stack, "sidebar": _layout_sidebar}
+# What each layout suits; the planner sees this list and may suggest one.
+LAYOUT_HINTS = {
+    "comparison": "an old way contrasted with a new way (before_after hero)",
+    "dashboard": "posts driven by numbers: benchmarks, metrics, version stats",
+    "code_focus": "posts where a code snippet is the main point",
+    "incident": "bug fixes, breaking changes, outages and their fixes",
+    "stack": "architectures and layered systems",
+    "timeline": "step-by-step how-tos and migrations",
+    "spotlight": "releases and announcements with one big idea",
+    "sidebar": "concepts and explainers",
+    "guide": "general technical field guides",
+}
+POST_TYPES = ("release", "bug_fix", "how_to", "concept", "comparison", "benchmark", "architecture")
 
 
-def _style_candidates(plan: dict) -> list[str]:
-    """Layouts that suit this content, best first."""
+def _eligible(plan: dict, headline: str = "") -> list[str]:
+    """Layouts that can draw this content cleanly, in a stable order."""
     hero, modules = plan["hero"], plan["modules"]
-    n = len(hero["nodes"])
-    form = _clean(hero.get("form")).lower()
+    n, form = len(hero["nodes"]), _clean(hero.get("form")).lower()
+    post_type = _clean(plan.get("post_type")).lower()
+    has_stats = any(_clean(m.get("kind")).lower() == "stats" for m in modules)
+    ok = {
+        "guide": True,
+        "timeline": True,
+        "spotlight": n <= 4,  # a ribbon of five is too narrow for the labels
+        "comparison": form == "before_after" and n == 4,
+        "dashboard": n <= 4 and _stats_module(plan) is not None,
+        # The details sit in one row; a stats card there would be too narrow for its captions.
+        "code_focus": (n <= 4 and _code_module(plan) is not None
+                       and not (len(modules) == 4 and has_stats)),
+        "incident": post_type in ("bug_fix", "breaking_change", "incident"),
+        "stack": True,
+        "sidebar": not has_stats and _sidebar_fits(plan, headline),
+    }
+    return [s for s in STYLES if ok[s]]
+
+
+def _style_candidates(plan: dict, headline: str = "") -> list[str]:
+    """Layouts that suit this content, best first: the planner's pick, then by content type."""
+    hero, modules = plan["hero"], plan["modules"]
+    n, form = len(hero["nodes"]), _clean(hero.get("form")).lower()
+    post_type = _clean(plan.get("post_type")).lower()
     kinds = {_clean(m.get("kind")).lower() for m in modules}
-    if form == "before_after" and n == 4:
-        order = ["comparison", "guide", "spotlight"]
-    elif "stats" in kinds:
-        order = ["spotlight", "timeline", "guide"]
-    elif form == "layers" or n >= 4:
-        order = ["timeline", "guide", "spotlight"]
-    else:
-        order = ["spotlight", "timeline", "guide"]
-    # A ribbon of five steps is too narrow for the labels.
-    return [s for s in order if not (s == "spotlight" and n > 4)]
+    order = [_clean(plan.get("layout")).lower()]
+    if form == "before_after":
+        order.append("comparison")
+    if post_type in ("bug_fix", "breaking_change", "incident"):
+        order.append("incident")
+    if post_type == "benchmark" or "stats" in kinds:
+        order += ["dashboard", "spotlight"]
+    if "code" in kinds:
+        order.append("code_focus")
+    if post_type == "release":
+        order += ["spotlight", "dashboard"]
+    if form == "layers" or post_type == "architecture":
+        order += ["stack", "timeline"]
+    if post_type == "how_to" or n >= 4:
+        order.append("timeline")
+    if post_type == "concept":
+        order += ["sidebar", "stack"]
+    order += ["sidebar", "spotlight", "timeline", "guide", "stack"]
+    eligible = _eligible(plan, headline)
+    out: list[str] = []
+    for style in order:
+        if style in eligible and style not in out:
+            out.append(style)
+    return out
 
 
-def choose_style(plan: dict, last: str | None = None) -> str:
-    """The best-suited layout that is not the one used for the previous poster."""
-    return next(s for s in _style_candidates(plan) if s != last)
+def _recent(value: str | list | tuple | None) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    return [str(v) for v in value or ()]
 
 
-def choose_theme(plan: dict, last: str | None = None) -> str:
-    """The planner's suggested palette, or a stable pick from the title; never the last one."""
+def choose_style(plan: dict, recent: str | list | tuple | None = None, headline: str = "") -> str:
+    """The best-suited layout not used in the last three posters (or at least not the last one)."""
+    recent = _recent(recent)
+    candidates = _style_candidates(plan, headline)
+    fresh = [s for s in candidates if s not in recent[-3:]]
+    return (fresh or [s for s in candidates if s not in recent[-1:]])[0]
+
+
+def choose_theme(plan: dict, recent: str | list | tuple | None = None) -> str:
+    """The planner's suggested palette, or a stable pick from the title; never one of the last two."""
+    recent = _recent(recent)[-2:]
     hint = _clean(plan.get("theme")).lower()
-    if hint in THEMES and hint != last:
+    if hint in THEMES and hint not in recent:
         return hint
-    names = [t for t in THEMES if t != last]
+    names = [t for t in THEMES if t not in recent]
     seed = sum(ord(c) for c in _clean(plan.get("title")) + _clean(plan.get("takeaway")))
     return names[seed % len(names)]
 
 
-def poster_from_brief(brief: str, headline: str, footer: str, *, last_style: str | None = None,
-                      last_theme: str | None = None, style: str | None = None,
+def poster_from_brief(brief: str, headline: str, footer: str, *,
+                      recent_styles: str | list | tuple | None = None,
+                      recent_themes: str | list | tuple | None = None, style: str | None = None,
                       theme: str | None = None) -> str | None:
     """Render a complete poster from the blueprint embedded by plan_infographic.
 
     The layout and colour theme follow the content and always differ from the previous poster's
-    (last_style, last_theme). style/theme force a choice, which the tests use to cover every pair.
+    (recent_styles, recent_themes, oldest first). style/theme force a choice, which the tests use to cover every pair.
     """
     if MARKER not in brief:
         return None
@@ -589,10 +860,10 @@ def poster_from_brief(brief: str, headline: str, footer: str, *, last_style: str
             or not _clean(plan.get("takeaway"))):
         return None
 
-    if style not in _style_candidates(plan):
-        style = choose_style(plan, last_style)
+    if style not in _eligible(plan, headline):
+        style = choose_style(plan, recent_styles, headline)
     if theme not in THEMES:
-        theme = choose_theme(plan, last_theme)
+        theme = choose_theme(plan, recent_themes)
     parts: list[str] = []
     _start(parts, style, theme)
     _LAYOUTS[style](parts, plan, headline, list(ACCENTS))

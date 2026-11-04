@@ -120,9 +120,25 @@ def test_draw_poster_remembers_the_layout_and_the_next_poster_differs(monkeypatc
         assert media == tmp_path / "p.png" and feedback is None
     styles = [re.search(r'data-style="(\w+)"', s).group(1) for s in seen]
     themes = [re.search(r'data-theme="(\w+)"', s).group(1) for s in seen]
-    assert styles[0] != styles[1] != styles[2] and themes[0] != themes[1] != themes[2]
+    assert len(set(styles)) == 3 and len(set(themes)) == 3
     saved = json.loads(agent.poster_style_path().read_text())
-    assert saved == {"style": styles[-1], "theme": themes[-1]}
+    assert saved == {"styles": styles, "themes": themes}
+
+
+def test_style_history_keeps_the_last_four():
+    for style in ["guide", "timeline", "stack", "sidebar", "incident"]:
+        agent._remember_poster_style(f'<svg data-style="{style}" data-theme="ocean"/>')
+    assert agent._recent_poster_styles() == {"styles": ["timeline", "stack", "sidebar", "incident"],
+                                             "themes": ["ocean"] * 4}
+
+
+def test_style_history_reads_the_older_single_value_file():
+    path = agent.poster_style_path()
+    path.parent.mkdir(parents=True)
+    path.write_text('{"style": "guide", "theme": "ocean"}')
+    assert agent._recent_poster_styles() == {"styles": ["guide"], "themes": ["ocean"]}
+    path.write_text('{"styles": "guide", "themes": ["ocean"]}')
+    assert agent._recent_poster_styles() == {"styles": [], "themes": ["ocean"]}
 
 
 def test_draw_poster_runs_the_rendered_layout_check_on_the_structured_poster(monkeypatch, tmp_path):
@@ -139,11 +155,11 @@ def test_last_poster_style_ignores_a_damaged_file(content):
     path = agent.poster_style_path()
     path.parent.mkdir(parents=True)
     path.write_text(content)
-    assert agent._last_poster_style() == {}
+    assert agent._recent_poster_styles() == {"styles": [], "themes": []}
 
 
 def test_last_poster_style_is_empty_before_the_first_poster():
-    assert agent._last_poster_style() == {}
+    assert agent._recent_poster_styles() == {"styles": [], "themes": []}
 
 
 def test_remember_poster_style_skips_drawings_without_a_style():
@@ -166,6 +182,8 @@ def test_planner_is_asked_for_a_theme(monkeypatch):
     system = call.call_args.args[0]
     assert '"theme": "ocean | forest | sunset | grape | midnight | ember"' in system
     assert "midnight for infrastructure" in system and "THEME_" not in system
+    assert '"post_type": "release | bug_fix' in system and "incident for bug fixes" in system
+    assert "LAYOUT_" not in system and "POST_TYPES" not in system
 
 
 def test_poster_style_lives_in_the_git_ignored_state_folder(monkeypatch):
