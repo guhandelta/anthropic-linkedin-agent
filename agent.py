@@ -839,9 +839,10 @@ Return ONLY JSON:
               "heading": "at most 26 chars", "icon": "ICON",
               "lines": ["at most 30 chars each, 3-4 lines, each a complete phrase; never end a line with an ellipsis. For kind=code use real code lines from the post; for stats use 'value | caption'"]}],
  "gotcha": {"heading": "Watch out", "text": "at most 70 chars: the limitation, tradeoff or breaking change"},
- "takeaway": "at most 70 chars: the one thing to remember"}
+ "takeaway": "at most 70 chars: the one thing to remember",
+ "theme": "THEME_LIST"}
 
-Rules: choose hero.form from the content: before_after when the post contrasts an old way with a new way (exactly 4 nodes, 2 per side, with left_label and right_label); layers when the post is an ordered stack of levels or layers (3-4 nodes); otherwise flow (a sequence of steps). hero.nodes has 3-5 items (2 per side for before_after). modules has 3-4 items and must include a "code" module when the post has code, and a "stats" module when the post has numbers or versions. Each ICON must be one of: ICON_LIST."""
+Rules: choose hero.form from the content: before_after when the post contrasts an old way with a new way (exactly 4 nodes, 2 per side, with left_label and right_label); layers when the post is an ordered stack of levels or layers (3-4 nodes); otherwise flow (a sequence of steps). hero.nodes has 3-5 items (2 per side for before_after). modules has 3-4 items and must include a "code" module when the post has code, and a "stats" module when the post has numbers or versions. Each ICON must be one of: ICON_LIST. Choose theme, the colour palette, to suit the topic: THEME_HINTS."""
 
 
 def plan_infographic(post: str, headline: str, idea: str) -> str:
@@ -853,7 +854,11 @@ def plan_infographic(post: str, headline: str, idea: str) -> str:
     idea, and only has to focus on layout. Any failure falls back to the plain idea.
     """
     try:
-        system = BLUEPRINT_SYSTEM.replace("ICON_LIST", ", ".join(ICON_NAMES))
+        from poster_layout import THEME_HINTS
+
+        system = (BLUEPRINT_SYSTEM.replace("ICON_LIST", ", ".join(ICON_NAMES))
+                  .replace("THEME_LIST", " | ".join(THEME_HINTS))
+                  .replace("THEME_HINTS", "; ".join(f"{k} for {v}" for k, v in THEME_HINTS.items())))
         plan = call_json(system, f"HEADLINE: {headline}\n\nPOST:\n{post}\n\nWRITER'S IDEA:\n{idea}", max_tokens=2500)
     except Exception as e:  # noqa: BLE001 - planning is an enhancement, never a blocker
         print(f"Infographic planning skipped ({e}); using the writer's idea only.")
@@ -931,6 +936,32 @@ def render_poster_files(svg: str, image_path: Path) -> Path:
         return image_path
 
 
+def poster_style_path() -> Path:
+    """Where the last poster's layout and colour theme are kept, so the next one differs."""
+    return ROOT / "state" / "poster_style.json"
+
+
+def _last_poster_style() -> dict:
+    try:
+        data = json.loads(poster_style_path().read_text())
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _remember_poster_style(svg: str) -> None:
+    style = re.search(r'data-style="([a-z]+)"', svg)
+    theme = re.search(r'data-theme="([a-z]+)"', svg)
+    if not (style and theme):
+        return
+    try:
+        path = poster_style_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"style": style.group(1), "theme": theme.group(1)}))
+    except OSError as e:  # remembering is a nicety; never fail a post over it
+        print(f"Could not save the poster style ({e}).")
+
+
 def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: Path,
                 feedback: str | None = None) -> tuple[Path | None, str | None]:
     """
@@ -944,13 +975,20 @@ def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: P
     # Best drawing that passes the hard checks. It is published when no designer try ends clean, so a
     # soft warning (such as an unknown icon name) can never block a post entirely.
     fallback_svg = None
-    structured_svg = poster_from_brief(brief, headline, footer)
+    last = _last_poster_style()
+    structured_svg = poster_from_brief(brief, headline, footer, last_style=last.get("style"),
+                                       last_theme=last.get("theme"))
     if structured_svg:
         structured_svg = finalize_svg(structured_svg)
         issues = svg_checks(structured_svg) + design_quality_checks(structured_svg)
         if not issues:
+            # Same rendered check the designer's drawings get: nothing overlapping, hidden or cut off.
+            issues = layout_issues(structured_svg)
+        if not issues:
             try:
-                return render_poster_files(structured_svg, image_path), None
+                media = render_poster_files(structured_svg, image_path)
+                _remember_poster_style(structured_svg)
+                return media, None
             except ValueError as e:
                 feedback = str(e)
         else:

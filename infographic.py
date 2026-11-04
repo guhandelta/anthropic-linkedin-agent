@@ -392,6 +392,9 @@ def gif_frame_svgs(svg: str, n_frames: int = 12) -> list[str]:
 
     base_svg = re.sub(r'<(line|polyline|path)\s+([^>]*(?:x1=|d="M|points=)[^>]*)>', _ensure_dashed, svg)
     motion_steps = sorted({int(step) for step in re.findall(r'data-motion-step="(\d+)"', svg)})
+    # Themed posters name their highlight colour; others keep the original blue.
+    themed = re.search(r'data-highlight="(#[0-9A-Fa-f]{6})"', svg)
+    highlight = themed.group(1) if themed else "#3768B7"
 
     frame_svgs = []
     dash_period = 20  # 20 matches dash pattern "10 10" and loops seamlessly without jump cuts
@@ -412,7 +415,7 @@ def gif_frame_svgs(svg: str, n_frames: int = 12) -> list[str]:
                 tag = match.group(0)
                 step = int(re.search(r'data-motion-step="(\d+)"', tag).group(1))
                 if step == active_step:
-                    tag = re.sub(r'stroke="[^"]*"', 'stroke="#3768B7"', tag)
+                    tag = re.sub(r'stroke="[^"]*"', f'stroke="{highlight}"', tag)
                     tag = re.sub(r'stroke-width="[^"]*"', 'stroke-width="7"', tag)
                 return tag
 
