@@ -158,45 +158,8 @@ def _module(parts: list[str], module: dict, x: int, y: int, w: int, h: int,
                            "Arial, DejaVu Sans, sans-serif"))
 
 
-def poster_from_brief(brief: str, headline: str, footer: str) -> str | None:
-    """Render a complete poster from the blueprint embedded by plan_infographic."""
-    if MARKER not in brief:
-        return None
-    try:
-        plan = json.loads(brief.split(MARKER, 1)[1].strip())
-    except (json.JSONDecodeError, TypeError):
-        return None
-    if not isinstance(plan, dict):
-        return None
-    hero = plan.get("hero")
-    modules = plan.get("modules")
-    if (not isinstance(hero, dict) or not isinstance(hero.get("nodes"), list)
-            or not 3 <= len(hero["nodes"]) <= 5 or not isinstance(modules, list)
-            or not 3 <= len(modules) <= 4
-            or not all(isinstance(item, dict) for item in hero["nodes"] + modules)
-            or not isinstance(plan.get("gotcha"), dict)
-            or not _clean(plan.get("takeaway"))):
-        return None
-
-    parts = ['<svg viewBox="0 0 1080 1350" data-layout="structured" xmlns="http://www.w3.org/2000/svg">',
-             _rect(0, 0, 1080, 1350, "#F7F9FC", radius=0),
-             '<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" '
-             'markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 1 L 9 5 L 0 9 Z" '
-             'fill="#3768B7" stroke-dasharray="none"/></marker></defs>']
-    parts.append(_rect(40, 35, 1000, 185, "#E9F0FD", stroke="#D5E3F8"))
-    parts.append(_icon("sparkle", 65, 55, "#3768B7", 1.4))
-    parts.append(_text(110, 83, "TECHNICAL FIELD GUIDE", size=22, fill="#3768B7", weight="bold"))
-    title = _wrap(plan.get("title") or headline, 940, 46, 2)
-    for i, line in enumerate(title):
-        parts.append(_text(65, 132 + i * 51, line, size=46, fill="#132238", weight="bold"))
-    subtitle_y = 193 if len(title) == 1 else 211
-    parts.extend(_lines(65, subtitle_y, plan.get("subtitle"), 940, size=22, max_lines=1))
-
-    parts.append(_rect(40, 242, 1000, 388, "#FFFFFF", stroke="#DCE6F3"))
-    parts.append(_text(65, 280, "HOW IT WORKS", size=26, fill="#3768B7", weight="bold"))
-    parts.extend(_lines(65, 313, hero.get("caption"), 930, size=22, max_lines=1))
-    nodes = hero["nodes"]
-    accent = ["#3768B7", "#7A4CC2", "#1D9369", "#C66B2E", "#2F7F9B"]
+def _hero_flow(parts: list[str], plan: dict, nodes: list, accent: list[str]) -> None:
+    """The default hero: a row of 3 steps, or two rows of 3 and 4-5 steps, with arrows."""
     if len(nodes) == 3:
         width, gap, positions = 307, 24, [(65 + i * 331, 345) for i in range(3)]
         height = 190
@@ -246,6 +209,89 @@ def poster_from_brief(brief: str, headline: str, footer: str) -> str | None:
             parts.append('<path d="M 880 465 C 880 472 850 468 780 485" fill="none" '
                          'stroke="#3768B7" stroke-width="3" stroke-dasharray="10 10" '
                          'marker-end="url(#arrow)"/>')
+
+
+def _hero_before_after(parts: list[str], hero: dict, nodes: list, accent: list[str]) -> None:
+    """Two columns: the old way on the left, the new way on the right, two steps each."""
+    columns = [(65, "#C66B2E", hero.get("left_label") or "Before", nodes[:2]),
+               (580, "#1D9369", hero.get("right_label") or "After", nodes[2:])]
+    for x, colour, heading, column in columns:
+        parts.append(_text(x, 352, _fit_words(heading, 435, 26), size=26, fill=colour, weight="bold"))
+        for n, node in enumerate(column):
+            y = 380 + n * 118
+            number = nodes.index(node) + 1
+            parts.append(_rect(x, y, 435, 108, "#F2F6FC", stroke="#DCE6F3", radius=15)
+                         .replace("<rect ", f'<rect data-motion-step="{number}" ', 1))
+            parts.append(_rect(x, y, 6, 108, colour, radius=3))
+            parts.append(_icon(node.get("icon"), x + 18, y + 14, colour, 1.3))
+            label = _fit_words(node.get("label"), 435 - 80, 24) or "Step"
+            parts.append(_text(x + 60, y + 38, label, size=24, fill="#132238", weight="bold"))
+            parts.extend(_lines(x + 60, y + 72, node.get("detail"), 435 - 80, size=21, max_lines=1))
+    parts.append('<line x1="505" y1="434" x2="575" y2="434" stroke="#3768B7" stroke-width="3" '
+                 'stroke-dasharray="10 10" marker-end="url(#arrow)"/>')
+
+
+def _hero_layers(parts: list[str], nodes: list, accent: list[str]) -> None:
+    """A stack of bands from the first step (top) to the last, one step per band."""
+    for i, node in enumerate(nodes):
+        y = 352 + i * 70
+        colour = accent[i % len(accent)]
+        parts.append(_rect(65, y, 950, 60, "#F2F6FC", stroke="#DCE6F3", radius=12)
+                     .replace("<rect ", f'<rect data-motion-step="{i + 1}" ', 1))
+        parts.append(_rect(65, y, 6, 60, colour, radius=3))
+        parts.append(_icon(node.get("icon"), 88, y + 16, colour, 1.2))
+        parts.append(_text(128, y + 38, str(i + 1), size=22, fill=colour, weight="bold"))
+        parts.append(_text(162, y + 38, _fit_words(node.get("label"), 300, 24) or "Step",
+                           size=24, fill="#132238", weight="bold"))
+        parts.append(_text(470, y + 38, _fit_words(node.get("detail"), 520, 21), size=21, fill="#42536B"))
+
+
+def poster_from_brief(brief: str, headline: str, footer: str) -> str | None:
+    """Render a complete poster from the blueprint embedded by plan_infographic."""
+    if MARKER not in brief:
+        return None
+    try:
+        plan = json.loads(brief.split(MARKER, 1)[1].strip())
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(plan, dict):
+        return None
+    hero = plan.get("hero")
+    modules = plan.get("modules")
+    if (not isinstance(hero, dict) or not isinstance(hero.get("nodes"), list)
+            or not 3 <= len(hero["nodes"]) <= 5 or not isinstance(modules, list)
+            or not 3 <= len(modules) <= 4
+            or not all(isinstance(item, dict) for item in hero["nodes"] + modules)
+            or not isinstance(plan.get("gotcha"), dict)
+            or not _clean(plan.get("takeaway"))):
+        return None
+
+    parts = ['<svg viewBox="0 0 1080 1350" data-layout="structured" xmlns="http://www.w3.org/2000/svg">',
+             _rect(0, 0, 1080, 1350, "#F7F9FC", radius=0),
+             '<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" '
+             'markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 1 L 9 5 L 0 9 Z" '
+             'fill="#3768B7" stroke-dasharray="none"/></marker></defs>']
+    parts.append(_rect(40, 35, 1000, 185, "#E9F0FD", stroke="#D5E3F8"))
+    parts.append(_icon("sparkle", 65, 55, "#3768B7", 1.4))
+    parts.append(_text(110, 83, "TECHNICAL FIELD GUIDE", size=22, fill="#3768B7", weight="bold"))
+    title = _wrap(plan.get("title") or headline, 940, 46, 2)
+    for i, line in enumerate(title):
+        parts.append(_text(65, 132 + i * 51, line, size=46, fill="#132238", weight="bold"))
+    subtitle_y = 193 if len(title) == 1 else 211
+    parts.extend(_lines(65, subtitle_y, plan.get("subtitle"), 940, size=22, max_lines=1))
+
+    parts.append(_rect(40, 242, 1000, 388, "#FFFFFF", stroke="#DCE6F3"))
+    parts.append(_text(65, 280, "HOW IT WORKS", size=26, fill="#3768B7", weight="bold"))
+    parts.extend(_lines(65, 313, hero.get("caption"), 930, size=22, max_lines=1))
+    nodes = hero["nodes"]
+    accent = ["#3768B7", "#7A4CC2", "#1D9369", "#C66B2E", "#2F7F9B"]
+    form = _clean(hero.get("form")).lower()
+    if form == "before_after" and len(nodes) == 4:
+        _hero_before_after(parts, hero, nodes, accent)
+    elif form == "layers" and len(nodes) in (3, 4):
+        _hero_layers(parts, nodes, accent)
+    else:
+        _hero_flow(parts, plan, nodes, accent)
 
     parts.append(_text(45, 678, "THE PRACTICAL DETAILS", size=26,
                        fill="#132238", weight="bold"))

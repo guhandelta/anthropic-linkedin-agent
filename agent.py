@@ -831,7 +831,7 @@ Return ONLY JSON:
  "subtitle": "at most 60 chars",
  "tagline": "punchy hook, at most 40 chars",
  "badge": "optional short chip such as a version, or empty string",
- "hero": {"form": "before_after | flow | layers | cycle",
+ "hero": {"form": "before_after | flow | layers",
           "caption": "at most 50 chars",
           "left_label": "before_after only: heading for the old way", "right_label": "before_after only: heading for the new way",
           "nodes": [{"label": "at most 18 chars", "detail": "at most 22 chars, a complete phrase", "icon": "ICON"}]},
@@ -841,7 +841,7 @@ Return ONLY JSON:
  "gotcha": {"heading": "Watch out", "text": "at most 70 chars: the limitation, tradeoff or breaking change"},
  "takeaway": "at most 70 chars: the one thing to remember"}
 
-Rules: hero.nodes has 3-5 items (2 per side for before_after). modules has 3-4 items and must include a "code" module when the post has code, and a "stats" module when the post has numbers or versions. Each ICON must be one of: ICON_LIST."""
+Rules: choose hero.form from the content: before_after when the post contrasts an old way with a new way (exactly 4 nodes, 2 per side, with left_label and right_label); layers when the post is an ordered stack of levels or layers (3-4 nodes); otherwise flow (a sequence of steps). hero.nodes has 3-5 items (2 per side for before_after). modules has 3-4 items and must include a "code" module when the post has code, and a "stats" module when the post has numbers or versions. Each ICON must be one of: ICON_LIST."""
 
 
 def plan_infographic(post: str, headline: str, idea: str) -> str:
