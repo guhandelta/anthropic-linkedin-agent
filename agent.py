@@ -70,6 +70,7 @@ from dotenv import load_dotenv
 # Module Imports: Graphics, LinkedIn Distribution, Telegram Bot, Quality & Anti-Hallucination
 from infographic import (ICON_NAMES, design_quality_checks, extract_svg, finalize_svg,
                          render_svg, render_svg_to_gif, svg_checks)
+from layout_check import layout_issues
 from linkedin import LinkedInClient
 from linkedin_groups import post_to_groups
 from telegram_review import TelegramReviewer, get_status
@@ -830,7 +831,7 @@ Return ONLY JSON:
  "subtitle": "at most 60 chars",
  "tagline": "punchy hook, at most 40 chars",
  "badge": "optional short chip such as a version, or empty string",
- "hero": {"form": "before_after | flow | layers | cycle",
+ "hero": {"form": "before_after | flow | layers",
           "caption": "at most 50 chars",
           "left_label": "before_after only: heading for the old way", "right_label": "before_after only: heading for the new way",
           "nodes": [{"label": "at most 18 chars", "detail": "at most 22 chars, a complete phrase", "icon": "ICON"}]},
@@ -840,7 +841,7 @@ Return ONLY JSON:
  "gotcha": {"heading": "Watch out", "text": "at most 70 chars: the limitation, tradeoff or breaking change"},
  "takeaway": "at most 70 chars: the one thing to remember"}
 
-Rules: hero.nodes has 3-5 items (2 per side for before_after). modules has 3-4 items and must include a "code" module when the post has code, and a "stats" module when the post has numbers or versions. Each ICON must be one of: ICON_LIST."""
+Rules: choose hero.form from the content: before_after when the post contrasts an old way with a new way (exactly 4 nodes, 2 per side, with left_label and right_label); layers when the post is an ordered stack of levels or layers (3-4 nodes); otherwise flow (a sequence of steps). hero.nodes has 3-5 items (2 per side for before_after). modules has 3-4 items and must include a "code" module when the post has code, and a "stats" module when the post has numbers or versions. Each ICON must be one of: ICON_LIST."""
 
 
 def plan_infographic(post: str, headline: str, idea: str) -> str:
@@ -969,7 +970,14 @@ def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: P
             feedback = "\n".join(hard_issues)
             print("Drawing checks failed:", hard_issues)
             continue
-        fallback_svg = svg  # best valid drawing so far
+        # Measure the rendered poster: overlapping, hidden, clipped or spilling items are hard failures.
+        layout = layout_issues(svg)
+        if layout:
+            feedback = ("The drawing has overlapping, hidden or cut-off items. Redraw it and fix:\n"
+                        + "\n".join(layout))
+            print("Layout check failed:", layout)
+            continue
+        fallback_svg = svg  # best valid, layout-clean drawing so far
         soft_issues = design_quality_checks(svg)
         if soft_issues and try_no < 2:
             feedback = ("The drawing is valid but is not yet a rich, polished poster. "
