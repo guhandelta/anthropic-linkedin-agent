@@ -842,9 +842,16 @@ Return ONLY JSON:
  "takeaway": "at most 70 chars: the one thing to remember",
  "post_type": "POST_TYPES",
  "layout": "LAYOUT_LIST",
- "theme": "THEME_LIST"}
+ "theme": "THEME_LIST",
+ "cards": [{"title": "at most 24 chars", "text": "at most 70 chars", "fix": "at most 50 chars", "icon": "ICON"}],
+ "table": {"left": "name, at most 16 chars", "right": "name, at most 16 chars",
+           "left_about": "at most 70 chars", "right_about": "at most 70 chars",
+           "rows": [{"aspect": "at most 16 chars", "left": "at most 40 chars", "right": "at most 40 chars"}],
+           "left_when": ["at most 40 chars"], "right_when": ["at most 40 chars"]},
+ "layers": [{"name": "at most 22 chars", "items": [{"label": "at most 18 chars", "detail": "at most 26 chars", "icon": "ICON"}]}],
+ "stages": [{"label": "at most 16 chars, short words", "detail": "at most 40 chars", "icon": "ICON"}]}
 
-Rules: choose hero.form from the content: before_after when the post contrasts an old way with a new way (exactly 4 nodes, 2 per side, with left_label and right_label); layers when the post is an ordered stack of levels or layers (3-4 nodes); otherwise flow (a sequence of steps). hero.nodes has 3-5 items (2 per side for before_after). modules has 3-4 items and must include a "code" module when the post has code, and a "stats" module when the post has numbers or versions. Each ICON must be one of: ICON_LIST. Choose theme, the colour palette, to suit the topic: THEME_HINTS. Set post_type to what the post is. Suggest the page layout that best fits the post: LAYOUT_HINTS."""
+Rules: choose hero.form from the content: before_after when the post contrasts an old way with a new way (exactly 4 nodes, 2 per side, with left_label and right_label); layers when the post is an ordered stack of levels or layers (3-4 nodes); otherwise flow (a sequence of steps). hero.nodes has 3-5 items (2 per side for before_after). modules has 3-4 items and must include a "code" module when the post has code, and a "stats" module when the post has numbers or versions. Each ICON must be one of: ICON_LIST. Choose theme, the colour palette, to suit the topic: THEME_HINTS. Set post_type to what the post is. Suggest the page layout that best fits the post: LAYOUT_HINTS. cards, table, layers and stages are optional: include only the one that matches the post's shape, and only with facts from the post. cards: exactly 6 or 9 when the post lists problems, mistakes, tips or principles. table: when the post compares two tools or approaches (3-5 rows, 2-3 "when" items each). layers: 2-4 layers of 1-3 items when the post describes a system architecture or stack. stages: 3-5 stages when the post describes a progression or maturity model. hero may also carry "hub": at most 18 chars naming the central component."""
 
 
 def plan_infographic(post: str, headline: str, idea: str) -> str:
@@ -864,7 +871,7 @@ def plan_infographic(post: str, headline: str, idea: str) -> str:
                   .replace("POST_TYPES", " | ".join(POST_TYPES))
                   .replace("LAYOUT_LIST", " | ".join(LAYOUT_HINTS))
                   .replace("LAYOUT_HINTS", "; ".join(f"{k} for {v}" for k, v in LAYOUT_HINTS.items())))
-        plan = call_json(system, f"HEADLINE: {headline}\n\nPOST:\n{post}\n\nWRITER'S IDEA:\n{idea}", max_tokens=2500)
+        plan = call_json(system, f"HEADLINE: {headline}\n\nPOST:\n{post}\n\nWRITER'S IDEA:\n{idea}", max_tokens=3500)
     except Exception as e:  # noqa: BLE001 - planning is an enhancement, never a blocker
         print(f"Infographic planning skipped ({e}); using the writer's idea only.")
         return idea

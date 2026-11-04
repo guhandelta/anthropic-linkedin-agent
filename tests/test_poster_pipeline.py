@@ -184,6 +184,7 @@ def test_planner_is_asked_for_a_theme(monkeypatch):
     assert "midnight for infrastructure" in system and "THEME_" not in system
     assert '"post_type": "release | bug_fix' in system and "incident for bug fixes" in system
     assert "LAYOUT_" not in system and "POST_TYPES" not in system
+    assert '"cards": [{"title"' in system and "matrix for lists of 6 or 9" in system
 
 
 def test_poster_style_lives_in_the_git_ignored_state_folder(monkeypatch):

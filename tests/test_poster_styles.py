@@ -8,7 +8,8 @@ import pytest
 from infographic import design_quality_checks, finalize_svg, gif_frame_svgs, svg_checks
 from layout_check import layout_issues
 from poster_layout import (LAYOUT_HINTS, MARKER, POST_TYPES, STYLES, THEME_HINTS, THEMES,
-                           _apply_theme, _style_candidates, choose_style, choose_theme,
+                           _apply_theme, _cards, _hub_label, _layers, _stages, _style_candidates,
+                           _table, choose_style, choose_theme,
                            poster_from_brief)
 
 NODES = [
@@ -57,6 +58,37 @@ def _theme(svg):
     return re.search(r'data-theme="([a-z]+)"', svg).group(1)
 
 
+# Content the planner adds for the matrix, versus, architecture and progression layouts.
+CARDS = [
+ {"title": "Tool definition bloat", "text": "Too many vague tools confuse routing and raise error rates.", "fix": "Expose fewer, sharper tools.", "icon": "gear"},
+ {"title": "Context window decay", "text": "Key instructions get buried as the context grows.", "fix": "Re-anchor rules and compress.", "icon": "clock"},
+ {"title": "Retrieval poisoning", "text": "Low-quality chunks silently distort answers.", "fix": "Filter and rank chunks first.", "icon": "database"},
+ {"title": "Runaway loops", "text": "Agents get stuck in retries or repeated tool calls.", "fix": "Set step and budget limits.", "icon": "loop"},
+ {"title": "Silent schema drift", "text": "Small schema changes break consumers quietly.", "fix": "Validate every boundary.", "icon": "code"},
+ {"title": "Eval blindness", "text": "Toy tests pass while real traffic fails.", "fix": "Evaluate on real traffic slices.", "icon": "eye"},
+ {"title": "Hidden randomness", "text": "The same prompt gives different outputs.", "fix": "Trace why outputs diverge.", "icon": "search"},
+ {"title": "Cost blind spots", "text": "Costs pile up across tokens and tools.", "fix": "Measure cost per task.", "icon": "chart"},
+ {"title": "No failure mode", "text": "Without a fallback, agents fabricate answers.", "fix": "Add refusal and escalation.", "icon": "shield"},
+]
+TABLE = {"left": "LangChain", "right": "LangGraph",
+ "left_about": "Chains prompts, models, tools and retrievers into LLM apps.",
+ "right_about": "Builds stateful, multi-step workflows as a graph of nodes.",
+ "rows": [{"aspect": "Purpose", "left": "Quick LLM apps from chains", "right": "Complex, stateful workflows"},
+          {"aspect": "Workflow", "left": "Linear, modular chains", "right": "Graphs with branches, loops and retries"},
+          {"aspect": "State", "left": "Mostly stateless", "right": "Built-in state across steps"},
+          {"aspect": "Best for", "left": "Simple single-flow apps", "right": "Agentic, production systems"}],
+ "left_when": ["You build a simple RAG or chatbot", "The flow is mostly linear", "You want a quick setup"],
+ "right_when": ["You need multi-step agent flows", "You need state or human review", "You want a robust system"]}
+LAYERS = [{"name": "Builder layer", "items": [{"label": "Claude Code", "detail": "Scaffold, code, deploy", "icon": "terminal"}]},
+ {"name": "User layer", "items": [{"label": "Next.js frontend", "detail": "Hosted on Vercel", "icon": "globe"}, {"label": "FastAPI backend", "detail": "Hosted on Render", "icon": "bolt"}]},
+ {"name": "Intelligence layer", "items": [{"label": "LLM inference", "detail": "Llama 3 70B", "icon": "cpu"}, {"label": "Orchestrator", "detail": "LangGraph", "icon": "network"}, {"label": "Embeddings", "detail": "Cohere v3", "icon": "layers"}]},
+ {"name": "Data layer", "items": [{"label": "Vector DB", "detail": "Qdrant Cloud, 1 GB free", "icon": "database"}]}]
+STAGES = [{"label": "AI and ML", "detail": "Turn data into decisions", "icon": "chart"},
+ {"label": "Deep learning", "detail": "Neural networks for complex tasks", "icon": "cpu"},
+ {"label": "Gen AI", "detail": "Generate content and code", "icon": "sparkle"},
+ {"label": "AI agents", "detail": "Run tasks with tools", "icon": "bolt"},
+ {"label": "Agentic AI", "detail": "Run whole workflows end to end", "icon": "network"}]
+
 # A content shape that suits each layout, so every layout is checked with every palette.
 SHAPES = {
     "guide": _plan("flow", 3),
@@ -68,6 +100,11 @@ SHAPES = {
     "incident": _plan("flow", 5, (CODE, CHECKS, STEPS), post_type="bug_fix"),
     "stack": _plan("layers", 5, (CODE, CHECKS, STEPS, STATS)),
     "sidebar": _plan("flow", 4, (CODE, CHECKS, STEPS), title="Native APIs for leaner apps"),
+    "matrix": _plan("flow", 3, cards=CARDS, title="9 silent killers of AI agents"),
+    "versus": _plan("flow", 3, table=TABLE, title="LangChain vs LangGraph"),
+    "architecture": _plan("flow", 3, layers=LAYERS, title="The free AI stack"),
+    "progression": _plan("flow", 3, stages=STAGES, title="From models to autonomy"),
+    "hub": _plan("flow", 5, (CODE, CHECKS, STEPS), title="Agentic RAG"),
 }
 
 
@@ -100,6 +137,13 @@ def test_every_layout_in_every_theme_passes_all_checks(style, theme):
     ("stack", _plan("flow", 3, post_type="architecture")),
     ("sidebar", _plan("flow", 3, title="Native APIs", tagline="", badge="Explainer")),
     ("sidebar", _plan("flow", 5, title="Native APIs")),
+    ("matrix", _plan("flow", 3, cards=CARDS[:7])),                                 # six cards
+    ("matrix", _plan("flow", 3, cards=[{**c, "fix": ""} for c in CARDS])),         # no fixes
+    ("versus", _plan("flow", 3, table={**TABLE, "rows": TABLE["rows"] * 2,         # five rows
+                                       "left_when": "not a list"})),
+    ("architecture", _plan("flow", 3, layers=LAYERS[:2])),
+    ("progression", _plan("flow", 3, stages=STAGES[:3])),
+    ("hub", _plan("flow", 3, hero={**_plan()["hero"], "hub": "Core loop"})),
 ])
 def test_layout_variants_stay_clean(style, plan):
     svg = _svg(plan, style=style, theme="midnight")
@@ -111,7 +155,7 @@ def test_layouts_are_structurally_different():
     # Same theme, tags only (no coordinates or words): each layout is a different drawing.
     shapes = {style: tuple(re.findall(r"<(\w+)", _svg(SHAPES[style], style=style, theme="ocean")))
               for style in STYLES}
-    assert len(set(shapes.values())) == len(STYLES) == 9
+    assert len(set(shapes.values())) == len(STYLES) == 14
 
 
 def test_timeline_fills_spare_room_with_the_tagline_and_drops_a_long_caption():
@@ -287,3 +331,65 @@ def test_code_focus_shows_at_most_six_code_lines():
 def test_concept_posts_prefer_the_sidebar_then_the_stack():
     plan = _plan("flow", 3, (CHECKS, STEPS, CHECKS), post_type="concept", title="Native APIs")
     assert _style_candidates(plan)[:2] == ["sidebar", "stack"]
+
+
+
+# --- Layouts drawn from extra planner content ---
+
+@pytest.mark.parametrize("extra, expected", [
+    ({"cards": CARDS}, "matrix"), ({"table": TABLE}, "versus"), ({"layers": LAYERS}, "architecture"),
+    ({"stages": STAGES}, "progression"),
+])
+def test_extra_content_picks_its_layout(extra, expected):
+    assert choose_style(_plan("flow", 3, (CODE, CHECKS, STATS), **extra)) == expected
+
+
+def test_hub_is_used_for_plain_content_when_the_sidebar_was_just_used():
+    plan = _plan("flow", 3, (CHECKS, STEPS, CHECKS), title="Agentic RAG")
+    assert choose_style(plan) == "sidebar" and choose_style(plan, ["sidebar"]) == "hub"
+
+
+@pytest.mark.parametrize("cards", [None, "x", CARDS[:5], [{"title": ""}] * 9, [1, 2, 3, 4, 5, 6]])
+def test_matrix_needs_six_titled_cards(cards):
+    assert _cards(_plan(cards=cards)) == []
+
+
+def test_matrix_uses_six_or_nine_cards():
+    assert len(_cards(_plan(cards=CARDS[:8]))) == 6
+    assert len(_cards(_plan(cards=CARDS + CARDS))) == 9
+
+
+@pytest.mark.parametrize("table", [None, [], {**TABLE, "left": ""}, {**TABLE, "rows": TABLE["rows"][:2]},
+                                   {**TABLE, "rows": [{"aspect": ""}] * 4}])
+def test_versus_needs_two_sides_and_three_rows(table):
+    assert _table(_plan(table=table)) is None
+
+
+def test_versus_lists_at_most_five_lines_of_when_items():
+    long = ["You need a very long reason that wraps across two lines"] * 4
+    svg = _svg(_plan(table={**TABLE, "left_when": long}), style="versus", theme="ocean")
+    assert svg.count("• You need a very long reason") == 2
+
+
+@pytest.mark.parametrize("layers", [None, LAYERS[:1], [{"name": "A", "items": []}] * 3,
+                                    [{"name": "", "items": LAYERS[0]["items"]}] * 3])
+def test_architecture_needs_two_layers_with_items(layers):
+    assert _layers(_plan(layers=layers)) == []
+
+
+@pytest.mark.parametrize("stages", [None, STAGES[:2], [{"label": ""}] * 4,
+                                    STAGES[:4] + [{"label": "Hyperautomation", "detail": "x"}]])
+def test_progression_needs_three_stages_with_short_words(stages):
+    assert _stages(_plan(stages=stages)) == []
+
+
+@pytest.mark.parametrize("title, hub", [("Observability pipelines", ""), ("", ""),
+                                        ("A b c d e f g h i j k l m n o p q r s t", "")])
+def test_hub_needs_a_short_label(title, hub):
+    plan = _plan(title=title, hero={**_plan()["hero"], "hub": hub})
+    assert _hub_label(plan, "") == []
+
+
+def test_hub_falls_back_to_the_headline():
+    plan = _plan(title="", hero={**_plan()["hero"], "hub": ""})
+    assert _hub_label(plan, "Agent loop") == ["Agent loop"]
