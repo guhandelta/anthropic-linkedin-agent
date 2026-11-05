@@ -89,6 +89,35 @@ STAGES = [{"label": "AI and ML", "detail": "Turn data into decisions", "icon": "
  {"label": "AI agents", "detail": "Run tasks with tools", "icon": "bolt"},
  {"label": "Agentic AI", "detail": "Run whole workflows end to end", "icon": "network"}]
 
+PROFILES = [
+ {"name": "Transformer", "icon": "network", "about": "Understands context with attention; powers modern LLMs.",
+  "a_label": "Used in", "a_items": ["Chat assistants", "Code assistants", "Translation"],
+  "b_label": "Key ideas", "b_items": ["Attention", "Tokens", "Embeddings"]},
+ {"name": "Mixture of Experts", "icon": "layers", "about": "Routes each token to a few expert networks.",
+  "a_label": "Used in", "a_items": ["Large LLMs", "Efficient inference"],
+  "b_label": "Key ideas", "b_items": ["Router", "Sparse activation", "Experts"]},
+ {"name": "Diffusion", "icon": "sparkle", "about": "Generates images by removing noise step by step.",
+  "a_label": "Used in", "a_items": ["Image generation", "Video generation"],
+  "b_label": "Key ideas", "b_items": ["Noise", "Denoising", "Latent space"]},
+ {"name": "CNN", "icon": "eye", "about": "Learns visual patterns with filters and feature maps.",
+  "a_label": "Used in", "a_items": ["Object detection", "Medical imaging"],
+  "b_label": "Key ideas", "b_items": ["Filters", "Pooling", "Convolution"]},
+ {"name": "RNN", "icon": "loop", "about": "Processes sequences step by step with memory.",
+  "a_label": "Used in", "a_items": ["Speech", "Time series"],
+  "b_label": "Key ideas", "b_items": ["Hidden states", "LSTM", "GRU"]},
+ {"name": "Graph Neural Net", "icon": "database", "about": "Learns from connected data and relationships.",
+  "a_label": "Used in", "a_items": ["Fraud detection", "Recommendations"],
+  "b_label": "Key ideas", "b_items": ["Nodes", "Edges", "Message passing"]},
+]
+SCORECARD = {"left": "Glean", "right": "Cowork", "left_value": "$0.58", "right_value": "$2.98",
+             "left_caption": "per task", "right_caption": "per task", "ratio": "5.2x",
+             "ratio_caption": "lower cost"}
+DECISION = {"question": "Enough evidence?", "yes": "Cited final answer",
+            "no": "Refine the query and retrieve again"}
+PROS = ["Real HTML inside canvas apps", "Better accessibility", "Less custom UI code",
+        "Easier 3D panels and editors"]
+CONS = ["Still experimental", "Limited browser support", "Can hurt performance if overused"]
+
 # A content shape that suits each layout, so every layout is checked with every palette.
 SHAPES = {
     "guide": _plan("flow", 3),
@@ -105,6 +134,19 @@ SHAPES = {
     "architecture": _plan("flow", 3, layers=LAYERS, title="The free AI stack"),
     "progression": _plan("flow", 3, stages=STAGES, title="From models to autonomy"),
     "hub": _plan("flow", 5, (CODE, CHECKS, STEPS), title="Agentic RAG"),
+    "profiles": _plan("flow", 3, profiles=PROFILES, title="Top 6 AI model architectures"),
+    "columns": _plan("flow", 3, profiles=PROFILES[:4], title="Four model families"),
+    "zigzag": _plan("flow", 3, cards=CARDS[:5], title="5 deadly sins of AI agents"),
+    "playbook": _plan("flow", 3, cards=CARDS[:5], title="Ship an agent in five moves"),
+    "scorecard": _plan("flow", 4, (CODE, CHECKS, STATS), scorecard=SCORECARD, title="Glean vs Cowork"),
+    "swimlanes": _plan("flow", 3, layers=LAYERS, title="The free AI stack"),
+    "twin": _plan("flow", 4, table=TABLE, title="LangChain vs LangGraph"),
+    "flowchart": _plan("flow", 5, decision=DECISION, title="Agentic RAG loop"),
+    "pipeline": _plan("flow", 3, stages=STAGES, title="How LLMs generate text"),
+    "snake": _plan("flow", 3, cards=[{**c, "text": c["fix"]} for c in CARDS[:8]],
+                   title="How to build an AI agent"),
+    "proscons": _plan("flow", 4, pros=PROS, cons=CONS, title="HTML in canvas"),
+    "masonry": _plan("flow", 3, cards=CARDS[:5], title="Your first content agent"),
 }
 
 
@@ -155,7 +197,7 @@ def test_layouts_are_structurally_different():
     # Same theme, tags only (no coordinates or words): each layout is a different drawing.
     shapes = {style: tuple(re.findall(r"<(\w+)", _svg(SHAPES[style], style=style, theme="ocean")))
               for style in STYLES}
-    assert len(set(shapes.values())) == len(STYLES) == 14
+    assert len(set(shapes.values())) == len(STYLES) == 26
 
 
 def test_timeline_fills_spare_room_with_the_tagline_and_drops_a_long_caption():
