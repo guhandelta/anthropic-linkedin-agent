@@ -150,7 +150,12 @@ SHAPES = {
 }
 
 
-@pytest.mark.parametrize("theme", sorted(THEMES))
+# The six hand-tuned themes are checked with every layout; the palettes built from brand colours
+# are checked in test_poster_palettes.py (two layouts each, so the suite stays under an hour).
+CORE_THEMES = ("ember", "forest", "grape", "midnight", "ocean", "sunset")
+
+
+@pytest.mark.parametrize("theme", CORE_THEMES)
 @pytest.mark.parametrize("style", STYLES)
 def test_every_layout_in_every_theme_passes_all_checks(style, theme):
     svg = _svg(SHAPES[style], style=style, theme=theme)

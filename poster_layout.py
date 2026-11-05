@@ -74,6 +74,11 @@ THEME_HINTS = {
     "midnight": "infrastructure, security, systems and low-level internals",
     "ember": "bugs, breaking changes, incidents and pitfalls",
 }
+# Twenty-nine more palettes, each built from a short brand palette (see poster_palettes.py).
+from poster_palettes import EXTRA_HINTS, EXTRA_THEMES  # noqa: E402
+
+THEMES.update(EXTRA_THEMES)
+THEME_HINTS.update(EXTRA_HINTS)
 ACCENTS = ("@a1@", "@a2@", "@a3@", "@a4@", "@a5@")
 STYLES = ("guide", "timeline", "spotlight", "comparison", "dashboard", "code_focus", "incident",
           "stack", "sidebar", "matrix", "versus", "architecture", "progression", "hub",
@@ -1206,9 +1211,9 @@ def _layout_profiles(parts: list[str], plan: dict, headline: str, accent: list[s
         x, y, colour = 40 + (i % 2) * 508, top + (i // 2) * (h + 14), accent[i % len(accent)]
         parts.append(_step_rect(x, y, 492, h, "@card@", i + 1))
         parts.append(_rect(x, y, 492, 56, colour, radius=14))
-        parts.append(_icon(p.get("icon"), x + 16, y + 12, "@on_strong@", 1.3))
+        parts.append(_icon(p.get("icon"), x + 16, y + 12, "@bg@", 1.3))
         parts.append(_text(x + 60, y + 37, _fit_words(p.get("name"), 410, 24), size=24,
-                           fill="@on_strong@", weight="bold"))
+                           fill="@bg@", weight="bold"))
         about = _lines(x + 20, y + 88, p.get("about"), 452, size=22, max_lines=2, step=27)
         parts.extend(about)
         ly = y + 88 + len(about) * 27 + 10
@@ -1403,7 +1408,7 @@ def _layout_twin(parts: list[str], plan: dict, headline: str, accent: list[str])
         parts.append(_rect(x, 255, 480, 435, "@card@", stroke=colour, radius=16))
         parts.append(_rect(x, 255, 480, 70, colour, radius=16))
         parts.append(_text(x + 240, 301, _fit_words(name, 430, 30).upper(), size=30,
-                           fill="@on_strong@", weight="bold", anchor="middle"))
+                           fill="@bg@", weight="bold", anchor="middle"))
         about_lines = _lines(x + 24, 362, about, 432, size=22, max_lines=3, step=28)
         parts.extend(about_lines)
         label_y = 362 + len(about_lines) * 28 + 20
