@@ -399,3 +399,76 @@ def test_charts_and_rings_pass_every_poster_check(theme, modules):
         svg = finalize_svg(poster_from_brief(_brief(_plan(modules=modules)), "H", "Guhaprasaanth N",
                                              style=style, theme=theme))
         assert svg_checks(svg) + design_quality_checks(svg) + layout_issues(svg) == [], style
+
+
+# ---------------------------------------------------------------- pasted posts and motion
+
+def test_a_pasted_post_gets_a_fresh_reviewed_infographic(monkeypatch, tmp_path):
+    monkeypatch.setattr(agent, "ROOT", tmp_path)
+    monkeypatch.setattr(agent, "call_json", MagicMock(return_value={
+        "headline": "Faster builds", "infographic_idea": "Steps"}))
+    png = tmp_path / "p.png"
+    png.write_bytes(b"png")
+    produce = MagicMock(return_value=(png, ["[image] minor"], {}))
+    monkeypatch.setattr(agent, "produce_infographic", produce)
+    tg = MagicMock()
+    tg.wait_for_decision.return_value = {"action": "rejected"}
+    agent.handle_direct_post("My own post", custom_image_path=None, generate_infographic=True,
+                             tg=tg, tracker_id=1)
+    assert produce.call_args.args[:3] == ("My own post", "Faster builds", "Steps")
+    tg.send_draft.assert_called_once()
+
+
+def test_choose_motion_never_repeats_the_last_one():
+    from infographic import MOTIONS
+
+    plan = {"title": "Faster builds"}
+    for last in MOTIONS:
+        assert P.choose_motion(plan, [last]) != last
+        assert P.choose_motion(plan, [last], random.Random(3)) != last
+    picks = {P.choose_motion(plan, None, random.Random(i)) for i in range(30)}
+    assert picks == set(MOTIONS)
+
+
+def _motion_svg(motion):
+    svg = poster_from_brief(_brief(_plan()), "H", "F", style="timeline", theme="ocean")
+    return re.sub(r'data-motion="\w+"', f'data-motion="{motion}"', svg)
+
+
+def _lit(frame, colour):
+    return len(re.findall(rf'data-motion-step="\d+"[^>]*stroke="{colour}"', frame))
+
+
+def test_each_motion_moves_differently():
+    from infographic import gif_frame_svgs
+
+    colour = P.THEMES["ocean"]["primary"]
+    flow = gif_frame_svgs(_motion_svg("flow"), 12)
+    build = gif_frame_svgs(_motion_svg("build"), 12)
+    wave = gif_frame_svgs(_motion_svg("wave"), 12)
+    pulse = gif_frame_svgs(_motion_svg("pulse"), 12)
+    assert [_lit(f, colour) for f in flow].count(1) == 12           # one step at a time
+    assert _lit(build[0], colour) < _lit(build[-1], colour)        # steps stay lit
+    assert 'height="8"' in build[0] and 'width="1080" height="8"' in build[-1]  # progress bar
+    assert all(_lit(f, colour) == 2 for f in wave)                 # neighbours lit together
+    assert len({re.search(r'stroke-width="(\d+)"[^>]*data-motion-step|data-motion-step[^>]*'
+                          r'stroke-width="(\d+)"', f).groups() for f in pulse}) > 1  # breathing
+    assert re.findall(r'stroke-dashoffset="(\d+)"', wave[1])[0] != \
+        re.findall(r'stroke-dashoffset="(\d+)"', flow[1])[0]       # connectors flow the other way
+
+
+def test_unknown_motion_falls_back_to_flow():
+    from infographic import gif_frame_svgs
+
+    colour = P.THEMES["ocean"]["primary"]
+    frames = gif_frame_svgs(_motion_svg("spin"), 4)
+    assert all(_lit(f, colour) == 1 for f in frames)
+
+
+@pytest.mark.parametrize("motion", ["flow", "wave", "build", "pulse"])
+def test_every_motion_keeps_the_gif_frames_clean(motion):
+    from infographic import finalize_svg, gif_frame_svgs
+    from layout_check import gif_issues
+
+    svg = finalize_svg(_motion_svg(motion))
+    assert gif_issues(svg, gif_frame_svgs(svg)) == []

@@ -120,25 +120,27 @@ def test_draw_poster_remembers_the_layout_and_the_next_poster_differs(monkeypatc
         assert media == tmp_path / "p.png" and feedback is None
     styles = [re.search(r'data-style="(\w+)"', s).group(1) for s in seen]
     themes = [re.search(r'data-theme="(\w+)"', s).group(1) for s in seen]
+    motions = [re.search(r'data-motion="(\w+)"', s).group(1) for s in seen]
     assert len(set(styles)) == 3 and len(set(themes)) == 3
+    assert motions[0] != motions[1] != motions[2]
     saved = json.loads(agent.poster_style_path().read_text())
-    assert saved == {"styles": styles, "themes": themes}
+    assert saved == {"styles": styles, "themes": themes, "motions": motions}
 
 
 def test_style_history_keeps_the_last_four():
     for style in ["guide", "timeline", "stack", "sidebar", "incident"]:
         agent._remember_poster_style(f'<svg data-style="{style}" data-theme="ocean"/>')
     assert agent._recent_poster_styles() == {"styles": ["timeline", "stack", "sidebar", "incident"],
-                                             "themes": ["ocean"] * 4}
+                                             "themes": ["ocean"] * 4, "motions": []}
 
 
 def test_style_history_reads_the_older_single_value_file():
     path = agent.poster_style_path()
     path.parent.mkdir(parents=True)
     path.write_text('{"style": "guide", "theme": "ocean"}')
-    assert agent._recent_poster_styles() == {"styles": ["guide"], "themes": ["ocean"]}
+    assert agent._recent_poster_styles() == {"styles": ["guide"], "themes": ["ocean"], "motions": []}
     path.write_text('{"styles": "guide", "themes": ["ocean"]}')
-    assert agent._recent_poster_styles() == {"styles": [], "themes": ["ocean"]}
+    assert agent._recent_poster_styles() == {"styles": [], "themes": ["ocean"], "motions": []}
 
 
 def test_draw_poster_runs_the_rendered_layout_check_on_the_structured_poster(monkeypatch, tmp_path):
@@ -155,11 +157,11 @@ def test_last_poster_style_ignores_a_damaged_file(content):
     path = agent.poster_style_path()
     path.parent.mkdir(parents=True)
     path.write_text(content)
-    assert agent._recent_poster_styles() == {"styles": [], "themes": []}
+    assert agent._recent_poster_styles() == {"styles": [], "themes": [], "motions": []}
 
 
 def test_last_poster_style_is_empty_before_the_first_poster():
-    assert agent._recent_poster_styles() == {"styles": [], "themes": []}
+    assert agent._recent_poster_styles() == {"styles": [], "themes": [], "motions": []}
 
 
 def test_remember_poster_style_skips_drawings_without_a_style():

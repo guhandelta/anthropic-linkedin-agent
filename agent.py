@@ -1005,7 +1005,7 @@ def _recent_poster_styles() -> dict:
     if not isinstance(data, dict):
         data = {}
     out = {}
-    for key, single in (("styles", "style"), ("themes", "theme")):
+    for key, single in (("styles", "style"), ("themes", "theme"), ("motions", "motion")):
         values = data.get(key, [data[single]] if single in data else [])
         out[key] = [str(v) for v in values] if isinstance(values, list) else []
     return out
@@ -1014,11 +1014,13 @@ def _recent_poster_styles() -> dict:
 def _remember_poster_style(svg: str) -> None:
     style = re.search(r'data-style="([a-z_]+)"', svg)
     theme = re.search(r'data-theme="([a-z_]+)"', svg)
+    motion = re.search(r'data-motion="([a-z_]+)"', svg)
     if not (style and theme):
         return
     recent = _recent_poster_styles()
     data = {"styles": (recent["styles"] + [style.group(1)])[-4:],
-            "themes": (recent["themes"] + [theme.group(1)])[-4:]}
+            "themes": (recent["themes"] + [theme.group(1)])[-4:],
+            "motions": (recent["motions"] + ([motion.group(1)] if motion else []))[-4:]}
     try:
         path = poster_style_path()
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -1047,7 +1049,8 @@ def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: P
     # free-form designer is asked, because the structured layouts are the reliable ones.
     for _ in range(3):
         structured_svg = poster_from_brief(brief, headline, footer, recent_styles=recent["styles"],
-                                           recent_themes=recent["themes"], rng=rng, exclude=tried)
+                                           recent_themes=recent["themes"], rng=rng, exclude=tried,
+                                           recent_motions=recent["motions"])
         if not structured_svg:
             break
         style = re.search(r'data-style="([a-z_]+)"', structured_svg)
@@ -1741,8 +1744,10 @@ def handle_direct_post(post_text: str, custom_image_path: Path | None = None, ge
             headline = res.get("headline", "Tech Insights")
             idea = res.get("infographic_idea", "Visual breakdown of the key takeaways.")
             image_path = out_dir / "direct_infographic.png"
-            media_path, _ = draw_poster(post_text, plan_infographic(post_text, headline, idea), headline,
-                                        CFG["infographic"]["footer"], image_path)
+            # Same path as a daily post: a fresh layout, theme and motion, then the image review.
+            media_path, image_issues, _ = produce_infographic(post_text, headline, idea, image_path)
+            if image_issues:
+                print("Direct post image notes:", image_issues)
         except Exception as e:
             print(f"Infographic design for direct post failed: {e}. Falling back to text-only.")
             media_path = None

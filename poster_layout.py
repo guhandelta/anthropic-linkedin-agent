@@ -1813,11 +1813,23 @@ def choose_theme(plan: dict, recent: str | list | tuple | None = None, rng=None)
     return names[seed % len(names)]
 
 
-def _render(plan: dict, headline: str, footer: str, style: str, theme: str) -> tuple[str, list[str]]:
+def choose_motion(plan: dict, recent: str | list | tuple | None = None, rng=None) -> str:
+    """The GIF's motion style: never the last one used; random with rng, else stable per title."""
+    from infographic import MOTIONS
+
+    names = [m for m in MOTIONS if m not in _recent(recent)[-1:]]
+    if rng is not None:
+        return rng.choice(names)
+    return names[sum(ord(c) for c in _clean(plan.get("title"))) % len(names)]
+
+
+def _render(plan: dict, headline: str, footer: str, style: str, theme: str,
+            motion: str = "flow") -> tuple[str, list[str]]:
     """Draw one layout; returns the SVG and any text that had to be shortened."""
     _CUTS.clear()
     parts: list[str] = []
     _start(parts, style, theme)
+    parts[0] = parts[0].replace(" data-highlight=", f' data-motion="{motion}" data-highlight=', 1)
     _LAYOUTS[style](parts, plan, headline, list(ACCENTS))
     _bottom(parts, plan, footer)
     parts.append("</svg>")
@@ -1827,7 +1839,8 @@ def _render(plan: dict, headline: str, footer: str, style: str, theme: str) -> t
 def poster_from_brief(brief: str, headline: str, footer: str, *,
                       recent_styles: str | list | tuple | None = None,
                       recent_themes: str | list | tuple | None = None, style: str | None = None,
-                      theme: str | None = None, rng=None, exclude: tuple | list = ()) -> str | None:
+                      theme: str | None = None, rng=None, exclude: tuple | list = (),
+                      recent_motions: str | list | tuple | None = None) -> str | None:
     """Render a complete poster from the blueprint embedded by plan_infographic.
 
     The layout and colour theme follow the content and always differ from the previous poster's
@@ -1857,14 +1870,15 @@ def poster_from_brief(brief: str, headline: str, footer: str, *,
 
     if theme not in THEMES:
         theme = choose_theme(plan, recent_themes, rng)
+    motion = choose_motion(plan, recent_motions, rng)
     if style in _eligible(plan, headline):
-        return _render(plan, headline, footer, style, theme)[0]
+        return _render(plan, headline, footer, style, theme, motion)[0]
     order = [s for s in _style_order(plan, recent_styles, headline, rng) if s not in exclude]
     if not order:
         return None
     best: tuple[str, list[str]] | None = None
     for name in order:
-        svg, cuts = _render(plan, headline, footer, name, theme)
+        svg, cuts = _render(plan, headline, footer, name, theme, motion)
         if not cuts:
             return svg
         if best is None or len(cuts) < len(best[1]):
