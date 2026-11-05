@@ -472,3 +472,123 @@ def test_every_motion_keeps_the_gif_frames_clean(motion):
 
     svg = finalize_svg(_motion_svg(motion))
     assert gif_issues(svg, gif_frame_svgs(svg)) == []
+
+
+# ---------------------------------------------------------------- repeat check before writing
+
+def _scouted(topic, url="https://react.dev/reference/x"):
+    return {"topic": topic, "angle": "an angle", "topic_kind": "evergreen", "source_url": url,
+            "technical_takeaway": "Measure the render cost before adding another memo wrapper"}
+
+
+HISTORY = [{"topic": "React Reference Overview for hooks", "source_urls": ["https://react.dev/reference"],
+            "technical_takeaway": "Read the hooks reference before writing custom hooks"}]
+
+
+def test_a_repeated_topic_is_caught_before_any_post_is_written(monkeypatch):
+    scout = MagicMock(side_effect=[_scouted("React Reference Overview for hooks"),
+                                   _scouted("Server Components streaming with Suspense boundaries")])
+    monkeypatch.setattr(agent, "scout_topic", scout)
+    source, item = agent.find_fresh_item("react.dev/reference", HISTORY, set())
+    assert source == "react.dev/reference"
+    assert item["topic"] == "Server Components streaming with Suspense boundaries"
+    # The second scout is told which idea was a repeat.
+    assert "React Reference Overview for hooks" in scout.call_args_list[1].args[2]
+
+
+def test_a_source_that_keeps_repeating_hands_over_to_the_next_source(monkeypatch):
+    repeat = _scouted("React Reference Overview for hooks")
+    monkeypatch.setattr(agent, "scout_topic", MagicMock(side_effect=[
+        repeat, repeat, _scouted("CSS anchor positioning for tooltips", "https://web.dev/anchor")]))
+    monkeypatch.setattr(agent, "pick_source", MagicMock(return_value="web.dev/blog"))
+    monkeypatch.setattr(agent, "load_log", lambda: [])
+    tried = set()
+    source, item = agent.find_fresh_item("react.dev/reference", HISTORY, tried)
+    assert (source, item["topic"]) == ("web.dev/blog", "CSS anchor positioning for tooltips")
+    assert tried == {"react.dev/reference", "web.dev/blog"}
+
+
+def test_a_fixed_source_is_never_swapped(monkeypatch):
+    repeat = _scouted("React Reference Overview for hooks")
+    monkeypatch.setattr(agent, "scout_topic", MagicMock(return_value=repeat))
+    pick = MagicMock()
+    monkeypatch.setattr(agent, "pick_source", pick)
+    assert agent.find_fresh_item("react.dev/reference", HISTORY, set(), fixed=True) == (
+        "react.dev/reference", None)
+    pick.assert_not_called()
+
+
+def test_a_failed_scout_falls_back_to_the_writer(monkeypatch):
+    monkeypatch.setattr(agent, "call_json", MagicMock(side_effect=RuntimeError("credit balance too low")))
+    assert agent.scout_topic("react.dev/reference", HISTORY) is None
+    assert agent.find_fresh_item("react.dev/reference", HISTORY, set()) == ("react.dev/reference", None)
+
+
+def test_run_writes_about_the_checked_topic(tmp_path, monkeypatch):
+    fresh = _scouted("Server Components streaming with Suspense boundaries")
+    monkeypatch.setattr(agent, "ROOT", tmp_path)
+    monkeypatch.setattr(agent, "load_log", lambda: [])
+    monkeypatch.setattr(agent, "select_model_for_run", lambda *a, **k: "x")
+    monkeypatch.setattr(agent, "pick_source", lambda *a, **k: "react.dev/reference")
+    monkeypatch.setattr(agent, "find_fresh_item", MagicMock(return_value=("react.dev/reference", fresh)))
+    writer = MagicMock(return_value={"no_item": True, "reason": "stop here"})
+    monkeypatch.setattr(agent, "write_draft", writer)
+    agent.run(dry_run=True)
+    assert writer.call_args_list[0].kwargs["item"] == fresh
+
+
+def test_the_writer_is_told_to_stay_on_the_checked_topic(monkeypatch):
+    call = MagicMock(return_value={"post": "x"})
+    monkeypatch.setattr(agent, "call_json", call)
+    agent.write_draft("react.dev/reference", None, set(), item=_scouted("Suspense streaming"))
+    msg = call.call_args.args[1]
+    assert "Suspense streaming" in msg and "do not switch" in msg
+
+
+# ---------------------------------------------------------------- pasted post spacing
+
+PASTED = """Astro Islands vs. Module Federation
+Most teams reach for Module Federation.
+🧩 Vite / Webpack Module Federation
+• Paradigm: Client-side runtime script loading.
+• The Catch: heavy runtimes.
+The Efficiency Verdict:
+If you are building a stateful dashboard, Module Federation holds the crown.
+
+
+What's your take?
+#WebDevelopment #Astro"""
+
+
+def test_pasted_posts_get_a_blank_line_between_sections():
+    assert agent.space_sections(PASTED) == """Astro Islands vs. Module Federation
+
+Most teams reach for Module Federation.
+
+🧩 Vite / Webpack Module Federation
+• Paradigm: Client-side runtime script loading.
+• The Catch: heavy runtimes.
+
+The Efficiency Verdict:
+If you are building a stateful dashboard, Module Federation holds the crown.
+
+What's your take?
+
+#WebDevelopment #Astro"""
+
+
+def test_spacing_never_pushes_a_post_past_the_linkedin_limit():
+    long_post = "\n".join(["A line of the post."] * 150)  # 2999 characters
+    assert len(long_post) <= agent.LINKEDIN_LIMIT
+    assert agent.space_sections(long_post) == long_post
+
+
+def test_spacing_is_applied_to_pasted_posts(monkeypatch, tmp_path):
+    monkeypatch.setattr(agent, "ROOT", tmp_path)
+    monkeypatch.setattr(agent, "select_model_for_run", lambda *a, **k: "x")
+    tg = MagicMock()
+    tg.wait_for_decision.return_value = "cancelled"
+    agent.handle_direct_post(PASTED, generate_infographic=False, tg=tg)
+    sent = tg.send_text_draft.call_args.args[2]
+    assert "Federation\n\nMost teams" in sent
+    assert "\n\n🧩 Vite" in sent

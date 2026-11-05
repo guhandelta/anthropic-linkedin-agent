@@ -697,7 +697,7 @@ Return ONLY JSON:
 
 
 def write_draft(source: str, feedback: str | None, posted: set[str], topic: str | None = None,
-                prior_topics: list[str] | None = None) -> dict:
+                prior_topics: list[str] | None = None, item: dict | None = None) -> dict:
     """
     Executes the research and drafting phase.
     
@@ -747,6 +747,13 @@ infographic_idea. Never use an example or placeholder URL as a source."""
             min_emoji=CFG["post"]["min_emojis"], max_emoji=CFG["post"]["max_emojis"],
         )
         msg = f"Browse {source} and write the post."
+        if item:
+            # The topic was already checked against the posting history: write about it, not a new one.
+            msg = (f"Write the post about this item from {source}. It has been checked and is new "
+                   f"for this account, so do not switch to a different topic.\n"
+                   f"Item: {item['topic']}\nAngle: {item.get('angle', '')}\n"
+                   f"Technical takeaway: {item['technical_takeaway']}\n"
+                   f"Start from this page: {item['source_url']}")
         tool_domains = [search_domain]
 
     if feedback:
@@ -1549,6 +1556,85 @@ def verify_topic_suggestion(item: dict, page: dict) -> bool:
         str(check.get("evidence_quote") or ""), page["text"][:16000])
 
 
+SCOUT_SYSTEM = ("You are a technical topic scout. Browse the named source for one "
+                "specific, useful idea: an evergreen Web API or engineering pattern, "
+                "a verified release, a bug fix, or a practical upgrade. Avoid generic "
+                "introductions and avoid prior topics. Return JSON with topic, angle, "
+                "technical_takeaway, topic_kind (evergreen/update/bug_fix/upgrade), "
+                "source_url (exact page read), published (YYYY-MM-DD or null), and "
+                "source_claim (a specific fact on the page). If nothing qualifies, "
+                "return no_item true with a reason. Never invent a date.")
+
+
+def scout_topic(source: str, history: list[dict], avoid: list[str] | None = None) -> dict | None:
+    """One candidate topic from a source, without writing a post.
+
+    Returns None when the scout call itself fails (the writer then browses on its own as before),
+    and {"no_item": True} when the source has nothing usable."""
+    prior = [h.get("topic", "") for h in history][-30:] + list(avoid or [])
+    try:
+        res = call_json(
+            system=SCOUT_SYSTEM,
+            content=(f"Find one valuable topic from {source}. Prior topics, all already covered, "
+                     f"so pick something clearly different: {json.dumps(prior, ensure_ascii=False)}"),
+            tools=web_tools([domain_for_source(source)], max_uses=2),
+            max_tokens=1500,
+        )
+    except Exception as e:  # never let the pre-check break a run: fall back to the writer
+        print(f"Topic scout failed on {source}: {e}")
+        return None
+    if not isinstance(res, dict) or res.get("no_item"):
+        return {"no_item": True}
+    item = {"topic": str(res.get("topic") or "").strip(),
+            "angle": str(res.get("angle") or "").strip(),
+            "technical_takeaway": str(res.get("technical_takeaway") or "").strip(),
+            "topic_kind": res.get("topic_kind") if res.get("topic_kind") in TOPIC_KINDS else "evergreen",
+            "source_url": str(res.get("source_url") or "").strip()}
+    return item if item["topic"] else {"no_item": True}
+
+
+def is_repeat(item: dict, history: list[dict]) -> bool:
+    url = item.get("source_url", "")
+    return duplicate_topic(item["topic"], history, url if domain_allowed(url) else "",
+                           item.get("topic_kind") or "evergreen", item.get("technical_takeaway", ""))
+
+
+def find_fresh_item(source: str | None, history: list[dict], tried: set[str], fixed: bool = False,
+                    tg: TelegramReviewer | None = None, tracker_id: int | None = None,
+                    per_source: int = 2, max_sources: int = 4) -> tuple[str | None, dict | None]:
+    """Pick a topic and check it against the posting history BEFORE any post is written.
+
+    A repeat costs one short scout call instead of three full drafts. After per_source repeats
+    the next allowed source is tried (unless the source was fixed by the caller). Returns the
+    source and the fresh item, or the source and None when no fresh item was found, in which
+    case the writer browses on its own as before.
+    """
+    avoid: list[str] = []
+    for _ in range(max_sources):
+        if not source:
+            return None, None
+        tried.add(source)
+        if tg and tracker_id:
+            tg.update_progress(tracker_id, f"🔎 [1/4] Looking for a topic you haven't covered on `{source}`...")
+        for _ in range(per_source):
+            item = scout_topic(source, history, avoid)
+            if item is None:
+                return source, None
+            if item.get("no_item"):
+                break
+            if not is_repeat(item, history):
+                print(f"Fresh topic on {source}: {item['topic']}")
+                return source, item
+            print(f"Already covered, skipping: {item['topic']}")
+            if tg and tracker_id:
+                tg.update_progress(tracker_id, f"♻️ \"{item['topic'][:60]}\" was already covered. Finding another idea...")
+            avoid.append(item["topic"])
+        if fixed:
+            return source, None
+        source = pick_source(load_log(), exclude=tried)
+    return source, None
+
+
 def suggest_topics(count: int = 3) -> list[dict]:
     """
     Scouts allowed sources to generate 3 distinct, verified technical topic options.
@@ -1565,14 +1651,7 @@ def suggest_topics(count: int = 3) -> list[dict]:
         dom = domain_for_source(s)
         try:
             res = call_json(
-                system=("You are a technical topic scout. Browse the named source for one "
-                        "specific, useful idea: an evergreen Web API or engineering pattern, "
-                        "a verified release, a bug fix, or a practical upgrade. Avoid generic "
-                        "introductions and avoid prior topics. Return JSON with topic, angle, "
-                        "technical_takeaway, topic_kind (evergreen/update/bug_fix/upgrade), "
-                        "source_url (exact page read), published (YYYY-MM-DD or null), and "
-                        "source_claim (a specific fact on the page). If nothing qualifies, "
-                        "return no_item true with a reason. Never invent a date."),
+                system=SCOUT_SYSTEM,
                 content=(f"Find one valuable topic from {s}. Prior topics: "
                          f"{json.dumps([h.get('topic', '') for h in history][-30:], ensure_ascii=False)}"),
                 tools=web_tools([dom], max_uses=2),
@@ -1699,6 +1778,35 @@ def publish_to_linkedin_and_groups(
     return post_urn
 
 
+_BULLET = re.compile(r"^\s*(?:[•\-–*·▪►✓✔→]|\d{1,2}[.)]|[a-z][.)]\s)\s*")
+LINKEDIN_LIMIT = 3000
+
+
+def space_sections(post: str, limit: int = LINKEDIN_LIMIT) -> str:
+    """Put a blank line between the sections of a pasted post so it reads easily on LinkedIn.
+
+    Bullets stay together under the line that introduces them, and a short heading such as
+    "The Efficiency Verdict:" stays attached to what follows it. Existing blank lines are kept
+    (runs of them collapse to one). If the spaced post would pass LinkedIn's limit, the original
+    is returned unchanged.
+    """
+    lines = [line.rstrip() for line in post.strip().splitlines()]
+    out: list[str] = []
+    for line in lines:
+        if not line.strip():
+            if out and out[-1]:
+                out.append("")
+            continue
+        prev = out[-1] if out else ""
+        bullet = bool(_BULLET.match(line))
+        heading = prev.endswith(":") and len(prev) <= 60
+        if prev and not bullet and not heading:
+            out.append("")
+        out.append(line)
+    spaced = "\n".join(out).strip()
+    return spaced if len(spaced) <= limit else post
+
+
 def handle_direct_post(post_text: str, custom_image_path: Path | None = None, generate_infographic: bool = True,
                        tg: TelegramReviewer | None = None, tracker_id: int | None = None):
     """
@@ -1715,6 +1823,7 @@ def handle_direct_post(post_text: str, custom_image_path: Path | None = None, ge
     if tracker_id:
         CURRENT_TRACKER_ID = tracker_id
     select_model_for_run()
+    post_text = space_sections(post_text)
 
     draft_id = datetime.now().strftime("%Y%m%d") + "-direct-" + uuid.uuid4().hex[:6]
     out_dir = ROOT / "output" / datetime.now().strftime("%Y-%m-%d_%H%M")
@@ -1936,6 +2045,7 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
     feedback, tried = None, set()
     current_source = source_arg
     current_topic = topic_arg
+    item = None  # the topic chosen and checked for repeats before the post is written
 
     for attempt in range(1, CFG["review"]["max_attempts"] + 1):
         # Allow immediate drafting of topic selected from suggest_topics
@@ -1947,7 +2057,11 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
                 current_source = source_arg or pick_source(log, exclude=tried) or SOURCES[0]
             else:
                 current_source = source_arg or pick_source(log, exclude=tried)
-            feedback = None
+            feedback, item = None, None
+            if not current_topic and current_source:
+                current_source, item = find_fresh_item(current_source, prior_history, tried,
+                                                       fixed=bool(source_arg), tg=tg,
+                                                       tracker_id=tracker_id)
 
         if not current_source:
             print("No source available today: all were used recently or already tried.")
@@ -1960,10 +2074,14 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
         topic_info = f" (Topic: {current_topic})" if current_topic else ""
         print(f"\n--- Attempt {attempt}: {action_verb} {current_source}{topic_info} ---")
         if tg and tracker_id:
-            tg.update_progress(tracker_id, f"🔍 [1/4] Researching fresh items on `{current_source}`{topic_info}...")
+            if item and not feedback:
+                tg.update_progress(tracker_id, f"🔍 [1/4] New topic found: \"{item['topic'][:70]}\". Researching and writing...")
+            else:
+                tg.update_progress(tracker_id, f"🔍 [1/4] Researching fresh items on `{current_source}`{topic_info}...")
 
         draft = write_draft(current_source, feedback, posted, topic=current_topic,
-                            prior_topics=[entry.get("topic", "") for entry in prior_history][-30:])
+                            prior_topics=[entry.get("topic", "") for entry in prior_history][-30:],
+                            item=item)
         if draft.get("no_item"):
             print("Nothing fresh on this source:", draft.get("reason"))
             if tg and tracker_id:
@@ -1993,7 +2111,8 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
         if duplicate_topic(headline, prior_history,
                            first_source if domain_allowed(first_source) else "",
                            topic_kind or "evergreen", takeaway):
-            issues.append("This topic repeats a previously suggested or posted idea.")
+            issues.append("This topic repeats a previously suggested or posted idea."
+                          + (f" Write about the chosen item instead: {item['topic']}." if item else ""))
         if not idea:
             issues.append("Describe an infographic idea.")
         if issues:
