@@ -1,0 +1,401 @@
+"""The text is made pristine before any drawing, and the poster never shows a cut-off phrase."""
+import json
+import random
+import re
+from pathlib import Path
+from unittest.mock import MagicMock
+
+import pytest
+import requests
+
+import agent
+import poster_layout as P
+from poster_layout import MARKER, poster_from_brief
+
+LO, HI = agent.CFG["post"]["min_chars"], agent.CFG["post"]["max_chars"]
+
+
+# ---------------------------------------------------------------- network retries
+
+def test_transient_errors_are_retried_and_permanent_ones_are_not():
+    assert agent._is_transient(RuntimeError("peer closed connection without sending complete message"))
+    assert agent._is_transient(TimeoutError("Read timed out"))
+    assert not agent._is_transient(RuntimeError("Your credit balance is too low"))
+    assert not agent._is_transient(ValueError("bad JSON"))
+
+
+def test_with_network_retries_recovers_from_a_dropped_connection(monkeypatch):
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    call = MagicMock(side_effect=[RuntimeError("incomplete chunked read"), "ok"])
+    assert agent._with_network_retries(call) == "ok"
+    assert call.call_count == 2
+
+
+def test_with_network_retries_gives_up_after_the_last_attempt(monkeypatch):
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    call = MagicMock(side_effect=RuntimeError("503 service unavailable"))
+    with pytest.raises(RuntimeError):
+        agent._with_network_retries(call, attempts=3)
+    assert call.call_count == 3
+
+
+def test_with_network_retries_raises_a_permanent_error_at_once(monkeypatch):
+    call = MagicMock(side_effect=RuntimeError("quota exceeded"))
+    with pytest.raises(RuntimeError):
+        agent._with_network_retries(call)
+    assert call.call_count == 1
+
+
+# ---------------------------------------------------------------- length repair
+
+def _post(n: int) -> str:
+    body = ("Real detail about bundles and builds. " * 200)[: n - 30]
+    return "🚀 " + body.strip() + "\n\n#Tech #Dev #Web #Code"
+
+
+def test_repair_length_keeps_a_post_that_already_fits(monkeypatch):
+    call = MagicMock()
+    monkeypatch.setattr(agent, "call_json", call)
+    post = _post((LO + HI) // 2)
+    monkeypatch.setattr(agent, "fit_to_character_range", lambda p: p)
+    assert agent.repair_length(post) == post
+    call.assert_not_called()
+
+
+def test_repair_length_trims_an_overlong_post_in_place(monkeypatch):
+    monkeypatch.setattr(agent, "fit_to_character_range", lambda p: p)
+    monkeypatch.setattr(agent, "clamp_emojis", lambda p, lo, hi: p)
+    fixed = _post((LO + HI) // 2)
+    call = MagicMock(return_value={"post": fixed})
+    monkeypatch.setattr(agent, "call_json", call)
+    assert agent.repair_length(_post(HI + 120)) == fixed
+    assert call.call_count == 1
+    assert "cut" in call.call_args[0][0]
+
+
+def test_repair_length_ignores_an_edit_that_makes_it_worse(monkeypatch):
+    monkeypatch.setattr(agent, "fit_to_character_range", lambda p: p)
+    monkeypatch.setattr(agent, "clamp_emojis", lambda p, lo, hi: p)
+    original = _post(LO - 100)
+    monkeypatch.setattr(agent, "call_json", MagicMock(side_effect=[
+        {"post": _post(LO - 600)}, {"nope": 1}, RuntimeError("offline")]))
+    assert agent.repair_length(original) == original
+
+
+# ---------------------------------------------------------------- JSON check
+
+def test_code_with_json_keys_is_not_mistaken_for_a_raw_json_draft():
+    code_post = 'Use fetch:\nconst body = { "name": "x", "id": 1 };\n' + "x " * 10
+    assert not any("JSON" in i for i in agent.hard_checks(code_post))
+    assert any("JSON" in i for i in agent.hard_checks('{"post": "hello"}'))
+    assert any("JSON" in i for i in agent.hard_checks('Intro "headline": "x" more'))
+
+
+# ---------------------------------------------------------------- reviews
+
+def _ok_review(**_):
+    return {"approved": True, "issues": [],
+            "scores": {k: 5 for k in ("meaningful", "sourced", "on_topic", "professional",
+                                      "technical_depth", "takeaway", "code")}}
+
+
+def test_review_text_runs_the_fact_check_first(monkeypatch):
+    monkeypatch.setattr(agent, "fact_check", MagicMock(return_value={"approved": False,
+                                                                     "issues": ["Claim X unsupported"]}))
+    call = MagicMock()
+    monkeypatch.setattr(agent, "call_json", call)
+    ok, issues, detail = agent.review_text("H", "post", [{"url": "u"}])
+    assert not ok and issues == ["[fact-check] Claim X unsupported"]
+    call.assert_not_called()
+
+
+def test_review_text_enforces_the_score_threshold_itself(monkeypatch):
+    monkeypatch.setattr(agent, "fact_check", MagicMock(return_value={"approved": True}))
+    low = _ok_review()
+    low["scores"]["takeaway"] = 2  # the model said approved, but one score is too low
+    monkeypatch.setattr(agent, "call_json", MagicMock(side_effect=[_ok_review(), low, _ok_review()]))
+    ok, issues, detail = agent.review_text("H", "post", [{"url": "u"}])
+    assert not ok and len(detail["reviews"]) == 3
+    assert any("[review 2]" in i for i in issues)
+
+
+def test_review_text_custom_topic_needs_one_pass(monkeypatch):
+    monkeypatch.setattr(agent, "fact_check", MagicMock(return_value={"approved": True}))
+    call = MagicMock(return_value=_ok_review())
+    monkeypatch.setattr(agent, "call_json", call)
+    ok, issues, _ = agent.review_text("H", "post", [{"url": "u"}], is_custom_topic=True)
+    assert ok and not issues and call.call_count == 1
+
+
+def test_scored_rejects_missing_or_bad_scores():
+    assert not agent._scored({"approved": True, "scores": {"a": 5}}, {"a", "b"})["approved"]
+    assert not agent._scored({"approved": True, "scores": {"a": "high"}}, {"a"})["approved"]
+    assert not agent._scored({"approved": True, "scores": "x"}, {"a"})["approved"]
+    assert agent._scored({"approved": True, "scores": {"a": 4}}, {"a"})["approved"]
+
+
+@pytest.mark.parametrize("error, unavailable", [
+    (ValueError("too little readable text on https://solidjs.com"), True),
+    (ValueError("something else"), False),
+    (requests.ConnectionError("down"), False),
+])
+def test_fact_check_safely_marks_unreadable_pages(monkeypatch, error, unavailable):
+    monkeypatch.setattr(agent, "fact_check", MagicMock(side_effect=error))
+    fc = agent._fact_check_safely("post", [])
+    assert fc["approved"] is False and fc["source_unavailable"] is unavailable
+
+
+def test_fact_check_safely_reports_other_http_errors(monkeypatch):
+    error = requests.HTTPError("500 Server Error", response=MagicMock(status_code=500))
+    monkeypatch.setattr(agent, "fact_check", MagicMock(side_effect=error))
+    fc = agent._fact_check_safely("post", [])
+    assert fc["approved"] is False and "Source verification failed" in fc["issues"][0]
+
+
+def test_review_image_sends_the_picture_and_reports_issues(monkeypatch, tmp_path):
+    png = tmp_path / "p.png"
+    png.write_bytes(b"\x89PNG fake")
+    call = MagicMock(return_value={"approved": True, "scores": {"image_text": 5, "image_match": 3},
+                                   "issues": ["Label cut off"]})
+    monkeypatch.setattr(agent, "call_json", call)
+    ok, issues, _ = agent.review_image("H", "post", png)
+    assert not ok and issues == ["[image] Label cut off"]
+    assert call.call_args[0][1][1]["type"] == "image"
+
+
+def test_produce_infographic_redraws_only_the_image_with_the_reviewers_notes(monkeypatch, tmp_path):
+    monkeypatch.setattr(agent, "plan_infographic", MagicMock(return_value="brief"))
+    feedbacks = []
+
+    def draw(post, brief, headline, footer, path, feedback):
+        feedbacks.append(feedback)
+        path.write_bytes(b"png")
+        return path, None
+
+    monkeypatch.setattr(agent, "draw_poster", draw)
+    monkeypatch.setattr(agent, "review_image", MagicMock(side_effect=[
+        (False, ["[image] Code differs from the post"], {}), (True, [], {"scores": {}})]))
+    media, issues, _ = agent.produce_infographic("post", "H", "idea", tmp_path / "p.png")
+    assert media.name == "p_2.png" and issues == []
+    assert feedbacks == [None, "[image] Code differs from the post"]
+
+
+def test_produce_infographic_keeps_the_drawing_when_the_reviewer_is_down(monkeypatch, tmp_path):
+    monkeypatch.setattr(agent, "plan_infographic", MagicMock(return_value="brief"))
+    monkeypatch.setattr(agent, "draw_poster", lambda *a: (tmp_path / "p_1.png", None))
+    monkeypatch.setattr(agent, "review_image", MagicMock(side_effect=RuntimeError("offline")))
+    media, issues, review = agent.produce_infographic("post", "H", "idea", tmp_path / "p.png")
+    assert media == tmp_path / "p_1.png" and issues == [] and review == {}
+
+
+def test_produce_infographic_reports_when_nothing_could_be_drawn(monkeypatch, tmp_path):
+    monkeypatch.setattr(agent, "plan_infographic", MagicMock(return_value="brief"))
+    monkeypatch.setattr(agent, "draw_poster", lambda *a: (None, "bad svg"))
+    media, issues, _ = agent.produce_infographic("post", "H", "idea", tmp_path / "p.png", tries=2)
+    assert media is None and issues == ["[image] bad svg"]
+
+
+def test_produce_infographic_returns_the_last_drawing_after_every_try_is_rejected(monkeypatch, tmp_path):
+    monkeypatch.setattr(agent, "plan_infographic", MagicMock(return_value="brief"))
+    monkeypatch.setattr(agent, "draw_poster", lambda post, b, h, f, path, fb: (path, None))
+    monkeypatch.setattr(agent, "review_image", MagicMock(return_value=(False, ["[image] x"], {})))
+    media, issues, _ = agent.produce_infographic("post", "H", "idea", tmp_path / "p.png", tries=2)
+    assert media.name == "p_2.png" and issues == ["[image] x"]
+
+
+# ---------------------------------------------------------------- verbatim code
+
+def test_code_lines_not_in_the_post_are_dropped():
+    post = "Use it:\nconst user = await db.get(id);\nreturn  user;"
+    plan = {"modules": [
+        {"kind": "code", "lines": ["const user = await db.get(id);", "db.get()  // missing id",
+                                   "return user;"]},
+        {"kind": "code", "lines": ["invented()"]},
+        {"kind": "checklist", "lines": ["Keep this"]},
+    ]}
+    agent._keep_verbatim_code(plan, post)
+    assert plan["modules"] == [
+        {"kind": "code", "lines": ["const user = await db.get(id);", "return user;"]},
+        {"kind": "checklist", "lines": ["Keep this"]},
+    ]
+    agent._keep_verbatim_code({"modules": "x"}, post)  # malformed plans are left alone
+
+
+def test_plan_infographic_filters_code_from_the_blueprint(monkeypatch):
+    monkeypatch.setattr(agent, "call_json", MagicMock(return_value={
+        "modules": [{"kind": "code", "lines": ["made_up()"]}, {"kind": "stats", "lines": ["1 | a"]}]}))
+    brief = agent.plan_infographic("post with real_code()", "H", "idea")
+    assert "made_up" not in brief and '"stats"' in brief
+
+
+# ---------------------------------------------------------------- posters
+
+NODES = [{"label": f"Step {i}", "detail": "Short detail", "icon": "check"} for i in range(4)]
+CHECKS = {"kind": "checklist", "heading": "Checks", "icon": "check", "lines": ["One", "Two"]}
+STEPS = {"kind": "steps", "heading": "Steps", "icon": "layers", "lines": ["One", "Two"]}
+
+
+def _plan(**extra):
+    plan = {"title": "Faster builds", "subtitle": "What changed", "tagline": "Less waiting",
+            "hero": {"form": "flow", "caption": "c", "nodes": NODES},
+            "modules": [CHECKS, STEPS, {"kind": "steps", "heading": "More", "lines": ["x"]}],
+            "gotcha": {"heading": "Watch out", "text": "Plugins may need updates."},
+            "takeaway": "Measure before you switch."}
+    plan.update(extra)
+    return plan
+
+
+def _brief(plan):
+    return MARKER + "\n" + json.dumps(plan)
+
+
+def _style(svg):
+    return re.search(r'data-style="([a-z_]+)"', svg).group(1)
+
+
+def test_number_parsing_and_comparability():
+    assert P._number("45%") == (45.0, "%")
+    assert P._number("120 ms") == (120.0, "ms")
+    assert P._number("1,200 req/s") == (1200.0, "req/s")
+    assert P._number("$0") == (0.0, "$")
+    assert P._number("3,5x") == (3.5, "x")
+    assert P._number("v2.1") is None
+    assert P._number("12 a very long unit name") is None
+    assert P._comparable(["120 ms | Vite", "340 ms | Webpack"])
+    assert not P._comparable(["40% | smaller", "3x | faster"])  # different units
+    assert not P._comparable(["19 | major", "2 | hooks"])  # unitless unless asked for a chart
+    assert P._comparable(["19 | major", "2 | hooks"], chart=True)
+    assert not P._comparable(["0 ms | a", "0 ms | b"])
+    assert not P._comparable("not a list")
+
+
+def test_dashboard_draws_a_bar_chart_for_comparable_numbers():
+    chart = {"kind": "chart", "heading": "Cold start", "icon": "chart",
+             "lines": ["120 ms | Vite 6", "340 ms | Webpack 5", "90 ms | Rspack"]}
+    svg = poster_from_brief(_brief(_plan(modules=[chart, CHECKS, STEPS])), "H", "F",
+                            style="dashboard", theme="ocean")
+    widths = [int(w) for w in re.findall(r'<rect x="\d+" y="\d+" width="(\d+)" height="18"', svg)]
+    assert len(widths) == 3 and widths[1] == max(widths)  # 340 ms is the longest bar
+    assert "340 ms" in svg and "Rspack" in svg
+
+
+def test_dashboard_tiles_get_a_ring_for_a_percentage():
+    stats = {"kind": "stats", "heading": "Numbers", "icon": "chart",
+             "lines": ["40% | smaller bundle", "3x | faster start", "100% | typed"]}
+    svg = poster_from_brief(_brief(_plan(modules=[stats, CHECKS, STEPS])), "H", "F",
+                            style="dashboard", theme="ocean")
+    assert svg.count("<circle") == 3  # two tracks and a full ring for 100%
+    assert 'stroke-dasharray="none"' in re.search(r"<path d=\"M [^>]*A [^>]*>", svg).group(0)
+
+
+def test_ring_edge_cases():
+    parts: list[str] = []
+    P._ring(parts, 0, 0, 10, 0, "#000")
+    assert len(parts) == 1  # only the track
+    P._ring(parts, 0, 0, 10, 75, "#000")
+    assert ' 1 1 ' in parts[-1]  # a large arc past half way
+
+
+def test_wide_modules_draw_comparable_stats_as_bars():
+    chart = {"kind": "stats", "heading": "Latency", "icon": "chart",
+             "lines": ["120 ms | p50", "340 ms | p99"]}
+    parts: list[str] = []
+    P._module(parts, chart, 40, 600, 1000, 186, 1, "#123456")
+    assert sum('height="18"' in p for p in parts) == 2
+
+
+def test_a_layout_that_would_cut_text_is_swapped_for_one_that_fits(monkeypatch):
+    plan = _plan()
+    first = P._style_order(plan, None, "H")[0]
+    real = P._LAYOUTS[first]
+
+    def cutting(parts, *a):
+        P._CUTS.append("a phrase cut short")
+        real(parts, *a)
+
+    monkeypatch.setitem(P._LAYOUTS, first, cutting)
+    assert _style(poster_from_brief(_brief(plan), "H", "F")) != first
+
+
+def test_when_every_layout_cuts_the_one_with_fewest_cuts_wins(monkeypatch):
+    plan = _plan()
+    order = P._style_order(plan, None, "H")
+    for i, name in enumerate(order):
+        real = P._LAYOUTS[name]
+
+        def cutting(parts, *a, real=real, n=abs(i - 1) + 1):
+            P._CUTS.extend(["cut"] * n)
+            real(parts, *a)
+
+        monkeypatch.setitem(P._LAYOUTS, name, cutting)
+    assert _style(poster_from_brief(_brief(plan), "H", "F")) == order[1]
+
+
+def test_excluding_every_layout_returns_none():
+    plan = _plan()
+    assert poster_from_brief(_brief(plan), "H", "F",
+                             exclude=P._style_order(plan, None, "H")) is None
+
+
+def test_random_choice_uses_the_roster_and_skips_recent_ones():
+    plan = _plan()
+    rng = random.Random(7)
+    styles = {P.choose_style(plan, ["guide"], "H", rng) for _ in range(40)}
+    assert len(styles) == 3 and "guide" not in styles
+    themes = {P.choose_theme(plan, ["ocean", "forest"], rng) for _ in range(60)}
+    assert len(themes) >= 3 and not themes & {"ocean", "forest"}
+
+
+def test_random_theme_sometimes_follows_the_planners_hint():
+    plan = _plan(theme="ember")
+    picks = [P.choose_theme(plan, None, random.Random(i)) for i in range(40)]
+    assert 10 < picks.count("ember") < 40
+
+
+def test_long_watch_out_text_wraps_to_two_lines_instead_of_being_cut():
+    plan = _plan(gotcha={"heading": "Watch out",
+                         "text": "Older plugins that hook into the legacy loader API need an update "
+                                 "before you switch, or the build fails."})
+    P._CUTS.clear()
+    svg = poster_from_brief(_brief(plan), "H", "F", style="guide", theme="ocean")
+    assert not P._CUTS
+    assert "or the build fails." in svg
+
+
+def test_draw_poster_tries_another_structured_layout_before_the_designer(monkeypatch, tmp_path):
+    from tests.test_poster_pipeline import BRIEF
+
+    calls = {"n": 0}
+
+    def layout(svg):
+        calls["n"] += 1
+        return ["overlap"] if calls["n"] == 1 else []
+
+    monkeypatch.setattr(agent, "layout_issues", layout)
+    designer = MagicMock()
+    monkeypatch.setattr(agent, "design_svg", designer)
+    media, feedback = agent.draw_poster("post", BRIEF, "Head", "Footer", tmp_path / "p.png")
+    assert media is not None and feedback is None
+    assert calls["n"] == 2
+    designer.assert_not_called()
+
+
+CHART = {"kind": "chart", "heading": "Cold start time", "icon": "chart",
+         "lines": ["120 ms | Vite 6", "340 ms | Webpack 5", "90 ms | Rspack"]}
+RINGS = {"kind": "stats", "heading": "By the numbers", "icon": "chart",
+         "lines": ["40% | smaller bundle", "3x | faster cold start", "100% | typed"]}
+
+
+@pytest.mark.parametrize("theme", sorted(P.THEMES))
+@pytest.mark.parametrize("modules", [[CHART, CHECKS, STEPS], [RINGS, CHECKS, STEPS],
+                                     [CHECKS, STEPS, CHART, RINGS]])
+def test_charts_and_rings_pass_every_poster_check(theme, modules):
+    """The new bar charts and rings get the same checks as every layout before publishing."""
+    from infographic import design_quality_checks, finalize_svg, svg_checks
+    from layout_check import layout_issues
+
+    for style in [s for s in P._eligible(_plan(modules=modules), "H")
+                  if s in ("dashboard", "guide", "timeline")]:
+        svg = finalize_svg(poster_from_brief(_brief(_plan(modules=modules)), "H", "Guhaprasaanth N",
+                                             style=style, theme=theme))
+        assert svg_checks(svg) + design_quality_checks(svg) + layout_issues(svg) == [], style

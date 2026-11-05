@@ -83,6 +83,11 @@ def _clean(value: object) -> str:
     return " ".join(str(value or "").split())
 
 
+# Text that had to be shortened while drawing the current poster. poster_from_brief tries another
+# layout when this is not empty, so a reader never sees a phrase cut off mid-thought.
+_CUTS: list[str] = []
+
+
 def _wrap(value: object, width: int, font_size: int, max_lines: int) -> list[str]:
     """Conservatively wrap SVG text, which has no native line wrapping."""
     text = _clean(value)
@@ -92,6 +97,7 @@ def _wrap(value: object, width: int, font_size: int, max_lines: int) -> list[str
     line = ""
     for word in words:
         if len(word) > limit:
+            _CUTS.append(word)
             word = word[:limit - 1] + "…"
         candidate = f"{line} {word}".strip()
         if len(candidate) > limit and line:
@@ -102,6 +108,7 @@ def _wrap(value: object, width: int, font_size: int, max_lines: int) -> list[str
     if line:
         lines.append(line)
     if len(lines) > max_lines:
+        _CUTS.append(text)
         lines = lines[:max_lines]
         lines[-1] = lines[-1].rstrip(" .,;:")
     return lines
@@ -114,6 +121,7 @@ def _fit_words(value: object, width: int, font_size: int) -> str:
     for word in _clean(value).split():
         candidate = f"{out} {word}".strip()
         if len(candidate) > limit:
+            _CUTS.append(_clean(value))
             break
         out = candidate
     return out or _clean(value)[:limit]
@@ -132,6 +140,7 @@ def _wrap_code(value: object, width: int, font_size: int, max_lines: int) -> lis
         lines.append(text[:cut].rstrip())
         text = "  " + text[cut:].lstrip()
     if len(text) > limit:
+        _CUTS.append(text)
         text = text[:limit - 1] + "…"
     lines.append(text)
     return lines
@@ -184,6 +193,88 @@ def _node(parts: list[str], node: dict, x: int, y: int, w: int, h: int,
                         size=22, max_lines=1 if len(label) > 1 else 2, step=29))
 
 
+STAT_KINDS = ("stats", "chart")
+_NUMBER = re.compile(r"^\s*([~≈<>]?\s*[$€£]?)\s*(\d+(?:[.,]\d+)*)\s*(.*?)\s*$")
+
+
+def _number(value: object) -> tuple[float, str] | None:
+    """A leading number and its unit ("45%" -> (45, "%"), "120 ms" -> (120, "ms")), or None."""
+    match = _NUMBER.match(_clean(value))
+    if not match or len(match.group(3)) > 8:
+        return None
+    digits = match.group(2)
+    digits = digits.replace(",", "") if re.fullmatch(r"\d{1,3}(,\d{3})+", digits) else digits.replace(",", ".")
+    try:
+        number = float(digits)
+    except ValueError:
+        return None
+    unit = (match.group(1).replace(" ", "").lstrip("~≈<>") + match.group(3)).lower()
+    return number, unit
+
+
+def _pairs(lines: object) -> list[tuple[str, str]]:
+    """The 'value | caption' lines of a stats or chart module."""
+    if not isinstance(lines, list):
+        return []
+    out = []
+    for line in lines:
+        value, bar, caption = str(line).partition("|")
+        if bar and _clean(value) and _clean(caption):
+            out.append((_clean(value), _clean(caption)))
+    return out
+
+
+def _comparable(lines: object, chart: bool = False) -> bool:
+    """True when the values can share one bar chart: two or more numbers in the same unit.
+
+    Unitless numbers (a version, a count of new hooks) only chart when the planner asked for one.
+    """
+    pairs = _pairs(lines)[:4]
+    numbers = [_number(value) for value, _ in pairs]
+    if len(pairs) < 2 or any(n is None for n in numbers):
+        return False
+    units = {unit for _, unit in numbers}
+    return len(units) == 1 and (chart or units != {""}) and max(n for n, _ in numbers) > 0
+
+
+def _bars(parts: list[str], pairs: list[tuple[str, str]], x: int, y: int, w: int, step: int,
+          accent: str | list[str], muted: str) -> None:
+    """A horizontal bar chart: caption, a bar scaled to the largest value, then the value."""
+    numbers = [(_number(value) or (0.0, ""))[0] for value, _ in pairs]
+    top = max(numbers) or 1
+    caption_w = int(w * 0.42)
+    value_w = max(90, int(max(len(v) for v, _ in pairs) * 22 * 0.61) + 10)
+    bar_x, bar_max = x + caption_w + 12, w - caption_w - 12 - value_w - 10
+    for i, ((value, caption), number) in enumerate(zip(pairs, numbers)):
+        row = y + i * step
+        parts.append(_text(x, row, _fit_words(caption, caption_w, 22), size=22, fill=muted))
+        colour = accent[i % len(accent)] if isinstance(accent, list) else accent
+        length = max(18, int(bar_max * number / top))
+        parts.append(_rect(bar_x, row - 16, length, 18, colour, radius=9))
+        parts.append(_text(bar_x + length + 10, row, value, size=22, fill=colour, weight="bold"))
+
+
+def _ring(parts: list[str], cx: int, cy: int, r: int, percent: float, colour: str) -> None:
+    """A progress ring for a percentage (the arc is solid, so the GIF does not dash it)."""
+    import math
+
+    share = min(max(percent, 0.0), 100.0) / 100
+    parts.append(f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="@soft_stroke@" '
+                 f'stroke-width="9"/>')
+    if share >= 0.999:
+        parts.append(f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{colour}" '
+                     f'stroke-width="9"/>')
+        return
+    if share <= 0:
+        return
+    angle = 2 * math.pi * share - math.pi / 2
+    ex, ey = cx + r * math.cos(angle), cy + r * math.sin(angle)
+    large = 1 if share > 0.5 else 0
+    parts.append(f'<path d="M {cx} {cy - r} A {r} {r} 0 {large} 1 {ex:.1f} {ey:.1f}" fill="none" '
+                 f'stroke="{colour}" stroke-width="9" stroke-linecap="round" '
+                 f'stroke-dasharray="none"/>')
+
+
 def _module(parts: list[str], module: dict, x: int, y: int, w: int, h: int,
             number: int, accent: str) -> None:
     kind = _clean(module.get("kind")).lower()
@@ -203,7 +294,10 @@ def _module(parts: list[str], module: dict, x: int, y: int, w: int, h: int,
     if not isinstance(raw_lines, list):
         raw_lines = []
     content: list[str] = []
-    if kind == "stats" and any("|" in str(r) for r in raw_lines):
+    if kind in STAT_KINDS and w >= 450 and _comparable(raw_lines, kind == "chart"):
+        _bars(parts, _pairs(raw_lines)[:4], x + 24, y + 84, w - 48, 28, accent, muted)
+        return
+    if kind in STAT_KINDS and any("|" in str(r) for r in raw_lines):
         for i, raw in enumerate(raw_lines[:4]):
             value, _, caption = str(raw).partition("|")
             value = _fit_words(value, 175, 26)
@@ -356,22 +450,24 @@ def _modules_grid(parts: list[str], plan: dict, modules: list, accent: list[str]
 
 
 def _bottom(parts: list[str], plan: dict, footer: str) -> None:
-    """Watch-out strip, takeaway banner and footer: shared by every layout."""
+    """Watch-out strip, takeaway banner and footer: shared by every layout.
+
+    The watch-out text and the takeaway each get two lines, so neither is cut mid-sentence.
+    """
     gotcha = plan["gotcha"]
-    parts.append(_rect(40, 1105, 1000, 74, "@warn_bg@", stroke="@warn_stroke@"))
-    parts.append(_icon("warning", 60, 1120, "@warn_icon@", 1.5))
-    parts.append(_text(110, 1139, _wrap(gotcha.get("heading") or "Watch out", 250, 24, 1)[0],
+    parts.append(_rect(40, 1098, 1000, 100, "@warn_bg@", stroke="@warn_stroke@"))
+    parts.append(_icon("warning", 60, 1112, "@warn_icon@", 1.5))
+    parts.append(_text(110, 1132, _fit_words(gotcha.get("heading") or "Watch out", 880, 24),
                        size=24, fill="@warn_head@", weight="bold"))
-    parts.extend(_lines(110, 1165, gotcha.get("text"), 900, size=22, max_lines=1,
+    parts.extend(_lines(110, 1160, gotcha.get("text"), 900, size=22, max_lines=2, step=26,
                         fill="@warn_text@"))
-    # The takeaway may wrap to two lines inside the banner, so it is not clipped with an ellipsis.
-    parts.append(_rect(40, 1192, 1000, 84, "@strong@"))
-    parts.append(_icon("bulb", 60, 1217, "@on_strong@", 1.5))
-    parts.extend(_lines(110, 1226, plan["takeaway"], 900, size=23, max_lines=2, step=26,
+    parts.append(_rect(40, 1206, 1000, 74, "@strong@"))
+    parts.append(_icon("bulb", 60, 1226, "@on_strong@", 1.5))
+    parts.extend(_lines(110, 1236, plan["takeaway"], 900, size=23, max_lines=2, step=26,
                         fill="@on_strong@", weight="bold"))
-    parts.append('<line x1="60" y1="1285" x2="1020" y2="1285" stroke="@rule@" '
+    parts.append('<line x1="60" y1="1290" x2="1020" y2="1290" stroke="@rule@" '
                  'stroke-width="2" stroke-dasharray="none"/>')
-    parts.append(_text(60, 1321, footer, size=22, fill="@footer@"))
+    parts.append(_text(60, 1324, footer, size=22, fill="@footer@"))
 
 
 def _soft_header(parts: list[str], plan: dict, headline: str, kicker: str, icon: str) -> None:
@@ -553,7 +649,7 @@ def _stats_module(plan: dict) -> dict | None:
     """The first stats module with at least two 'value | caption' lines."""
     for module in plan["modules"]:
         lines = module.get("lines") if isinstance(module.get("lines"), list) else []
-        if (_clean(module.get("kind")).lower() == "stats"
+        if (_clean(module.get("kind")).lower() in STAT_KINDS
                 and sum("|" in str(line) for line in lines) >= 2):
             return module
     return None
@@ -581,16 +677,32 @@ def _layout_dashboard(parts: list[str], plan: dict, headline: str, accent: list[
     stats = _stats_module(plan)
     rest = [m for m in plan["modules"] if m is not stats]
     _card_header(parts, plan, headline, "BY THE NUMBERS", "chart")
-    pairs = [str(line).partition("|") for line in stats["lines"] if "|" in str(line)][:4]
-    k = len(pairs)
-    w, size = (1000 - 16 * (k - 1)) // k, 44 if k <= 3 else 36
-    for i, (value, _, caption) in enumerate(pairs):
-        x, colour = 40 + i * (w + 16), accent[i % len(accent)]
-        parts.append(_rect(x, 235, w, 170, "@card@", stroke="@card_stroke@"))
-        parts.append(_rect(x, 235, w, 7, colour, radius=3))
-        parts.append(_text(x + 22, 300, _fit_words(value, w - 44, size), size=size, fill=colour,
-                           weight="bold"))
-        parts.extend(_lines(x + 22, 342, caption, w - 44, size=22, max_lines=2, step=28))
+    if _comparable(stats["lines"], _clean(stats.get("kind")).lower() == "chart"):
+        # Numbers in one unit read best side by side, as a bar chart.
+        pairs = _pairs(stats["lines"])[:4]
+        k = len(pairs)
+        step = min(52, 150 // k)
+        parts.append(_rect(40, 235, 1000, 170, "@card@", stroke="@card_stroke@"))
+        parts.append(_rect(40, 235, 1000, 7, accent[0], radius=3))
+        _bars(parts, pairs, 70, 235 + (170 - step * (k - 1)) // 2 + 8, 940, step, accent,
+              "@ink@")
+    else:
+        pairs = _pairs(stats["lines"])[:4]
+        k = len(pairs)
+        w, size = (1000 - 16 * (k - 1)) // k, 44 if k <= 3 else 36
+        for i, (value, caption) in enumerate(pairs):
+            x, colour = 40 + i * (w + 16), accent[i % len(accent)]
+            parts.append(_rect(x, 235, w, 170, "@card@", stroke="@card_stroke@"))
+            parts.append(_rect(x, 235, w, 7, colour, radius=3))
+            number = _number(value)
+            room = w - 44
+            if number and number[1] == "%" and w >= 230:
+                # A percentage also gets a progress ring in the tile's corner.
+                _ring(parts, x + w - 52, 282, 28, number[0], colour)
+                room = w - 44 - 80
+            parts.append(_text(x + 22, 300, _fit_words(value, room, size), size=size,
+                               fill=colour, weight="bold"))
+            parts.extend(_lines(x + 22, 342, caption, w - 44, size=22, max_lines=2, step=28))
     parts.append(_text(45, 445, "HOW IT WORKS", size=24, fill="@primary@", weight="bold"))
     _ribbon(parts, plan["hero"]["nodes"], accent, 460, 200)
     if len(rest) == 3:
@@ -1022,7 +1134,7 @@ def _eligible(plan: dict, headline: str = "") -> list[str]:
     hero, modules = plan["hero"], plan["modules"]
     n, form = len(hero["nodes"]), _clean(hero.get("form")).lower()
     post_type = _clean(plan.get("post_type")).lower()
-    has_stats = any(_clean(m.get("kind")).lower() == "stats" for m in modules)
+    has_stats = any(_clean(m.get("kind")).lower() in STAT_KINDS for m in modules)
     ok = {
         "guide": True,
         "timeline": True,
@@ -1056,7 +1168,7 @@ def _style_candidates(plan: dict, headline: str = "") -> list[str]:
         order.append("comparison")
     if post_type in ("bug_fix", "breaking_change", "incident"):
         order.append("incident")
-    if post_type == "benchmark" or "stats" in kinds:
+    if post_type == "benchmark" or kinds & set(STAT_KINDS):
         order += ["dashboard", "spotlight"]
     if "code" in kinds:
         order.append("code_focus")
@@ -1083,33 +1195,72 @@ def _recent(value: str | list | tuple | None) -> list[str]:
     return [str(v) for v in value or ()]
 
 
-def choose_style(plan: dict, recent: str | list | tuple | None = None, headline: str = "") -> str:
-    """The best-suited layout not used in the last three posters (or at least not the last one)."""
+def choose_style(plan: dict, recent: str | list | tuple | None = None, headline: str = "",
+                 rng=None) -> str:
+    """A suitable layout not used in the last three posters (or at least not the last one).
+
+    Without rng the best-suited layout wins (stable, for tests). With rng one of the three
+    best-suited fresh layouts is picked at random, so the roster is used rather than one favourite.
+    """
+    return _style_order(plan, recent, headline, rng)[0]
+
+
+def _style_order(plan: dict, recent: str | list | tuple | None, headline: str,
+                 rng=None) -> list[str]:
+    """Every eligible layout in the order to try: the chosen one first, recent ones last."""
     recent = _recent(recent)
     candidates = _style_candidates(plan, headline)
     fresh = [s for s in candidates if s not in recent[-3:]]
-    return (fresh or [s for s in candidates if s not in recent[-1:]])[0]
+    if not fresh:
+        fresh = [s for s in candidates if s not in recent[-1:]] or candidates
+    if rng is not None:
+        pick = rng.choice(fresh[:3])
+        fresh = [pick] + [s for s in fresh if s != pick]
+    return fresh + [s for s in candidates if s not in fresh]
 
 
-def choose_theme(plan: dict, recent: str | list | tuple | None = None) -> str:
-    """The planner's suggested palette, or a stable pick from the title; never one of the last two."""
+def choose_theme(plan: dict, recent: str | list | tuple | None = None, rng=None) -> str:
+    """A colour theme that is never one of the last two.
+
+    Without rng: the planner's hint, else a stable pick from the title. With rng: the hint about
+    half the time, otherwise any other fresh theme at random.
+    """
     recent = _recent(recent)[-2:]
     hint = _clean(plan.get("theme")).lower()
-    if hint in THEMES and hint not in recent:
-        return hint
     names = [t for t in THEMES if t not in recent]
+    if rng is not None:
+        if hint in names and rng.random() < 0.5:
+            return hint
+        return rng.choice(names)
+    if hint in names:
+        return hint
     seed = sum(ord(c) for c in _clean(plan.get("title")) + _clean(plan.get("takeaway")))
     return names[seed % len(names)]
+
+
+def _render(plan: dict, headline: str, footer: str, style: str, theme: str) -> tuple[str, list[str]]:
+    """Draw one layout; returns the SVG and any text that had to be shortened."""
+    _CUTS.clear()
+    parts: list[str] = []
+    _start(parts, style, theme)
+    _LAYOUTS[style](parts, plan, headline, list(ACCENTS))
+    _bottom(parts, plan, footer)
+    parts.append("</svg>")
+    return _apply_theme("".join(parts), theme), list(_CUTS)
 
 
 def poster_from_brief(brief: str, headline: str, footer: str, *,
                       recent_styles: str | list | tuple | None = None,
                       recent_themes: str | list | tuple | None = None, style: str | None = None,
-                      theme: str | None = None) -> str | None:
+                      theme: str | None = None, rng=None, exclude: tuple | list = ()) -> str | None:
     """Render a complete poster from the blueprint embedded by plan_infographic.
 
     The layout and colour theme follow the content and always differ from the previous poster's
-    (recent_styles, recent_themes, oldest first). style/theme force a choice, which the tests use to cover every pair.
+    (recent_styles, recent_themes, oldest first); rng randomises both among the suitable ones.
+    When a layout would have to shorten any text, the next suitable layout is tried, so a phrase
+    is never cut off; if every layout needs a cut, the one with the fewest is used.
+    exclude skips layouts that already failed a later check. style/theme force a choice, which the
+    tests use to cover every pair.
     """
     if MARKER not in brief:
         return None
@@ -1129,13 +1280,18 @@ def poster_from_brief(brief: str, headline: str, footer: str, *,
             or not _clean(plan.get("takeaway"))):
         return None
 
-    if style not in _eligible(plan, headline):
-        style = choose_style(plan, recent_styles, headline)
     if theme not in THEMES:
-        theme = choose_theme(plan, recent_themes)
-    parts: list[str] = []
-    _start(parts, style, theme)
-    _LAYOUTS[style](parts, plan, headline, list(ACCENTS))
-    _bottom(parts, plan, footer)
-    parts.append("</svg>")
-    return _apply_theme("".join(parts), theme)
+        theme = choose_theme(plan, recent_themes, rng)
+    if style in _eligible(plan, headline):
+        return _render(plan, headline, footer, style, theme)[0]
+    order = [s for s in _style_order(plan, recent_styles, headline, rng) if s not in exclude]
+    if not order:
+        return None
+    best: tuple[str, list[str]] | None = None
+    for name in order:
+        svg, cuts = _render(plan, headline, footer, name, theme)
+        if not cuts:
+            return svg
+        if best is None or len(cuts) < len(best[1]):
+            best = (svg, cuts)
+    return best[0]

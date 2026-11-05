@@ -318,7 +318,9 @@ def test_run_dry_run_success(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(agent, "render_svg_to_gif", MagicMock())
     monkeypatch.setattr(agent, "plan_infographic", MagicMock(side_effect=lambda post, headline, idea: idea))
     monkeypatch.setattr(agent, "design_quality_checks", MagicMock(return_value=[]))
-    monkeypatch.setattr(agent, "review_all", MagicMock(return_value=(True, [], {"scores": {}})))
+    monkeypatch.setattr(agent, "review_text", MagicMock(return_value=(True, [], {"reviews": []})))
+    monkeypatch.setattr(agent, "review_image", MagicMock(return_value=(True, [], {})))
+    monkeypatch.setattr(agent, "call_json", MagicMock(side_effect=RuntimeError("offline")))
 
     mock_tg = MagicMock()
     # Execute dry run pipeline
@@ -412,7 +414,9 @@ def test_run_moves_to_another_source_when_cited_page_is_gone(tmp_path, monkeypat
         (False, ["[fact-check] Source page not found (404)"], {"fact_check": {"source_unavailable": True}}),
         (True, [], {"scores": {}}),
     ])
-    monkeypatch.setattr(agent, "review_all", review)
+    monkeypatch.setattr(agent, "review_text", review)
+    monkeypatch.setattr(agent, "review_image", MagicMock(return_value=(True, [], {})))
+    monkeypatch.setattr(agent, "repair_length", lambda post, tries=3: post)
     monkeypatch.setattr(agent, "hard_checks", MagicMock(return_value=[]))
     monkeypatch.setattr(agent, "source_checks", MagicMock(return_value=[]))
 

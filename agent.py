@@ -607,12 +607,40 @@ def call_json(system: str, content, tools: list | None = None, max_tokens: int =
     chain = _failover_chain(ACTIVE_LLM_PROVIDER == "anthropic" and "anthropic" not in DISABLED_PROVIDERS)
     for i, prov in enumerate(chain):
         try:
-            return callers[prov](system, content, tools=tools, max_tokens=max_tokens)
+            return _with_network_retries(
+                lambda: callers[prov](system, content, tools=tools, max_tokens=max_tokens))
         except Exception as e:
             if i == len(chain) - 1:
                 raise
             notify_provider_switch(prov, chain[i + 1], str(e))
             ACTIVE_LLM_PROVIDER = chain[i + 1]
+
+
+# A dropped connection is worth retrying on the same provider; an empty credit balance is not.
+_TRANSIENT = ("incomplete chunked read", "peer closed connection", "connection reset",
+              "connection aborted", "remoteprotocolerror", "remote end closed", "timed out",
+              "timeout", "temporarily unavailable", "service unavailable", "bad gateway", "503", "502")
+_PERMANENT = ("credit", "quota", "billing", "api key", "api_key", "permission", "invalid_request")
+
+
+def _is_transient(error: Exception) -> bool:
+    text = f"{type(error).__name__} {error}".lower()
+    return any(m in text for m in _TRANSIENT) and not any(m in text for m in _PERMANENT)
+
+
+def _with_network_retries(call, attempts: int = 3, delays: tuple = (3, 8)):
+    """Run call(); on a transient network error wait and try again (attempts in total)."""
+    import time
+
+    for n in range(attempts):
+        try:
+            return call()
+        except Exception as e:
+            if n == attempts - 1 or not _is_transient(e):
+                raise
+            wait = delays[min(n, len(delays) - 1)]
+            print(f"Network hiccup ({str(e)[:80]}); retrying in {wait}s...")
+            time.sleep(wait)
 
 
 # -----------------------------------------------------------------------------
@@ -726,24 +754,6 @@ infographic_idea. Never use an example or placeholder URL as a source."""
                 f"or keep the same item:\n{feedback}")
     res = call_json(system, msg, tools=web_tools(list(dict.fromkeys(tool_domains))), max_tokens=8000)
 
-    # If the draft post was produced but is shorter than 2600 chars, perform an expansion pass
-    if isinstance(res, dict) and "post" in res and not res.get("no_item"):
-        post_text = res["post"]
-        if len(post_text) < 2600:
-            expand_sys = (
-                f"You are a LinkedIn ghostwriter for {a['name']}, {a['role']}. "
-                f"LinkedIn posts should be comprehensive, in-depth technical deep-dives strictly between "
-                f"{CFG['post']['min_chars']} and {CFG['post']['max_chars']} characters. "
-                "Expand the provided post with deeper technical analysis, architectural trade-offs, "
-                "code explanations, edge cases, and actionable takeaways so that the total character count "
-                f"is approximately 2980 characters. Maintain the author voice. Return ONLY valid JSON: {{\"post\": \"...\"}}"
-            )
-            try:
-                expanded = call_json(expand_sys, f"Current post ({len(post_text)} chars):\n\n{post_text}", max_tokens=8000)
-                if expanded.get("post") and len(expanded["post"]) > len(post_text):
-                    res["post"] = expanded["post"]
-            except Exception:
-                pass
     return res
 
 
@@ -835,9 +845,9 @@ Return ONLY JSON:
           "caption": "at most 50 chars",
           "left_label": "before_after only: heading for the old way", "right_label": "before_after only: heading for the new way",
           "nodes": [{"label": "at most 18 chars", "detail": "at most 22 chars, a complete phrase", "icon": "ICON"}]},
- "modules": [{"kind": "code | checklist | stats | pros_cons | steps",
+ "modules": [{"kind": "code | checklist | stats | chart | pros_cons | steps",
               "heading": "at most 26 chars", "icon": "ICON",
-              "lines": ["at most 30 chars each, 3-4 lines, each a complete phrase; never end a line with an ellipsis. For kind=code use real code lines from the post; for stats use 'value | caption'"]}],
+              "lines": ["at most 30 chars each, 3-4 lines, each a complete phrase; never end a line with an ellipsis. For kind=code copy code lines character for character from the post; for stats and chart use 'value | caption'"]}],
  "gotcha": {"heading": "Watch out", "text": "at most 70 chars: the limitation, tradeoff or breaking change"},
  "takeaway": "at most 70 chars: the one thing to remember",
  "post_type": "POST_TYPES",
@@ -851,7 +861,7 @@ Return ONLY JSON:
  "layers": [{"name": "at most 22 chars", "items": [{"label": "at most 18 chars", "detail": "at most 26 chars", "icon": "ICON"}]}],
  "stages": [{"label": "at most 16 chars, short words", "detail": "at most 40 chars", "icon": "ICON"}]}
 
-Rules: choose hero.form from the content: before_after when the post contrasts an old way with a new way (exactly 4 nodes, 2 per side, with left_label and right_label); layers when the post is an ordered stack of levels or layers (3-4 nodes); otherwise flow (a sequence of steps). hero.nodes has 3-5 items (2 per side for before_after). modules has 3-4 items and must include a "code" module when the post has code, and a "stats" module when the post has numbers or versions. Each ICON must be one of: ICON_LIST. Choose theme, the colour palette, to suit the topic: THEME_HINTS. Set post_type to what the post is. Suggest the page layout that best fits the post: LAYOUT_HINTS. cards, table, layers and stages are optional: include only the one that matches the post's shape, and only with facts from the post. cards: exactly 6 or 9 when the post lists problems, mistakes, tips or principles. table: when the post compares two tools or approaches (3-5 rows, 2-3 "when" items each). layers: 2-4 layers of 1-3 items when the post describes a system architecture or stack. stages: 3-5 stages when the post describes a progression or maturity model. hero may also carry "hub": at most 18 chars naming the central component."""
+Rules: choose hero.form from the content: before_after when the post contrasts an old way with a new way (exactly 4 nodes, 2 per side, with left_label and right_label); layers when the post is an ordered stack of levels or layers (3-4 nodes); otherwise flow (a sequence of steps). hero.nodes has 3-5 items (2 per side for before_after). modules has 3-4 items and must include a "code" module when the post has code, and a "stats" module when the post has numbers or versions. Use kind "chart" instead of "stats" when the post gives 2-4 numbers in the same unit that are worth comparing (for example latencies in ms, sizes in KB, percentages, speed-ups such as 3x); it is drawn as a bar chart, so every value must start with the number. Each ICON must be one of: ICON_LIST. Choose theme, the colour palette, to suit the topic: THEME_HINTS. Set post_type to what the post is. Suggest the page layout that best fits the post: LAYOUT_HINTS. cards, table, layers and stages are optional: include only the one that matches the post's shape, and only with facts from the post. cards: exactly 6 or 9 when the post lists problems, mistakes, tips or principles. table: when the post compares two tools or approaches (3-5 rows, 2-3 "when" items each). layers: 2-4 layers of 1-3 items when the post describes a system architecture or stack. stages: 3-5 stages when the post describes a progression or maturity model. hero may also carry "hub": at most 18 chars naming the central component."""
 
 
 def plan_infographic(post: str, headline: str, idea: str) -> str:
@@ -877,8 +887,32 @@ def plan_infographic(post: str, headline: str, idea: str) -> str:
         return idea
     if not isinstance(plan, dict) or not plan.get("modules"):
         return idea
+    _keep_verbatim_code(plan, post)
     return (f"{idea}\n\nCONTENT BLUEPRINT (draw exactly this content; every fact comes from the post):\n"
             + json.dumps(plan, ensure_ascii=False, indent=1))
+
+
+def _keep_verbatim_code(plan: dict, post: str) -> None:
+    """Keep only code lines that appear in the post (spacing aside); drop a code module left empty.
+
+    A reviewer rightly rejects a poster whose code differs from the post's, and the planner
+    sometimes paraphrases code, so the poster may only quote it.
+    """
+    squash = lambda text: re.sub(r"\s+", "", str(text))  # noqa: E731
+    body = squash(post)
+    modules = plan.get("modules")
+    if not isinstance(modules, list):
+        return
+    kept = []
+    for module in modules:
+        if isinstance(module, dict) and str(module.get("kind", "")).strip().lower() == "code":
+            lines = module.get("lines") if isinstance(module.get("lines"), list) else []
+            lines = [line for line in lines if squash(line) and squash(line) in body]
+            if not lines:
+                continue
+            module["lines"] = lines
+        kept.append(module)
+    plan["modules"] = kept
 
 
 def _designer_prompt(headline: str, footer: str) -> str:
@@ -998,9 +1032,17 @@ def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: P
     # soft warning (such as an unknown icon name) can never block a post entirely.
     fallback_svg = None
     recent = _recent_poster_styles()
-    structured_svg = poster_from_brief(brief, headline, footer, recent_styles=recent["styles"],
-                                       recent_themes=recent["themes"])
-    if structured_svg:
+    rng = random.Random()
+    tried: list[str] = []
+    # A structured layout that fails a check is swapped for another suitable layout before the
+    # free-form designer is asked, because the structured layouts are the reliable ones.
+    for _ in range(3):
+        structured_svg = poster_from_brief(brief, headline, footer, recent_styles=recent["styles"],
+                                           recent_themes=recent["themes"], rng=rng, exclude=tried)
+        if not structured_svg:
+            break
+        style = re.search(r'data-style="([a-z_]+)"', structured_svg)
+        tried.append(style.group(1) if style else "")
         structured_svg = finalize_svg(structured_svg)
         issues = svg_checks(structured_svg) + design_quality_checks(structured_svg)
         if not issues:
@@ -1016,7 +1058,7 @@ def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: P
         else:
             feedback = "Structured poster checks failed: " + "; ".join(issues)
             print(feedback)
-        if not svg_checks(structured_svg):
+        if fallback_svg is None and not svg_checks(structured_svg):
             fallback_svg = structured_svg
     for try_no in range(3):
         try:
@@ -1084,6 +1126,38 @@ Return ONLY JSON:
              "technical_depth": n, "takeaway": n}},
   "approved": true/false,
   "issues": ["specific, actionable problem", ...]}}"""
+
+TEXT_REVIEWER_SYSTEM = """You are a strict senior editor for LinkedIn content. You receive a post
+and the sources it cites. There is no image yet: judge the text only.
+
+Check ALL of these:
+1. meaningful   - every sentence says something real and useful; no gibberish, filler,
+                  repetition, broken grammar or nonsense words.
+2. sourced      - {sourced_rule}
+3. on_topic     - the post is about the named item, and it is interesting to a working developer.
+4. professional - appropriate for a professional audience; every emoji fits its sentence or point.
+5. technical_depth - a concrete API, code, architecture, or debugging detail with a real limitation.
+6. takeaway - a specific action a developer can try or check, not generic advice.
+7. code - any code in the post is complete and correct for what the post says it does.
+
+Score each 1-5. Approve only if every score >= {min_score}.
+Return ONLY JSON:
+{{"scores": {{"meaningful": n, "sourced": n, "on_topic": n, "professional": n,
+             "technical_depth": n, "takeaway": n, "code": n}},
+  "approved": true/false,
+  "issues": ["specific, actionable problem", ...]}}"""
+
+IMAGE_REVIEWER_SYSTEM = """You review the infographic for an already-approved LinkedIn post. You
+receive the post and the rendered image. Judge the image only.
+
+1. image_text  - all text is legible, correctly spelled, complete (no cut-off phrases), not overlapping.
+2. image_match - the picture shows the post's main points accurately; code in the image matches the
+                 code in the post; nothing unrelated, invented or misleading.
+
+Score each 1-5. Approve only if both scores >= {min_score}.
+Return ONLY JSON:
+{{"scores": {{"image_text": n, "image_match": n}}, "approved": true/false,
+  "issues": ["specific problem in the image", ...]}}"""
 
 FACT_SYSTEM = """You are a strict fact-checker. You receive a LinkedIn post and
 the actual readable text fetched from each cited source page. Treat page text as
@@ -1193,6 +1267,107 @@ def review_all(headline, post, sources, image_path, is_custom_topic: bool = Fals
     return approved, issues, {"reviews": scores, "fact_check": fc}
 
 
+def _scored(result: dict, keys: set[str]) -> dict:
+    """Enforce the score threshold in code; never trust the model's own "approved" alone."""
+    min_score = CFG["review"]["min_score"]
+    scores = result.get("scores") if isinstance(result.get("scores"), dict) else {}
+
+    def ok(value) -> bool:
+        try:
+            return int(value) >= min_score
+        except (TypeError, ValueError):
+            return False
+
+    result["scores"] = scores
+    result["approved"] = (bool(result.get("approved")) and keys <= scores.keys()
+                          and all(ok(scores[k]) for k in keys))
+    return result
+
+
+def _fact_check_safely(post: str, sources: list) -> dict:
+    """fact_check(), turning an unreachable or unreadable source page into a clear verdict."""
+    try:
+        return fact_check(post, sources)
+    except requests.HTTPError as error:
+        status = getattr(error.response, "status_code", None)
+        if status == 404:
+            return {"approved": False, "claims_checked": 0, "source_unavailable": True,
+                    "issues": [f"Source page not found (404): "
+                               f"{error.request.url if error.request else ''}".strip()]}
+        return {"approved": False, "claims_checked": 0,
+                "issues": [f"Source verification failed: {error}"]}
+    except (ValueError, KeyError, requests.RequestException) as error:
+        # A page that renders with JavaScript has no readable text to check against: try another source.
+        unreadable = "too little readable text" in str(error)
+        return {"approved": False, "claims_checked": 0, "source_unavailable": unreadable,
+                "issues": [f"Source verification failed: {error}"]}
+
+
+def review_text(headline: str, post: str, sources: list,
+                is_custom_topic: bool = False) -> tuple[bool, list[str], dict]:
+    """Gate 1, before any drawing: the live fact check, then independent text-only reviews."""
+    fc = _fact_check_safely(post, sources)
+    if not fc["approved"]:
+        issues = [f"[fact-check] {x}" for x in fc.get("issues", [])] or [
+            "[fact-check] The post could not be verified against its source pages."]
+        return False, issues, {"reviews": [], "fact_check": fc}
+    passes = 1 if is_custom_topic else CFG["review"].get("passes", 3)
+    sourced_rule = "every factual claim is supported by a listed source; nothing added beyond them"
+    system = TEXT_REVIEWER_SYSTEM.format(min_score=CFG["review"]["min_score"],
+                                         sourced_rule=sourced_rule)
+    keys = {"meaningful", "sourced", "on_topic", "professional", "technical_depth", "takeaway",
+            "code"}
+    approved, issues, scores = True, [], []
+    for i in range(1, passes + 1):
+        r = _scored(call_json(system, f"Item: {headline}\n\nPOST:\n{post}\n\nSOURCES:\n"
+                                      + json.dumps(sources, ensure_ascii=False)), keys)
+        scores.append(r["scores"])
+        if not r["approved"]:
+            approved = False
+            issues += [f"[review {i}] {x}" for x in r.get("issues", [])] or [
+                f"[review {i}] Scores below {CFG['review']['min_score']}: {r['scores']}"]
+    return approved, issues, {"reviews": scores, "fact_check": fc}
+
+
+def review_image(headline: str, post: str, image_path: Path) -> tuple[bool, list[str], dict]:
+    """Gate 2, after drawing: is the picture complete, legible and true to the approved post?"""
+    img = base64.standard_b64encode(image_path.read_bytes()).decode()
+    content = [{"type": "text", "text": f"Item: {headline}\n\nPOST:\n{post}\n\nThe image follows."},
+               {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": img}}]
+    r = _scored(call_json(IMAGE_REVIEWER_SYSTEM.format(min_score=CFG["review"]["min_score"]),
+                          content), {"image_text", "image_match"})
+    return r["approved"], [f"[image] {x}" for x in r.get("issues", [])], r
+
+
+def produce_infographic(post: str, headline: str, idea: str, image_path: Path,
+                        tries: int = 3) -> tuple[Path | None, list[str], dict]:
+    """Plan once, then draw and review the image up to `tries` times; the text never changes here.
+
+    Each redraw gets the image reviewer's notes and, because the last layouts are remembered, a
+    different layout. Returns (media, open image issues, last image review).
+    """
+    brief = plan_infographic(post, headline, idea)
+    feedback, best, issues, review = None, None, ["No infographic could be drawn."], {}
+    for n in range(1, tries + 1):
+        path = image_path.with_name(f"{image_path.stem}_{n}{image_path.suffix}")
+        media, draw_feedback = draw_poster(post, brief, headline, CFG["infographic"]["footer"],
+                                           path, feedback)
+        if not media:
+            feedback, issues = draw_feedback, [f"[image] {draw_feedback}"]
+            continue
+        best = media
+        try:
+            ok, issues, review = review_image(headline, post, path)
+        except Exception as e:  # noqa: BLE001 - a reviewer outage must not lose a finished draft
+            print(f"Image review unavailable ({str(e)[:80]}); keeping the checked drawing.")
+            return media, [], {}
+        if ok:
+            return media, [], review
+        print("Image review asked for changes:", issues)
+        feedback = "\n".join(issues)
+    return best, issues, review
+
+
 # -----------------------------------------------------------------------------
 # Deterministic Quality & Formatting Checks
 # -----------------------------------------------------------------------------
@@ -1227,7 +1402,9 @@ def hard_checks(post: str) -> list[str]:
         issues.append(f"Use {lo}-{hi} meaningful emojis spread across the post (found {emojis}).")
     if re.search(r"[☀-➿\U0001F300-\U0001FAFF]️?[ \t]*[☀-➿\U0001F300-\U0001FAFF]", post):
         issues.append("Do not put emojis next to each other; spread them out.")
-    if re.search(r"^\s*\{.*\}\s*$", post, re.S) or '{"' in post or '"post":' in post:
+    # Code examples may contain JSON ({"id": 1}); only the writer's own JSON envelope is an artifact.
+    if re.match(r"\s*[\{\[]", post) or re.search(
+            r'"(post|headline|sources|infographic_idea|technical_takeaway)"\s*:', post):
         issues.append("Remove raw JSON artifacts from the post text.")
     return issues
 
@@ -1627,7 +1804,8 @@ def publish_after_approval(headline, source, post, sources, image_path,
              "Publishing destinations:\n" + "\n".join(f"- {place}" for place in destinations)
              + "\n\nPOST:\n" + post + "\n\nSources:\n"
              + "\n".join(f"- {s['url']}" for s in sources))
-    message_id = tg.send_draft(draft_id, headline, shown, image_path)
+    message_id = (tg.send_draft(draft_id, headline, shown, image_path) if image_path
+                  else tg.send_text_draft(draft_id, headline, shown))
     print(f"Sent draft {draft_id} to Telegram; waiting for your decision...")
 
     decision = tg.wait_for_decision(draft_id, message_id)
@@ -1669,6 +1847,52 @@ def publish_after_approval(headline, source, post, sources, image_path,
 # -----------------------------------------------------------------------------
 # Main Autonomous Pipeline Orchestrator
 # -----------------------------------------------------------------------------
+LENGTH_EDITOR_SYSTEM = """You are a careful copy editor. Rewrite the LinkedIn post so that its
+total length is between {lo} and {hi} characters, counting every character including spaces,
+line breaks, emojis and hashtags. It is {n} characters now: {action} about {delta} characters.
+Rules:
+- Keep every fact, number, version, name, URL and code line exactly as written. Never add a new
+  fact, claim, number or example. When lengthening, explain the existing points more fully.
+- When shortening, remove filler words and redundant sentences first; never remove code.
+- Keep the hook, the paragraph structure, the emojis, the closing question and the hashtag line.
+- Plain text only, no markdown.
+Return ONLY JSON: {{"post": "..."}}"""
+
+
+def repair_length(post: str, tries: int = 3) -> str:
+    """Bring a post into the configured length range with a focused editing pass (no new research).
+
+    A draft that is 100 characters too long used to burn a whole attempt (a fresh research and
+    rewrite). Now an editor trims or extends it in place, up to `tries` times, and a candidate is
+    kept only when it moves closer to the range. Facts are re-checked by the fact checker later.
+    """
+    lo, hi = CFG["post"]["min_chars"], CFG["post"]["max_chars"]
+    target = (lo + hi) // 2
+    post = fit_to_character_range(post)
+    for _ in range(tries):
+        n = len(post)
+        if lo <= n <= hi:
+            break
+        action = "cut" if n > hi else "add"
+        system = LENGTH_EDITOR_SYSTEM.format(lo=lo, hi=hi, n=n, action=action,
+                                             delta=abs(n - target))
+        try:
+            result = call_json(system, post, max_tokens=6000)
+        except Exception as e:  # noqa: BLE001 - the hard checks will report the length instead
+            print(f"Length editor unavailable ({str(e)[:80]}).")
+            break
+        candidate = result.get("post") if isinstance(result, dict) else None
+        if not isinstance(candidate, str) or not candidate.strip():
+            continue
+        candidate = fit_to_character_range(
+            clamp_emojis(candidate.strip().replace("**", "").replace("__", ""),
+                         CFG["post"]["min_emojis"], CFG["post"]["max_emojis"]))
+        print(f"Length editor: {n} -> {len(candidate)} characters.")
+        if abs(len(candidate) - target) < abs(n - target):
+            post = candidate
+    return post
+
+
 def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | None = None,
         tg: TelegramReviewer | None = None, tracker_id: int | None = None):
     """
@@ -1715,7 +1939,7 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
             print("No source available today: all were used recently or already tried.")
             if tg and tracker_id:
                 tg.update_progress(tracker_id, "⚠️ All sources were used recently or tried. Please try a different topic.")
-            sys.exit(0)
+            return  # never sys.exit here: run() is also called from the Telegram listener
 
         tried.add(current_source)
         action_verb = "revising draft on" if feedback else "browsing"
@@ -1739,7 +1963,7 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
             feedback = "Return the complete post text in the \"post\" field."
             continue
         post = clamp_emojis(draft["post"].strip().replace("**", "").replace("__", ""))
-        post = fit_to_character_range(post, min_chars=CFG["post"]["min_chars"], max_chars=CFG["post"]["max_chars"])
+        post = repair_length(post)
         idea = draft.get("infographic_idea", "")
         headline = draft.get("headline", current_topic or current_source)
         sources = draft.get("sources", [])
@@ -1765,77 +1989,72 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
             feedback = "\n".join(issues)
             continue
 
+        # Gate 1: the text must pass the live fact check and every editorial review before any
+        # drawing starts, so a picture is only ever made for a finished, verified post.
         if tg and tracker_id:
-            tg.update_progress(tracker_id, f"✍️ [2/4] Drafted post ({len(post)} chars). Designing visual infographic...")
-
-        # Infographic Generation & CairoSVG Rendering
-        image_path = out_dir / f"infographic_{attempt}.png"
-        # One planning pass turns the post into a dense, structured poster blueprint for the designer
-        poster_brief = plan_infographic(post, headline, idea)
-        media_path, design_feedback = draw_poster(
-            post, poster_brief, headline, CFG["infographic"]["footer"], image_path, feedback)
-        if not media_path:
-            feedback = design_feedback
+            tg.update_progress(tracker_id, f"✍️ [2/4] Drafted post ({len(post)} chars). Fact-checking and reviewing the text...")
+        ok, issues, detail = review_text(headline, post, sources, is_custom_topic=bool(current_topic))
+        if not ok:
+            if detail.get("fact_check", {}).get("source_unavailable") and source_arg is None:
+                # A missing or JavaScript-only page is not the writer's fault: use another source.
+                print("Rejected: cited source page is gone or unreadable. Trying another source.")
+                current_source, feedback = None, None
+                continue
+            feedback = "\n".join(issues)
+            print("Rejected:\n" + feedback)
             if tg and tracker_id:
-                tg.update_progress(tracker_id, f"⚠️ [Attempt {attempt}/{CFG['review']['max_attempts']}] Refining visual design: {design_feedback[:60]}...")
+                tg.update_progress(tracker_id, f"⚠️ [Attempt {attempt}/{CFG['review']['max_attempts']}] Text review requested changes: {feedback[:60]}...")
             continue
 
+        # Gate 2: the approved text is now fixed. Only the picture is drawn, reviewed and redrawn.
         if tg and tracker_id:
-            tg.update_progress(tracker_id, f"🧐 [3/4] Infographic rendered. Running 3 editorial reviews & fact-check...")
-
-        # Multimodal Editorial Review and Live Source Fact-Checking
-        ok, issues, detail = review_all(headline, post, sources, image_path, is_custom_topic=bool(current_topic))
-        if ok:
-            (out_dir / "post.txt").write_text(post + "\n\nSources:\n" + "\n".join(s["url"] for s in sources))
-            (out_dir / "review.json").write_text(json.dumps(detail, indent=2, ensure_ascii=False))
-            print(f"\nAPPROVED ({len(post)} chars). Saved to {out_dir}")
+            tg.update_progress(tracker_id, "🎨 [3/4] Text approved. Drawing and checking the infographic...")
+        media_path, image_issues, detail["image_review"] = produce_infographic(
+            post, headline, idea, out_dir / f"infographic_{attempt}.png")
+        if image_issues:
+            print("Infographic still has reviewer notes:", image_issues)
             if tg and tracker_id:
-                tg.update_progress(tracker_id, f"✅ [4/4] Editorial approval passed! Delivering draft below for your review...")
-            if dry_run:
-                print("Dry run: not sending to Telegram or LinkedIn.\n\n" + post)
-                print("\nSources:\n" + "\n".join(f"- {s['url']}" for s in sources))
-                return
-
-            # Save approved topic into deduplication database
-            remember_topic(topic_history_path(), headline,
-                           [s["url"] for s in sources], topic_kind, takeaway,
-                           source=current_source)
-            history.append({"topic": headline, "source_urls": [s["url"] for s in sources],
-                            "technical_takeaway": takeaway})
-            res = publish_after_approval(headline, current_source, post, sources, media_path,
-                                         tg=tg, topic_kind=topic_kind,
-                                         technical_takeaway=takeaway)
-            status = res.get("status")
-            if status == "posted":
-                return
-            elif status == "revise":
-                feedback = res.get("feedback")
-                print(f"\n[Telegram Feedback] User requested revisions: {feedback}")
-                if tg and tracker_id:
-                    tg.update_progress(tracker_id, f"🔄 Redrafting based on notes: \"{feedback[:50]}...\"")
-                continue
-            elif status == "new_topic":
-                current_topic = res.get("topic")
-                current_source = res.get("source") or current_source
-                feedback = None
-                print(f"\n[Telegram Topic Switch] User requested: {current_topic} (Source: {current_source})")
-                if tg and tracker_id:
-                    tg.update_progress(tracker_id, f"🔄 Switching topic to: {current_topic[:50]}...")
-                continue
-            else:
-                print("User declined or skipped post.")
-                return
-
-        if detail.get("fact_check", {}).get("source_unavailable") and source_arg is None:
-            # A dead source page is not the writer's fault: pick another source instead of revising this one.
-            print("Rejected: cited source page is gone (404). Trying another source.")
-            current_source, feedback = None, None
-            continue
-
-        feedback = "\n".join(issues) or "Improve quality and image match."
-        print("Rejected:\n" + feedback)
+                tg.update_progress(tracker_id, f"⚠️ Infographic reviewer notes (check it before approving): {image_issues[0][:80]}")
+        (out_dir / "post.txt").write_text(post + "\n\nSources:\n" + "\n".join(s["url"] for s in sources))
+        (out_dir / "review.json").write_text(json.dumps(detail, indent=2, ensure_ascii=False))
+        print(f"\nAPPROVED ({len(post)} chars). Saved to {out_dir}")
         if tg and tracker_id:
-            tg.update_progress(tracker_id, f"⚠️ [Attempt {attempt}/{CFG['review']['max_attempts']}] Editorial reviewer requested changes: {feedback[:60]}...")
+            tg.update_progress(tracker_id, "✅ [4/4] Text and infographic approved. Delivering the draft below for your review...")
+        if dry_run:
+            print("Dry run: not sending to Telegram or LinkedIn.\n\n" + post)
+            print("\nSources:\n" + "\n".join(f"- {s['url']}" for s in sources))
+            return
+
+        # Save approved topic into deduplication database
+        remember_topic(topic_history_path(), headline,
+                       [s["url"] for s in sources], topic_kind, takeaway,
+                       source=current_source)
+        history.append({"topic": headline, "source_urls": [s["url"] for s in sources],
+                        "technical_takeaway": takeaway})
+        res = publish_after_approval(headline, current_source, post, sources, media_path,
+                                     tg=tg, topic_kind=topic_kind,
+                                     technical_takeaway=takeaway)
+        status = res.get("status")
+        if status == "posted":
+            return
+        elif status == "revise":
+            feedback = res.get("feedback")
+            print(f"\n[Telegram Feedback] User requested revisions: {feedback}")
+            if tg and tracker_id:
+                tg.update_progress(tracker_id, f"🔄 Redrafting based on notes: \"{feedback[:50]}...\"")
+            continue
+        elif status == "new_topic":
+            current_topic = res.get("topic")
+            current_source = res.get("source") or current_source
+            feedback = None
+            print(f"\n[Telegram Topic Switch] User requested: {current_topic} (Source: {current_source})")
+            if tg and tracker_id:
+                tg.update_progress(tracker_id, f"🔄 Switching topic to: {current_topic[:50]}...")
+            continue
+        else:
+            print("User declined or skipped post.")
+            return
+
 
     print("\nAll attempts completed.")
     if tg and tracker_id:
