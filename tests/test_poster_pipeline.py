@@ -180,7 +180,8 @@ def test_planner_is_asked_for_a_theme(monkeypatch):
     monkeypatch.setattr(agent, "call_json", call)
     agent.plan_infographic("post", "Head", "idea")
     system = call.call_args.args[0]
-    assert '"theme": "ocean | forest | sunset | grape | midnight | ember"' in system
+    assert '"theme": "ocean | forest | sunset | grape | midnight | ember | tangerine' in system
+    assert "volcano for security threats" in system
     assert "midnight for infrastructure" in system and "THEME_" not in system
     assert '"post_type": "release | bug_fix' in system and "incident for bug fixes" in system
     assert "LAYOUT_" not in system and "POST_TYPES" not in system
