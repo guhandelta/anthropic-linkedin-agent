@@ -46,8 +46,8 @@ linkedin:
     - https://www.linkedin.com/groups/121615/
 
 telegram:
-  timeout_hours: 3          # wait this long for your Approve/Reject, then skip the day
-  remind_every_minutes: 20  # ping you on Telegram until you answer
+  timeout_hours: 24         # wait this long for your Approve/Reject (approving next day is fine)
+  remind_every_minutes: 180 # ping you on Telegram every 3 hours until you answer
   commit_inactivity:
     interval_days: 20       # remind every 20 days (e.g. day 20, day 40)
     urgent_after_days: 52   # remind everyday after day 52 (GitHub disables cron after 60 days)
