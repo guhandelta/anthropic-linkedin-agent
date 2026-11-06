@@ -85,6 +85,10 @@ load_dotenv(ROOT / ".env")
 
 # Load central configuration file
 CFG = yaml.safe_load((ROOT / "config.yaml").read_text())
+# A GitHub Actions job is capped (timeout-minutes in daily-post.yml), so the workflow can shorten the
+# approval wait without changing the Mac's config.yaml.
+if os.environ.get("TELEGRAM_TIMEOUT_HOURS"):
+    CFG["telegram"]["timeout_hours"] = float(os.environ["TELEGRAM_TIMEOUT_HOURS"])
 RS = CFG["research"]
 
 # Allowed categorizations for technical posts

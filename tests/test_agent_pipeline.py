@@ -425,3 +425,13 @@ def test_run_moves_to_another_source_when_cited_page_is_gone(tmp_path, monkeypat
     assert pick.call_count == 2
     assert review.call_count == 2
     assert "Trying another source" in capsys.readouterr().out
+
+
+def test_workflow_can_shorten_the_approval_wait():
+    import subprocess, sys
+    out = subprocess.run([sys.executable, "-c", "import agent; print(agent.CFG['telegram']['timeout_hours'])"],
+                         env={**__import__("os").environ, "TELEGRAM_TIMEOUT_HOURS": "3"},
+                         capture_output=True, text=True, cwd=Path(agent.__file__).parent)
+    assert out.stdout.strip().splitlines()[-1] == "3.0"
+    text = (Path(agent.__file__).parent / ".github/workflows/daily-post.yml").read_text()
+    assert 'TELEGRAM_TIMEOUT_HOURS: "3"' in text and "timeout-minutes: 240" in text
