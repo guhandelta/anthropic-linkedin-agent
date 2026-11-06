@@ -132,7 +132,7 @@ def test_draw_poster_remembers_the_layout_and_the_next_poster_differs(monkeypatc
 
 
 def test_style_history_keeps_the_last_ten():
-    names = [f"s{i}" for i in range(12)]
+    names = [f"style_{c}" for c in "abcdefghijkl"]
     for style in names:
         agent._remember_poster_style(f'<svg data-style="{style}" data-theme="ocean"/>')
     assert agent._recent_poster_styles() == {"styles": names[-10:], "themes": ["ocean"] * 10,
