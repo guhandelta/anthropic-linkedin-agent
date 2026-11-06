@@ -167,7 +167,7 @@ def test_produce_infographic_redraws_only_the_image_with_the_reviewers_notes(mon
     monkeypatch.setattr(agent, "plan_infographic", MagicMock(return_value="brief"))
     feedbacks = []
 
-    def draw(post, brief, headline, footer, path, feedback):
+    def draw(post, brief, headline, footer, path, feedback, drafts=None):
         feedbacks.append(feedback)
         path.write_bytes(b"png")
         return path, None
@@ -182,7 +182,7 @@ def test_produce_infographic_redraws_only_the_image_with_the_reviewers_notes(mon
 
 def test_produce_infographic_keeps_the_drawing_when_the_reviewer_is_down(monkeypatch, tmp_path):
     monkeypatch.setattr(agent, "plan_infographic", MagicMock(return_value="brief"))
-    monkeypatch.setattr(agent, "draw_poster", lambda *a: (tmp_path / "p_1.png", None))
+    monkeypatch.setattr(agent, "draw_poster", lambda *a, **k: (tmp_path / "p_1.png", None))
     monkeypatch.setattr(agent, "review_image", MagicMock(side_effect=RuntimeError("offline")))
     media, issues, review = agent.produce_infographic("post", "H", "idea", tmp_path / "p.png")
     assert media == tmp_path / "p_1.png" and issues == [] and review == {}
@@ -190,14 +190,14 @@ def test_produce_infographic_keeps_the_drawing_when_the_reviewer_is_down(monkeyp
 
 def test_produce_infographic_reports_when_nothing_could_be_drawn(monkeypatch, tmp_path):
     monkeypatch.setattr(agent, "plan_infographic", MagicMock(return_value="brief"))
-    monkeypatch.setattr(agent, "draw_poster", lambda *a: (None, "bad svg"))
+    monkeypatch.setattr(agent, "draw_poster", lambda *a, **k: (None, "bad svg"))
     media, issues, _ = agent.produce_infographic("post", "H", "idea", tmp_path / "p.png", tries=2)
     assert media is None and issues == ["[image] bad svg"]
 
 
 def test_produce_infographic_returns_the_last_drawing_after_every_try_is_rejected(monkeypatch, tmp_path):
     monkeypatch.setattr(agent, "plan_infographic", MagicMock(return_value="brief"))
-    monkeypatch.setattr(agent, "draw_poster", lambda post, b, h, f, path, fb: (path, None))
+    monkeypatch.setattr(agent, "draw_poster", lambda post, b, h, f, path, fb, drafts=None: (path, None))
     monkeypatch.setattr(agent, "review_image", MagicMock(return_value=(False, ["[image] x"], {})))
     media, issues, _ = agent.produce_infographic("post", "H", "idea", tmp_path / "p.png", tries=2)
     assert media.name == "p_2.png" and issues == ["[image] x"]
