@@ -614,3 +614,48 @@ def test_only_the_delivered_poster_is_remembered(monkeypatch, tmp_path):
     drafts = [re.search(r'data-style="(\w+)"', (tmp_path / f"info_{n}.svg").read_text()).group(1)
               for n in (1, 2, 3)]
     assert len(set(drafts)) == 3  # each redraw tried a different layout
+
+
+# ---------------------------------------------------------------- pasted posts over the limit
+
+def test_a_long_pasted_post_is_trimmed_to_fit_before_drawing(monkeypatch, tmp_path):
+    monkeypatch.setattr(agent, "ROOT", tmp_path)
+    monkeypatch.setattr(agent, "select_model_for_run", lambda *a, **k: "x")
+    long_post = "Fact one stays. " * 200 + "\n#WebDev #APIs"   # about 3,200 characters
+    short = "Fact one stays. " * 150 + "\n#WebDev #APIs"
+    editor = MagicMock(return_value={"post": short})
+    monkeypatch.setattr(agent, "call_json", editor)
+    tg = MagicMock()
+    tg.wait_for_decision.return_value = "cancelled"
+    agent.handle_direct_post(long_post, generate_infographic=False, tg=tg)
+    sent = tg.send_text_draft.call_args.args[2]
+    assert len(sent) <= agent.LINKEDIN_LIMIT and "cut" in editor.call_args.args[0]
+
+
+def test_a_post_within_the_limit_is_never_edited(monkeypatch, tmp_path):
+    monkeypatch.setattr(agent, "ROOT", tmp_path)
+    monkeypatch.setattr(agent, "select_model_for_run", lambda *a, **k: "x")
+    editor = MagicMock()
+    monkeypatch.setattr(agent, "call_json", editor)
+    tg = MagicMock()
+    tg.wait_for_decision.return_value = "cancelled"
+    agent.handle_direct_post("Short post.\n#WebDev", generate_infographic=False, tg=tg)
+    editor.assert_not_called()
+
+
+def test_surplus_hashtags_go_before_any_words(monkeypatch):
+    monkeypatch.setattr(agent, "call_json", MagicMock(side_effect=AssertionError("no edit needed")))
+    tags = " ".join(f"#Tag{i}" for i in range(12))
+    post = "x" * (agent.LINKEDIN_LIMIT - 70) + "\n" + tags
+    trimmed = agent.trim_to_limit(post)
+    assert trimmed.startswith("x" * 100) and len(trimmed) <= agent.LINKEDIN_LIMIT - 40
+
+
+def test_when_trimming_fails_the_post_is_kept_and_the_user_is_told(monkeypatch, tmp_path):
+    monkeypatch.setattr(agent, "ROOT", tmp_path)
+    monkeypatch.setattr(agent, "select_model_for_run", lambda *a, **k: "x")
+    monkeypatch.setattr(agent, "call_json", MagicMock(side_effect=RuntimeError("credit balance")))
+    tg = MagicMock()
+    tg.wait_for_decision.return_value = "cancelled"
+    agent.handle_direct_post("word " * 700, generate_infographic=False, tg=tg)
+    assert "groups will reject it" in tg._call.call_args.kwargs["text"]

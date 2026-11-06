@@ -1846,6 +1846,32 @@ def space_sections(post: str, limit: int = LINKEDIN_LIMIT) -> str:
     return spaced if len(spaced) <= limit else post
 
 
+def trim_to_limit(post: str, limit: int = LINKEDIN_LIMIT, tries: int = 3) -> str:
+    """Shorten a pasted post to fit LinkedIn, keeping every fact, code line and the hashtag line.
+
+    Surplus hashtags go first (no claims in them); then the copy editor cuts filler, keeping a
+    candidate only when it is shorter. The target leaves room for the blank lines added later.
+    """
+    hi = limit - 40
+    post = _drop_trailing_hashtags(post.strip(), 0, hi)
+    for _ in range(tries):
+        n = len(post)
+        if n <= hi:
+            break
+        system = LENGTH_EDITOR_SYSTEM.format(lo=hi - 250, hi=hi, n=n, action="cut",
+                                             delta=n - (hi - 120))
+        try:
+            result = call_json(system, post, max_tokens=6000)
+        except Exception as e:  # noqa: BLE001 - report the length instead of failing the post
+            print(f"Length editor unavailable ({str(e)[:80]}).")
+            break
+        candidate = result.get("post") if isinstance(result, dict) else None
+        if isinstance(candidate, str) and candidate.strip() and len(candidate.strip()) < n:
+            post = candidate.strip().replace("**", "").replace("__", "")
+            print(f"Trimmed pasted post: {n} -> {len(post)} characters.")
+    return post
+
+
 def handle_direct_post(post_text: str, custom_image_path: Path | None = None, generate_infographic: bool = True,
                        tg: TelegramReviewer | None = None, tracker_id: int | None = None):
     """
@@ -1862,6 +1888,16 @@ def handle_direct_post(post_text: str, custom_image_path: Path | None = None, ge
     if tracker_id:
         CURRENT_TRACKER_ID = tracker_id
     select_model_for_run()
+    if len(post_text) > LINKEDIN_LIMIT:
+        # The groups refuse anything over the limit, so trim before drawing (the prompt said so).
+        if tg and tracker_id:
+            tg.update_progress(tracker_id, f"✂️ Trimming the post from {len(post_text)} characters to fit LinkedIn's limit...")
+        post_text = trim_to_limit(post_text)
+        if len(post_text) > LINKEDIN_LIMIT and tg:
+            tg._call("sendMessage", chat_id=tg.chat_id,
+                     text=f"⚠️ I could only trim it to {len(post_text)} characters. It will reach your "
+                          f"feed, but the groups will reject it. Cancel and paste a shorter version "
+                          f"to reach the groups.")
     post_text = space_sections(post_text)
 
     draft_id = datetime.now().strftime("%Y%m%d") + "-direct-" + uuid.uuid4().hex[:6]
@@ -1933,7 +1969,7 @@ def handle_direct_post(post_text: str, custom_image_path: Path | None = None, ge
             "chars": len(post_text),
             "sources": []
         })
-        print("Direct post successfully published to Wall and Groups.")
+        print("Direct post published to the feed; group results were reported on Telegram.")
     elif action == "revise":
         feedback = decision.get("feedback")
         tg._call("sendMessage", chat_id=tg.chat_id,

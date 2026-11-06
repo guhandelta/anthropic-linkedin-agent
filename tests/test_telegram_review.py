@@ -366,3 +366,14 @@ def test_menu_detection():
     is_menu = telegram_review.TelegramReviewer._is_menu
     assert is_menu("💡 Suggest Topics") and is_menu("/daily")
     assert not is_menu("/topic Edge caching") and not is_menu("Direct Post patterns in React")
+
+
+def test_an_over_limit_post_offers_to_trim_it(monkeypatch):
+    reviewer = telegram_review.TelegramReviewer("test-token", "12345")
+    calls = MagicMock(side_effect=[{"message_id": 5}, [], ])
+    monkeypatch.setattr(reviewer, "_call", calls)
+    monkeypatch.setattr(telegram_review.time, "time", MagicMock(side_effect=[0, 0, 999]))
+    reviewer.prompt_direct_choice("x" * 3035, timeout_s=10)
+    first = calls.call_args_list[0].kwargs
+    assert "35 over" in first["text"]
+    assert "Trim to fit" in json.dumps(first["reply_markup"], ensure_ascii=False)

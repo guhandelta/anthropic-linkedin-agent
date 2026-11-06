@@ -189,6 +189,7 @@ def record_commit_reminder_sent(days: int, state_file: Path | None = None):
         print(f"[Commit Reminder] Could not persist reminder state: {e}")
 
 
+LINKEDIN_LIMIT = 3000  # characters LinkedIn accepts in a post; groups refuse anything longer
 MENU_TEXTS = {"✍️ Post from Topic", "📝 Direct Post", "💡 Suggest Topics", "🚀 Run Daily Post",
               "📊 Status & History", "❓ Help & Commands"}
 MENU_COMMANDS = {"/start", "/help", "/status", "/suggest", "/daily", "/topic", "/direct", "/publish"}
@@ -371,14 +372,25 @@ class TelegramReviewer:
         """Prompt user whether to auto-design an infographic or publish text-only for direct posts."""
         choice_id = uuid.uuid4().hex[:8]
         preview = (text[:280] + "...") if len(text) > 280 else text
+        too_long = len(text) > LINKEDIN_LIMIT
+        if too_long:
+            # LinkedIn groups refuse a post over 3,000 characters, so offer to trim it first.
+            question = (f"⚠️ This is {len(text)} characters, {len(text) - LINKEDIN_LIMIT} over "
+                        f"LinkedIn's {LINKEDIN_LIMIT:,} limit, so the groups would reject it. "
+                        "Trim it to fit (facts, code and hashtags kept), or cancel and paste a "
+                        "shorter version.")
+            buttons = [[("✂️ Trim to fit + Infographic", f"direct_info:{choice_id}")],
+                       [("✂️ Trim to fit (Text Only)", f"direct_text:{choice_id}")],
+                       [("❌ Cancel", f"direct_cancel:{choice_id}")]]
+        else:
+            question = "How would you like to publish?"
+            buttons = [[("🎨 Auto-Design Infographic & Review", f"direct_info:{choice_id}")],
+                       [("⚡ Post As-Is (Text Only)", f"direct_text:{choice_id}")],
+                       [("❌ Cancel", f"direct_cancel:{choice_id}")]]
         msg = self._call(
             "sendMessage", chat_id=self.chat_id,
-            text=f"📝 Direct post received ({len(text)} chars):\n\n\"{preview}\"\n\nHow would you like to publish?",
-            reply_markup=self._buttons(
-                [("🎨 Auto-Design Infographic & Review", f"direct_info:{choice_id}")],
-                [("⚡ Post As-Is (Text Only)", f"direct_text:{choice_id}")],
-                [("❌ Cancel", f"direct_cancel:{choice_id}")]
-            )
+            text=f"📝 Direct post received ({len(text)} chars):\n\n\"{preview}\"\n\n{question}",
+            reply_markup=self._buttons(*buttons)
         )
         message_id = msg["message_id"]
         start = time.time()
