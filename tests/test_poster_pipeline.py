@@ -131,12 +131,12 @@ def test_draw_poster_remembers_the_layout_and_the_next_poster_differs(monkeypatc
                      "details": details, "finishes": finishes}
 
 
-def test_style_history_keeps_the_last_four():
-    for style in ["guide", "timeline", "stack", "sidebar", "incident"]:
+def test_style_history_keeps_the_last_ten():
+    names = [f"s{i}" for i in range(12)]
+    for style in names:
         agent._remember_poster_style(f'<svg data-style="{style}" data-theme="ocean"/>')
-    assert agent._recent_poster_styles() == {"styles": ["timeline", "stack", "sidebar", "incident"],
-                                             "themes": ["ocean"] * 4, "motions": [],
-                                             "details": [], "finishes": []}
+    assert agent._recent_poster_styles() == {"styles": names[-10:], "themes": ["ocean"] * 10,
+                                             "motions": [], "details": [], "finishes": []}
 
 
 def test_style_history_reads_the_older_single_value_file():

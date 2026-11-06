@@ -1971,18 +1971,42 @@ def choose_style(plan: dict, recent: str | list | tuple | None = None, headline:
     return _style_order(plan, recent, headline, rng)[0]
 
 
+HISTORY = 10  # posters remembered; nothing used in them comes back while a fresh option fits
+# The twelve layouts modelled on hand-made LinkedIn infographics; they look the least alike, so a
+# random pick prefers them whenever the content fits one.
+NEWER_STYLES = ("profiles", "columns", "zigzag", "playbook", "scorecard", "swimlanes", "twin",
+                "flowchart", "pipeline", "snake", "proscons", "masonry")
+
+
+def _least_recent(options: list[str], recent: list[str]) -> list[str]:
+    """The options used longest ago (never-used ones count as oldest), keeping their order."""
+    def last_use(option: str) -> int:
+        return max((i for i, r in enumerate(recent) if r == option), default=-1)
+    oldest = min(last_use(o) for o in options)
+    return [o for o in options if last_use(o) == oldest]
+
+
 def _style_order(plan: dict, recent: str | list | tuple | None, headline: str,
                  rng=None) -> list[str]:
-    """Every eligible layout in the order to try: the chosen one first, recent ones last."""
+    """Every eligible layout in the order to try: the chosen one first, recent ones last.
+
+    Without rng: the best-suited layout not in the last three (stable, for tests). With rng: a
+    layout not used in the last HISTORY posters (or, when every suitable one was, the one used
+    longest ago), picked at random among the three best-suited, newer layouts first.
+    """
     recent = _recent(recent)
     candidates = _style_candidates(plan, headline)
-    fresh = [s for s in candidates if s not in recent[-3:]]
-    if not fresh:
-        fresh = [s for s in candidates if s not in recent[-1:]] or candidates
-    if rng is not None:
-        pick = rng.choice(fresh[:3])
-        fresh = [pick] + [s for s in fresh if s != pick]
-    return fresh + [s for s in candidates if s not in fresh]
+    if rng is None:
+        fresh = [s for s in candidates if s not in recent[-3:]]
+        if not fresh:
+            fresh = [s for s in candidates if s not in recent[-1:]] or candidates
+        return fresh + [s for s in candidates if s not in fresh]
+    fresh = _least_recent(candidates, recent[-HISTORY:])
+    fresh = ([s for s in fresh if s in NEWER_STYLES] + [s for s in fresh if s not in NEWER_STYLES])
+    pick = rng.choice(fresh[:3])
+    rest = sorted((s for s in candidates if s != pick),
+                  key=lambda s: max((i for i, r in enumerate(recent) if r == s), default=-1))
+    return [pick] + rest
 
 
 def theme_family(theme: str) -> str:
@@ -2013,16 +2037,18 @@ def choose_theme(plan: dict, recent: str | list | tuple | None = None, rng=None)
     Without rng: the planner's hint, else a stable pick from the title. With rng: the hint about
     half the time, otherwise any other fresh theme at random.
     """
-    recent = [t for t in _recent(recent)[-2:]]
     hint = _clean(plan.get("theme")).lower()
-    names = [t for t in THEMES if t not in recent]
     if rng is not None:
-        families = {theme_family(t) for t in recent if t in THEMES}
+        # Never a theme from the last HISTORY posters, nor the colour family of the last two.
+        history = [t for t in _recent(recent)[-HISTORY:] if t in THEMES]
+        families = {theme_family(t) for t in history[-2:]}
+        names = _least_recent(list(THEMES), history)
         names = [t for t in names if theme_family(t) not in families] or names
-    if rng is not None:
         if hint in names and rng.random() < 0.5:
             return hint
         return rng.choice(names)
+    recent = _recent(recent)[-2:]
+    names = [t for t in THEMES if t not in recent]
     if hint in names:
         return hint
     seed = sum(ord(c) for c in _clean(plan.get("title")) + _clean(plan.get("takeaway")))
@@ -2033,19 +2059,19 @@ def choose_motion(plan: dict, recent: str | list | tuple | None = None, rng=None
     """The GIF's motion style: never the last one used; random with rng, else stable per title."""
     from infographic import MOTIONS
 
-    names = [m for m in MOTIONS if m not in _recent(recent)[-1:]]
     if rng is not None:
-        return rng.choice(names)
+        return rng.choice(_least_recent(list(MOTIONS), _recent(recent)[-HISTORY:]))
+    names = [m for m in MOTIONS if m not in _recent(recent)[-1:]]
     return names[sum(ord(c) for c in _clean(plan.get("title"))) % len(names)]
 
 
 def choose_variant(options: list[str] | tuple, recent: str | list | tuple | None = None,
                    rng=None) -> str:
-    """A detail or finish style: random with rng and never the last one; the first without."""
+    """A detail or finish style: with rng, one of those used longest ago (so all of them take
+    turns and none repeats the last); without rng, the first."""
     if rng is None:
         return options[0]
-    fresh = [o for o in options if o not in _recent(recent)[-1:]] or list(options)
-    return rng.choice(fresh)
+    return rng.choice(_least_recent(list(options), _recent(recent)[-HISTORY:]))
 
 
 def _render(plan: dict, headline: str, footer: str, style: str, theme: str,

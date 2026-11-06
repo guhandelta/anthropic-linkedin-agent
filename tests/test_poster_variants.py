@@ -102,3 +102,56 @@ def test_next_theme_differs_in_colour_family_from_the_last_two():
         for _ in range(40):
             pick = choose_theme(_plan(), recent, rng)
             assert pick not in recent and theme_family(pick) not in banned
+
+
+# ---------------------------------------------------------------- a fresh look for every post
+
+from poster_layout import NEWER_STYLES, _style_candidates, choose_motion  # noqa: E402
+from tests.test_poster_styles import CARDS, CONS, PROS, TABLE  # noqa: E402
+
+RICH = _plan("before_after", 4, NO_CODE, cards=CARDS[:5], table=TABLE, pros=PROS, cons=CONS,
+             title="BFF vs GraphQL Federation")
+
+
+def _run_posts(n, seed):
+    rng = random.Random(seed)
+    hist = {k: [] for k in ("styles", "themes", "motions", "details", "finishes")}
+    for _ in range(n):
+        svg = poster_from_brief(_brief(RICH), "Heading", "Footer", rng=rng,
+                                recent_styles=hist["styles"], recent_themes=hist["themes"],
+                                recent_motions=hist["motions"], recent_details=hist["details"],
+                                recent_finishes=hist["finishes"])
+        for key, attr in (("styles", "style"), ("themes", "theme"), ("motions", "motion"),
+                          ("details", "details"), ("finishes", "finish")):
+            hist[key] = (hist[key] + [_attr(svg, attr)])[-10:]
+    return hist
+
+
+@pytest.mark.parametrize("seed", range(5))
+def test_every_suitable_layout_is_used_before_any_repeats(seed):
+    suitable = _style_candidates(RICH)
+    assert len(suitable) >= 6
+    styles = _run_posts(len(suitable), seed)["styles"]
+    n = min(len(suitable), 10)
+    assert len(set(styles[-n:])) == n
+
+
+@pytest.mark.parametrize("seed", range(5))
+def test_themes_never_repeat_within_ten_posts_and_change_colour_family(seed):
+    themes = _run_posts(10, seed)["themes"]
+    assert len(set(themes)) == 10
+    for a, b in zip(themes, themes[1:]):
+        assert theme_family(a) != theme_family(b)
+
+
+def test_motion_details_and_finish_take_turns():
+    hist = _run_posts(6, 4)
+    for key in ("motions", "details", "finishes"):
+        values = hist[key]
+        assert all(a != b for a, b in zip(values, values[1:])), key
+    assert len(set(hist["finishes"][:3])) == 3 and len(set(hist["motions"][:4])) == 4
+
+
+def test_newer_layouts_come_first_when_they_fit():
+    styles = _run_posts(3, 9)["styles"]
+    assert all(s in NEWER_STYLES for s in styles)

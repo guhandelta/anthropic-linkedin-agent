@@ -592,3 +592,25 @@ def test_spacing_is_applied_to_pasted_posts(monkeypatch, tmp_path):
     sent = tg.send_text_draft.call_args.args[2]
     assert "Federation\n\nMost teams" in sent
     assert "\n\n🧩 Vite" in sent
+
+
+def test_only_the_delivered_poster_is_remembered(monkeypatch, tmp_path):
+    from tests.test_poster_pipeline import BRIEF
+
+    monkeypatch.setattr(agent, "ROOT", tmp_path)
+    monkeypatch.setattr(agent, "plan_infographic", lambda post, headline, idea: BRIEF)
+    monkeypatch.setattr(agent, "layout_issues", lambda svg: [])
+    monkeypatch.setattr(agent, "render_svg_to_gif", lambda svg, p: None)
+    monkeypatch.setattr(agent, "render_svg", lambda svg, p: Path(p).write_bytes(b"png"))
+    reviews = MagicMock(side_effect=[(False, ["wrong order"], {}), (False, ["too busy"], {}),
+                                     (True, [], {})])
+    monkeypatch.setattr(agent, "review_image", reviews)
+    media, issues, _ = agent.produce_infographic("post", "Head", "idea", tmp_path / "info.png")
+    assert issues == [] and reviews.call_count == 3
+    saved = json.loads(agent.poster_style_path().read_text())
+    assert len(saved["styles"]) == 1  # three drafts, one delivered poster
+    final = (tmp_path / "info_3.svg").read_text()
+    assert f'data-style="{saved["styles"][0]}"' in final
+    drafts = [re.search(r'data-style="(\w+)"', (tmp_path / f"info_{n}.svg").read_text()).group(1)
+              for n in (1, 2, 3)]
+    assert len(set(drafts)) == 3  # each redraw tried a different layout
