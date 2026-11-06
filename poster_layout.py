@@ -438,10 +438,167 @@ def _arrow(x1: int, y1: int, x2: int, y2: int) -> str:
             'stroke-dasharray="10 10" marker-end="url(#arrow)"/>')
 
 
+# How the lower half and the bottom strip are drawn on the current poster. _render sets them, so
+# the same layout can end in a 2x2 grid, full-width rows, a checklist or tall tabs, and finish with
+# bars, two side-by-side cards or a quote card.
+DETAILS = ("grid", "rows", "checklist", "tabs")
+FINISHES = ("bars", "split", "quote")
+_VARIANT = {"details": "grid", "finish": "bars"}
+
+
+def details_options(plan: dict) -> list[str]:
+    """Detail styles that suit these modules."""
+    modules = plan["modules"]
+    has_code = any(_clean(m.get("kind")).lower() == "code" for m in modules)
+    out = ["grid", "rows"]
+    if not has_code:
+        out.append("checklist")  # code reads badly as a checklist line
+    if len(modules) == 3 and not has_code:
+        out.append("tabs")  # a code line rarely fits a third of the page
+    return out
+
+
+def _limit(width: int, size: int) -> int:
+    return max(7, int(width / (size * 0.61)))
+
+
+def _fits(text: str, width: int, size: int, max_lines: int) -> bool:
+    """True when the text wraps into max_lines without shortening any word (records nothing)."""
+    limit, lines, line = _limit(width, size), 0, ""
+    for word in _clean(text).split():
+        if len(word) > limit:
+            return False
+        candidate = f"{line} {word}".strip()
+        if len(candidate) > limit and line:
+            lines, line = lines + 1, word
+        else:
+            line = candidate
+    return lines + (1 if line else 0) <= max_lines
+
+
+def _module_items(module: dict) -> tuple[list[str], bool]:
+    """A module's lines as display items, and whether they are code."""
+    kind = _clean(module.get("kind")).lower()
+    raw = module.get("lines") if isinstance(module.get("lines"), list) else []
+    if kind == "code":
+        return [str(x).rstrip() for x in raw if _clean(x)], True
+    if kind in STAT_KINDS:
+        return [" ".join(_clean(part) for part in str(x).split("|", 1)) for x in raw if _clean(x)], False
+    return [_clean(x) for x in raw if _clean(x)], False
+
+
+def _joined(items: list[str], width: int, size: int, max_lines: int) -> str:
+    """As many whole items as fit, joined with a middle dot; an item never gets cut."""
+    out: list[str] = []
+    for item in items:
+        if _fits(" · ".join(out + [item]), width, size, max_lines):
+            out.append(item)
+    return " · ".join(out)
+
+
+def _code_lines(items: list[str], width: int, max_lines: int) -> list[str]:
+    """Whole code lines that fit on one line each (verbatim, never wrapped or cut)."""
+    limit = int(width / (22 * 0.61))
+    return [line for line in items if len(line) <= limit][:max_lines]
+
+
+def _details_rows(parts: list[str], plan: dict, modules: list, accent: list[str], top: int) -> None:
+    """One full-width row per module: a coloured number block, the heading and its points."""
+    n = len(modules)
+    h = (1085 - top - 10 * (n - 1)) // n
+    budget = max(1, (h - 52) // 27)
+    for i, module in enumerate(modules):
+        y, colour = top + i * (h + 10), accent[i % len(accent)]
+        items, code = _module_items(module)
+        parts.append(_rect(40, y, 1000, h, "@code_bg@" if code else "@card@",
+                           stroke="@code_bg@" if code else "@card_stroke@", radius=14))
+        parts.append(_rect(40, y, 64, h, colour, radius=14))
+        parts.append(_text(72, y + h // 2 + 9, str(i + 1), size=26, fill="@bg@", weight="bold",
+                           anchor="middle"))
+        parts.append(_icon(module.get("icon"), 122, y + 14, "@code_icon@" if code else colour, 1.3))
+        parts.append(_text(162, y + 38, _fit_words(module.get("heading") or "Key point", 840, 24),
+                           size=24, fill="@code_ink@" if code else "@ink@", weight="bold"))
+        if code:
+            for j, line in enumerate(_code_lines(items, 900, budget)):
+                parts.append(_text(124, y + 70 + j * 27, line, size=22, fill="@code_muted@",
+                                   family="Menlo, Courier New, monospace"))
+        else:
+            parts.extend(_lines(124, y + 70, _joined(items, 890, 22, budget), 890, size=22,
+                                max_lines=budget, step=27))
+
+
+def _details_checklist(parts: list[str], plan: dict, modules: list, accent: list[str],
+                       top: int) -> None:
+    """One tinted card holding every module as a ticked item, split by thin dividers."""
+    n = len(modules)
+    parts.append(_rect(40, top, 1000, 1085 - top, "@soft2@", stroke="@soft_stroke@"))
+    h = (1085 - top - 20) // n
+    budget = max(1, (h - 50) // 27)
+    for i, module in enumerate(modules):
+        y, colour = top + 10 + i * h, accent[i % len(accent)]
+        items, _ = _module_items(module)
+        if i:
+            parts.append(f'<line x1="70" y1="{y}" x2="1010" y2="{y}" stroke="@soft_stroke@" '
+                         'stroke-width="1.5" stroke-dasharray="none"/>')
+        parts.append(f'<circle cx="86" cy="{y + 32}" r="20" fill="{colour}"/>')
+        parts.append(_icon("check", 74, y + 20, "@bg@", 1.0))
+        parts.append(_text(126, y + 41, _fit_words(module.get("heading") or "Key point", 860, 24),
+                           size=24, fill="@ink@", weight="bold"))
+        parts.extend(_lines(126, y + 72, _joined(items, 870, 22, budget), 870, size=22,
+                            max_lines=budget, step=27))
+
+
+def _details_tabs(parts: list[str], plan: dict, modules: list, accent: list[str], top: int) -> None:
+    """Three tall cards side by side, each under a coloured tab with its heading."""
+    w, h = 320, 1085 - top
+    for i, module in enumerate(modules):
+        x, colour = 40 + i * (w + 20), accent[i % len(accent)]
+        items, code = _module_items(module)
+        parts.append(_rect(x, top, w, h, "@code_bg@" if code else "@card@",
+                           stroke="@code_bg@" if code else "@card_stroke@"))
+        parts.append(_rect(x, top, w, 92, colour))
+        parts.append(_icon(module.get("icon"), x + 18, top + 14, "@bg@", 1.2))
+        parts.append(_text(x + 56, top + 36, f"{i + 1}.", size=22, fill="@bg@", weight="bold"))
+        parts.extend(_lines(x + 18, top + 72, module.get("heading") or "Key point", w - 36,
+                            size=22, max_lines=1, fill="@bg@", weight="bold"))
+        y = top + 132
+        for item in items:
+            if code:
+                if len(item) > int((w - 36) / (22 * 0.61)):
+                    continue
+                if y > top + h - 20:
+                    break
+                parts.append(_text(x + 18, y, item, size=22, fill="@code_muted@",
+                                   family="Menlo, Courier New, monospace"))
+                y += 30
+                continue
+            rows = (top + h - 16 - y) // 28 + 1
+            if rows < 1:
+                break
+            if not _fits(item, w - 60, 22, min(3, rows)):
+                continue
+            parts.append(f'<circle cx="{x + 24}" cy="{y - 7}" r="5" fill="{colour}"/>')
+            wrapped = _wrap(item, w - 60, 22, 3)
+            parts.extend(_text(x + 40, y + j * 28, line, size=22, fill="@muted@")
+                         for j, line in enumerate(wrapped))
+            y += len(wrapped) * 28 + 12
+
+
 def _modules_grid(parts: list[str], plan: dict, modules: list, accent: list[str],
                   top: int, h: int, gap: int = 16, left: int = 40, width: int = 490,
                   col_gap: int = 20) -> None:
-    """Two columns of modules; a third module gets an APPLICATION card beside it."""
+    """Two columns of modules; a third module gets an APPLICATION card beside it.
+
+    A full-width grid is swapped for the poster's chosen detail style (rows, checklist or tabs).
+    """
+    style = _VARIANT["details"]
+    if left == 40 and width >= 490 and style in details_options({"modules": modules}):
+        if style == "rows":
+            return _details_rows(parts, plan, modules, accent, top)
+        if style == "checklist":
+            return _details_checklist(parts, plan, modules, accent, top)
+        if style == "tabs":
+            return _details_tabs(parts, plan, modules, accent, top)
     right = left + width + col_gap
     for i, module in enumerate(modules):
         x = left if i % 2 == 0 else right
@@ -457,11 +614,48 @@ def _modules_grid(parts: list[str], plan: dict, modules: list, accent: list[str]
 
 
 def _bottom(parts: list[str], plan: dict, footer: str) -> None:
-    """Watch-out strip, takeaway banner and footer: shared by every layout.
+    """Watch-out, takeaway and footer, drawn in the poster's chosen finish (y 1098-1340).
 
-    The watch-out text and the takeaway each get two lines, so neither is cut mid-sentence.
+    bars: two full-width strips. split: two cards side by side. quote: the takeaway as a large
+    quote card with the watch-out as a slim strip under it. Text always gets room for every word.
     """
+    finish = _VARIANT["finish"]
     gotcha = plan["gotcha"]
+    heading = gotcha.get("heading") or "Watch out"
+    if finish == "split":
+        parts.append(_rect(40, 1098, 490, 182, "@warn_bg@", stroke="@warn_stroke@"))
+        parts.append(_icon("warning", 60, 1114, "@warn_icon@", 1.4))
+        parts.append(_text(104, 1140, _fit_words(heading, 400, 24), size=24, fill="@warn_head@",
+                           weight="bold"))
+        parts.extend(_lines(60, 1176, gotcha.get("text"), 445, size=22, max_lines=4, step=26,
+                            fill="@warn_text@"))
+        parts.append(_rect(550, 1098, 490, 182, "@strong@"))
+        parts.append(_icon("bulb", 570, 1114, "@on_strong@", 1.4))
+        parts.append(_text(614, 1140, "KEY TAKEAWAY", size=22, fill="@on_strong@", weight="bold"))
+        parts.extend(_lines(570, 1178, plan["takeaway"], 445, size=23, max_lines=4, step=27,
+                            fill="@on_strong@", weight="bold"))
+    elif finish == "quote":
+        parts.append(_rect(40, 1098, 1000, 104, "@soft@", stroke="@soft_stroke@"))
+        parts.append(_rect(40, 1098, 12, 104, "@primary@", radius=6))
+        parts.append(_text(74, 1166, "\u201c", size=64, fill="@primary@", weight="bold"))
+        parts.extend(_lines(124, 1138, plan["takeaway"], 890, size=25, max_lines=2, step=32,
+                            fill="@soft_ink@", weight="bold"))
+        parts.append(_rect(40, 1210, 1000, 72, "@warn_bg@", stroke="@warn_stroke@", radius=36))
+        parts.append(_icon("warning", 58, 1228, "@warn_icon@", 1.3))
+        label = _fit_words(heading, 190, 22)
+        parts.append(_text(98, 1253, label, size=22, fill="@warn_head@", weight="bold"))
+        x = 98 + int(len(label) * 22 * 0.61) + 18
+        one_line = _fits(gotcha.get("text"), 1010 - x, 22, 1)
+        parts.extend(_lines(x, 1253 if one_line else 1240, gotcha.get("text"), 1010 - x, size=22,
+                            max_lines=2, step=25, fill="@warn_text@"))
+    else:
+        _bottom_bars(parts, plan, gotcha)
+    parts.append('<line x1="60" y1="1290" x2="1020" y2="1290" stroke="@rule@" '
+                 'stroke-width="2" stroke-dasharray="none"/>')
+    parts.append(_text(60, 1324, footer, size=22, fill="@footer@"))
+
+
+def _bottom_bars(parts: list[str], plan: dict, gotcha: dict) -> None:
     parts.append(_rect(40, 1098, 1000, 100, "@warn_bg@", stroke="@warn_stroke@"))
     parts.append(_icon("warning", 60, 1112, "@warn_icon@", 1.5))
     parts.append(_text(110, 1132, _fit_words(gotcha.get("heading") or "Watch out", 880, 24),
@@ -472,9 +666,6 @@ def _bottom(parts: list[str], plan: dict, footer: str) -> None:
     parts.append(_icon("bulb", 60, 1226, "@on_strong@", 1.5))
     parts.extend(_lines(110, 1236, plan["takeaway"], 900, size=23, max_lines=2, step=26,
                         fill="@on_strong@", weight="bold"))
-    parts.append('<line x1="60" y1="1290" x2="1020" y2="1290" stroke="@rule@" '
-                 'stroke-width="2" stroke-dasharray="none"/>')
-    parts.append(_text(60, 1324, footer, size=22, fill="@footer@"))
 
 
 def _soft_header(parts: list[str], plan: dict, headline: str, kicker: str, icon: str) -> None:
@@ -1794,15 +1985,40 @@ def _style_order(plan: dict, recent: str | list | tuple | None, headline: str,
     return fresh + [s for s in candidates if s not in fresh]
 
 
+def theme_family(theme: str) -> str:
+    """A theme's look in a word: dark or light page, plus the hue of its banner colour.
+
+    Two themes in the same family (say steel, ocean and seafoam: all navy on white) look alike
+    on a feed even though their names differ.
+    """
+    import colorsys
+
+    palette = THEMES[theme]
+    r, g, b = (int(palette["strong"][i:i + 2], 16) / 255 for i in (1, 3, 5))
+    hue, light, sat = colorsys.rgb_to_hls(r, g, b)
+    bg = palette["bg"]
+    dark = sum(int(bg[i:i + 2], 16) for i in (1, 3, 5)) < 3 * 100
+    if sat < 0.18 or light < 0.12:
+        tone = "neutral"
+    else:
+        tone = ("red", "orange", "yellow", "green", "teal", "blue", "violet", "pink")[
+            int(((hue * 360 + 15) % 360) // 45)]
+    return f"{'dark' if dark else 'light'}-{tone}"
+
+
 def choose_theme(plan: dict, recent: str | list | tuple | None = None, rng=None) -> str:
-    """A colour theme that is never one of the last two.
+    """A colour theme that is never one of the last two, and with rng never the same colour
+    family (page tone and banner hue) as the last two either.
 
     Without rng: the planner's hint, else a stable pick from the title. With rng: the hint about
     half the time, otherwise any other fresh theme at random.
     """
-    recent = _recent(recent)[-2:]
+    recent = [t for t in _recent(recent)[-2:]]
     hint = _clean(plan.get("theme")).lower()
     names = [t for t in THEMES if t not in recent]
+    if rng is not None:
+        families = {theme_family(t) for t in recent if t in THEMES}
+        names = [t for t in names if theme_family(t) not in families] or names
     if rng is not None:
         if hint in names and rng.random() < 0.5:
             return hint
@@ -1823,13 +2039,26 @@ def choose_motion(plan: dict, recent: str | list | tuple | None = None, rng=None
     return names[sum(ord(c) for c in _clean(plan.get("title"))) % len(names)]
 
 
+def choose_variant(options: list[str] | tuple, recent: str | list | tuple | None = None,
+                   rng=None) -> str:
+    """A detail or finish style: random with rng and never the last one; the first without."""
+    if rng is None:
+        return options[0]
+    fresh = [o for o in options if o not in _recent(recent)[-1:]] or list(options)
+    return rng.choice(fresh)
+
+
 def _render(plan: dict, headline: str, footer: str, style: str, theme: str,
-            motion: str = "flow") -> tuple[str, list[str]]:
+            motion: str = "flow", details: str = "grid",
+            finish: str = "bars") -> tuple[str, list[str]]:
     """Draw one layout; returns the SVG and any text that had to be shortened."""
     _CUTS.clear()
+    _VARIANT.update(details=details, finish=finish)
     parts: list[str] = []
     _start(parts, style, theme)
-    parts[0] = parts[0].replace(" data-highlight=", f' data-motion="{motion}" data-highlight=', 1)
+    parts[0] = parts[0].replace(
+        " data-highlight=", f' data-motion="{motion}" data-details="{details}" '
+                            f'data-finish="{finish}" data-highlight=', 1)
     _LAYOUTS[style](parts, plan, headline, list(ACCENTS))
     _bottom(parts, plan, footer)
     parts.append("</svg>")
@@ -1840,7 +2069,10 @@ def poster_from_brief(brief: str, headline: str, footer: str, *,
                       recent_styles: str | list | tuple | None = None,
                       recent_themes: str | list | tuple | None = None, style: str | None = None,
                       theme: str | None = None, rng=None, exclude: tuple | list = (),
-                      recent_motions: str | list | tuple | None = None) -> str | None:
+                      recent_motions: str | list | tuple | None = None,
+                      recent_details: str | list | tuple | None = None,
+                      recent_finishes: str | list | tuple | None = None,
+                      details: str | None = None, finish: str | None = None) -> str | None:
     """Render a complete poster from the blueprint embedded by plan_infographic.
 
     The layout and colour theme follow the content and always differ from the previous poster's
@@ -1871,16 +2103,25 @@ def poster_from_brief(brief: str, headline: str, footer: str, *,
     if theme not in THEMES:
         theme = choose_theme(plan, recent_themes, rng)
     motion = choose_motion(plan, recent_motions, rng)
+    options = details_options(plan)
+    if details not in options:
+        details = choose_variant(options, recent_details, rng)
+    if finish not in FINISHES:
+        finish = choose_variant(FINISHES, recent_finishes, rng)
     if style in _eligible(plan, headline):
-        return _render(plan, headline, footer, style, theme, motion)[0]
+        return _render(plan, headline, footer, style, theme, motion, details, finish)[0]
     order = [s for s in _style_order(plan, recent_styles, headline, rng) if s not in exclude]
     if not order:
         return None
+    # The chosen detail and finish styles are tried first; if they would shorten text, the
+    # plain grid and bars are tried with the same layout before moving to another layout.
+    looks = list(dict.fromkeys([(details, finish), ("grid", finish), ("grid", "bars")]))
     best: tuple[str, list[str]] | None = None
     for name in order:
-        svg, cuts = _render(plan, headline, footer, name, theme, motion)
-        if not cuts:
-            return svg
-        if best is None or len(cuts) < len(best[1]):
-            best = (svg, cuts)
+        for look in looks:
+            svg, cuts = _render(plan, headline, footer, name, theme, motion, *look)
+            if not cuts:
+                return svg
+            if best is None or len(cuts) < len(best[1]):
+                best = (svg, cuts)
     return best[0]

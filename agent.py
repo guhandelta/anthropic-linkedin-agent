@@ -881,7 +881,7 @@ Return ONLY JSON:
               "no": "at most 50 chars: what happens on no (the loop back)"},
  "pros": ["at most 40 chars"], "cons": ["at most 40 chars"]}
 
-Rules: choose hero.form from the content: before_after when the post contrasts an old way with a new way (exactly 4 nodes, 2 per side, with left_label and right_label); layers when the post is an ordered stack of levels or layers (3-4 nodes); otherwise flow (a sequence of steps). hero.nodes has 3-5 items (2 per side for before_after). modules has 3-4 items and must include a "code" module when the post has code, and a "stats" module when the post has numbers or versions. Use kind "chart" instead of "stats" when the post gives 2-4 numbers in the same unit that are worth comparing (for example latencies in ms, sizes in KB, percentages, speed-ups such as 3x); it is drawn as a bar chart, so every value must start with the number. Each ICON must be one of: ICON_LIST. Choose theme, the colour palette, to suit the topic: THEME_HINTS. Set post_type to what the post is. Suggest the page layout that best fits the post: LAYOUT_HINTS. cards, table, layers and stages are optional: include only the one that matches the post's shape, and only with facts from the post. cards: 4-9 when the post lists problems, mistakes, tips, principles or ordered steps (6 or 9 suit a grid; give each a fix when there is one). table: when the post compares two tools or approaches (3-5 rows, 2-3 "when" items each). layers: 2-4 layers of 1-3 items when the post describes a system architecture or stack. stages: 3-5 stages when the post describes a progression or maturity model. hero may also carry "hub": at most 18 chars naming the central component. profiles: 3-6 when the post describes several types, models, tools or personas, each with 2-3 items per list. scorecard: when the post benchmarks two contenders with a headline number each (also give a stats module with the other numbers). decision: when the process has a yes/no check that loops back (hero.nodes then are start, 1-3 parallel branches, and the merge step). pros and cons: 2-5 each when the post weighs a technology's benefits and drawbacks."""
+Rules: choose hero.form from the content: before_after when the post contrasts an old way with a new way (exactly 4 nodes, 2 per side, with left_label and right_label); layers when the post is an ordered stack of levels or layers (3-4 nodes); otherwise flow (a sequence of steps). hero.nodes has 3-5 items (2 per side for before_after). modules has 3-4 items and must include a "code" module when the post has code, and a "stats" module when the post has numbers or versions. Use kind "chart" instead of "stats" when the post gives 2-4 numbers in the same unit that are worth comparing (for example latencies in ms, sizes in KB, percentages, speed-ups such as 3x); it is drawn as a bar chart, so every value must start with the number. Each ICON must be one of: ICON_LIST. Choose theme, the colour palette, to suit the topic: THEME_HINTS. Set post_type to what the post is. Suggest the page layout that best fits the post: LAYOUT_HINTS. Always include at least one of cards, table, layers, stages, profiles, scorecard, decision or pros/cons, choosing the one that matches the post's shape best and using only facts from the post; when nothing else fits, give 4-6 cards for the post's key points, tips or steps, each with a fix when the post gives one. This extra content unlocks the more distinctive layouts. cards: 4-9 when the post lists problems, mistakes, tips, principles or ordered steps (6 or 9 suit a grid; give each a fix when there is one). table: when the post compares two tools or approaches (3-5 rows, 2-3 "when" items each). layers: 2-4 layers of 1-3 items when the post describes a system architecture or stack. stages: 3-5 stages when the post describes a progression or maturity model. hero may also carry "hub": at most 18 chars naming the central component. profiles: 3-6 when the post describes several types, models, tools or personas, each with 2-3 items per list. scorecard: when the post benchmarks two contenders with a headline number each (also give a stats module with the other numbers). decision: when the process has a yes/no check that loops back (hero.nodes then are start, 1-3 parallel branches, and the merge step). pros and cons: 2-5 each when the post weighs a technology's benefits and drawbacks."""
 
 
 def plan_infographic(post: str, headline: str, idea: str) -> str:
@@ -1016,7 +1016,8 @@ def _recent_poster_styles() -> dict:
     if not isinstance(data, dict):
         data = {}
     out = {}
-    for key, single in (("styles", "style"), ("themes", "theme"), ("motions", "motion")):
+    for key, single in (("styles", "style"), ("themes", "theme"), ("motions", "motion"),
+                        ("details", "detail"), ("finishes", "finish")):
         values = data.get(key, [data[single]] if single in data else [])
         out[key] = [str(v) for v in values] if isinstance(values, list) else []
     return out
@@ -1025,13 +1026,14 @@ def _recent_poster_styles() -> dict:
 def _remember_poster_style(svg: str) -> None:
     style = re.search(r'data-style="([a-z_]+)"', svg)
     theme = re.search(r'data-theme="([a-z_]+)"', svg)
-    motion = re.search(r'data-motion="([a-z_]+)"', svg)
     if not (style and theme):
         return
     recent = _recent_poster_styles()
     data = {"styles": (recent["styles"] + [style.group(1)])[-4:],
-            "themes": (recent["themes"] + [theme.group(1)])[-4:],
-            "motions": (recent["motions"] + ([motion.group(1)] if motion else []))[-4:]}
+            "themes": (recent["themes"] + [theme.group(1)])[-4:]}
+    for key, attr in (("motions", "motion"), ("details", "details"), ("finishes", "finish")):
+        found = re.search(rf'data-{attr}="([a-z_]+)"', svg)
+        data[key] = (recent[key] + ([found.group(1)] if found else []))[-4:]
     try:
         path = poster_style_path()
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -1061,7 +1063,9 @@ def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: P
     for _ in range(3):
         structured_svg = poster_from_brief(brief, headline, footer, recent_styles=recent["styles"],
                                            recent_themes=recent["themes"], rng=rng, exclude=tried,
-                                           recent_motions=recent["motions"])
+                                           recent_motions=recent["motions"],
+                                           recent_details=recent["details"],
+                                           recent_finishes=recent["finishes"])
         if not structured_svg:
             break
         style = re.search(r'data-style="([a-z_]+)"', structured_svg)
