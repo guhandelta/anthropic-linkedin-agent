@@ -286,3 +286,39 @@ def test_notify_commit_inactivity_if_due(monkeypatch):
     assert banner == "Banner!"
     mock_call.assert_called_with("sendMessage", chat_id="12345", text="Alert!")
 
+
+
+def test_call_gives_up_on_a_stalled_connection_quickly(monkeypatch):
+    reviewer = telegram_review.TelegramReviewer("test-token", "12345")
+    ok = MagicMock()
+    ok.json.return_value = {"ok": True, "result": []}
+    post = MagicMock(return_value=ok)
+    monkeypatch.setattr(telegram_review.requests, "post", post)
+    reviewer._call("getUpdates", timeout=20)
+    assert post.call_args.kwargs["timeout"] == (telegram_review.CONNECT_TIMEOUT_S, 70)
+
+
+def test_direct_choice_keeps_waiting_through_a_dropped_connection(monkeypatch):
+    reviewer = telegram_review.TelegramReviewer("test-token", "12345")
+    monkeypatch.setattr(telegram_review.time, "sleep", lambda s: None)
+    monkeypatch.setattr(telegram_review.uuid, "uuid4", lambda: MagicMock(hex="abcdef1234"))
+    tap = {"update_id": 7, "callback_query": {
+        "id": "cq1", "data": "direct_info:abcdef12",
+        "from": {"id": 12345}, "message": {"chat": {"id": 12345}}}}
+    calls = MagicMock(side_effect=[
+        {"message_id": 5},                              # the "How would you like to publish?" message
+        ConnectionError("Connection aborted"),          # a poll that never connects
+        [tap],                                          # the next poll gets the tap
+        True, True,                                     # answerCallbackQuery, editMessageReplyMarkup
+    ])
+    monkeypatch.setattr(reviewer, "_call", calls)
+    assert reviewer.prompt_direct_choice("A pasted post") == "infographic"
+
+
+def test_a_failing_direct_post_is_reported_without_stopping_the_listener(monkeypatch):
+    reviewer = telegram_review.TelegramReviewer("test-token", "12345")
+    monkeypatch.setattr(reviewer, "prompt_direct_choice", MagicMock(return_value="infographic"))
+    sent = MagicMock()
+    monkeypatch.setattr(reviewer, "_call", sent)
+    reviewer._handle_direct_text("A pasted post", MagicMock(side_effect=RuntimeError("design failed")))
+    assert "design failed" in sent.call_args.kwargs["text"]

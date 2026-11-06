@@ -33,6 +33,9 @@ import requests
 
 # Base endpoint for Telegram Bot API calls
 API = "https://api.telegram.org/bot{token}/{method}"
+# A connection attempt that gets no answer fails after this many seconds, so the next address
+# (IPv4 after a stalled IPv6 one) or the next poll is tried instead of waiting the full 70s.
+CONNECT_TIMEOUT_S = 5
 
 # Persistent state file tracking each draft's review lifecycle (pending, approved, rejected, expired, posted, failed)
 STATE = Path(__file__).parent / "state" / "drafts.json"
@@ -202,14 +205,23 @@ class TelegramReviewer:
         url = API.format(token=self.token, method=method)
         if files:
             # Multipart form-data for media file uploads (photos, animations)
-            r = requests.post(url, data=params, files=files, timeout=70)
+            r = requests.post(url, data=params, files=files, timeout=(CONNECT_TIMEOUT_S, 70))
         else:
             # Standard JSON payload for text messages and inline markup
-            r = requests.post(url, json=params, timeout=70)
+            r = requests.post(url, json=params, timeout=(CONNECT_TIMEOUT_S, 70))
         body = r.json()
         if not body.get("ok"):
             raise RuntimeError(f"Telegram {method} failed: {body}")
         return body["result"]
+
+    def _poll_updates(self, params: dict) -> list:
+        """Fetch new updates; a dropped connection returns no updates so the caller keeps waiting."""
+        try:
+            return self._call("getUpdates", **params)
+        except Exception as e:
+            print(f"Telegram polling error: {e}")
+            time.sleep(2)
+            return []
 
     @staticmethod
     def _buttons(*rows):
@@ -328,6 +340,21 @@ class TelegramReviewer:
         set_status(draft_id, "pending", topic=topic, message_id=message_id)
         return message_id
 
+    def _handle_direct_text(self, text: str, on_direct_callback) -> None:
+        """Ask how to publish a pasted post, then run it; an error is reported, never fatal to the listener."""
+        try:
+            choice = self.prompt_direct_choice(text)
+            if choice == "infographic":
+                on_direct_callback(text, custom_image_path=None, generate_infographic=True)
+            elif choice == "text_only":
+                on_direct_callback(text, custom_image_path=None, generate_infographic=False)
+        except Exception as e:
+            print(f"Direct post failed: {e}")
+            try:
+                self._call("sendMessage", chat_id=self.chat_id, text=f"⚠️ Error: {str(e)[:1000]}")
+            except Exception:
+                pass
+
     def prompt_direct_choice(self, text: str, timeout_s: int = 300) -> str:
         """Prompt user whether to auto-design an infographic or publish text-only for direct posts."""
         choice_id = uuid.uuid4().hex[:8]
@@ -348,7 +375,7 @@ class TelegramReviewer:
             params = {"timeout": 20, "allowed_updates": ["callback_query"]}
             if self.offset is not None:
                 params["offset"] = self.offset
-            for up in self._call("getUpdates", **params):
+            for up in self._poll_updates(params):
                 self.offset = up["update_id"] + 1
                 cq = up.get("callback_query")
                 if not cq:
@@ -422,7 +449,7 @@ class TelegramReviewer:
             if self.offset is not None:
                 params["offset"] = self.offset
 
-            for up in self._call("getUpdates", **params):
+            for up in self._poll_updates(params):
                 self.offset = up["update_id"] + 1
 
                 # Handle text messages (corrections, feedback, or /topic switches)
@@ -543,7 +570,7 @@ class TelegramReviewer:
             if self.offset is not None:
                 params["offset"] = self.offset
 
-            for up in self._call("getUpdates", **params):
+            for up in self._poll_updates(params):
                 self.offset = up["update_id"] + 1
 
                 # Handle custom topic reply as text
@@ -788,11 +815,7 @@ class TelegramReviewer:
 
                 if user_state == "waiting_for_direct":
                     user_state = None
-                    choice = self.prompt_direct_choice(text)
-                    if choice == "infographic":
-                        on_direct_callback(text, custom_image_path=None, generate_infographic=True)
-                    elif choice == "text_only":
-                        on_direct_callback(text, custom_image_path=None, generate_infographic=False)
+                    self._handle_direct_text(text, on_direct_callback)
                     continue
 
                 # 9. Slash command syntax: /topic <topic text>
@@ -809,20 +832,12 @@ class TelegramReviewer:
                 # 10. Slash command syntax: /direct <post text>
                 if text.startswith(("/direct ", "/publish ")):
                     direct_text = text.split(" ", 1)[1].strip()
-                    choice = self.prompt_direct_choice(direct_text)
-                    if choice == "infographic":
-                        on_direct_callback(direct_text, custom_image_path=None, generate_infographic=True)
-                    elif choice == "text_only":
-                        on_direct_callback(direct_text, custom_image_path=None, generate_infographic=False)
+                    self._handle_direct_text(direct_text, on_direct_callback)
                     continue
 
                 # 11. Free-form text input heuristic
                 if len(text) >= 80:
-                    choice = self.prompt_direct_choice(text)
-                    if choice == "infographic":
-                        on_direct_callback(text, custom_image_path=None, generate_infographic=True)
-                    elif choice == "text_only":
-                        on_direct_callback(text, custom_image_path=None, generate_infographic=False)
+                    self._handle_direct_text(text, on_direct_callback)
                 else:
                     self._call("sendMessage", chat_id=self.chat_id,
                                text=f"🎯 Researching & drafting on topic:\n'{text}'\nI will send the draft + infographic for your approval.")
