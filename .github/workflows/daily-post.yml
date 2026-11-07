@@ -119,6 +119,8 @@ jobs:
           RUN_MODE: ${{ inputs.run_mode }}
           POST_TEXT: ${{ inputs.post_text }}
           PYTHONUNBUFFERED: "1"         # log lines with their real times
+          # LinkedIn logs the owner out when LI_AT is used from a GitHub server, so groups are skipped here.
+          POST_TO_GROUPS: "false"
           # The three waits must fit the job's 350-minute timeout with time left for the work.
           TELEGRAM_TOPIC_WAIT_MINUTES: "60"
           TELEGRAM_TEXT_WAIT_MINUTES: "120"

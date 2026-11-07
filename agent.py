@@ -1882,6 +1882,18 @@ def publish_to_linkedin_and_groups(
 
     # Publish to configured LinkedIn Groups via Playwright
     target_groups = CFG.get("linkedin", {}).get("target_groups", [])
+    if target_groups and os.getenv("POST_TO_GROUPS", "true").strip().lower() in ("0", "false", "no", "off"):
+        # LinkedIn ends the owner's session when LI_AT is used from a GitHub server, so runs there
+        # skip the groups until they are posted from a trusted machine.
+        print("Group posting is switched off for this run (POST_TO_GROUPS).")
+        if tg and message_id:
+            try:
+                tg._call("sendMessage", chat_id=tg.chat_id, reply_to_message_id=message_id,
+                         text="ℹ️ Posted to your feed. Group posting is switched off on GitHub for now, "
+                              "because LinkedIn logs you out when your cookie is used there.")
+            except Exception:
+                pass
+        target_groups = []
     if target_groups:
         delay = CFG.get("linkedin", {}).get("group_delay_seconds", 12)
         print(f"\nPublishing to {len(target_groups)} LinkedIn groups...")

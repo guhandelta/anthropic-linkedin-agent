@@ -215,3 +215,29 @@ def test_redirect_loop_means_the_cookie_was_rejected(debug_dir):
         assert lg.is_logged_in(page) is False
         assert "rejected the LI_AT session" in lg.page_block_reason(page)
         ctx.close()
+
+
+def test_groups_are_skipped_when_switched_off(monkeypatch):
+    from unittest.mock import MagicMock
+    mock_li = MagicMock()
+    mock_li.post_text.return_value = mock_li.post_with_image.return_value = "urn:li:share:1"
+    monkeypatch.setattr(agent, "LinkedInClient", MagicMock(return_value=mock_li))
+    groups = MagicMock()
+    monkeypatch.setattr(agent, "post_to_groups", groups)
+    monkeypatch.setenv("LINKEDIN_ACCESS_TOKEN", "fake")
+    monkeypatch.setenv("POST_TO_GROUPS", "false")
+    monkeypatch.setitem(agent.CFG, "linkedin", {"api_version": "202610", "target_groups": ["g1"],
+                                                "group_delay_seconds": 0})
+    tg = MagicMock()
+    urn = agent.publish_to_linkedin_and_groups(post="p", image_path=None, headline="h",
+                                               sources=[{"url": "https://react.dev", "claim": "c"}],
+                                               draft_id="d", message_id=1, tg=tg)
+    assert urn == "urn:li:share:1"
+    groups.assert_not_called()
+    assert "switched off" in tg._call.call_args.kwargs["text"]
+
+
+def test_workflow_switches_group_posting_off():
+    from pathlib import Path
+    text = (Path(lg.__file__).parent / ".github/workflows/daily-post.yml").read_text()
+    assert 'POST_TO_GROUPS: "false"' in text
