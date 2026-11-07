@@ -37,7 +37,8 @@ def _plan(form=None, nodes=None, **hero_extra):
 
 
 def _render(plan):
-    return finalize_svg(poster_from_brief(MARKER + "\n" + json.dumps(plan), "Heading", "Author"))
+    return finalize_svg(poster_from_brief(MARKER + "\n" + json.dumps(plan), "Heading", "Author",
+                                          style="guide", theme="ocean"))
 
 
 @pytest.mark.parametrize("form, count", [("flow", 3), (None, 3), ("cycle", 3), ("flow", 4),
@@ -190,5 +191,6 @@ def test_poster_without_tagline_or_gotcha_heading_still_renders():
     plan = _plan(form="flow", nodes=NODES[:3])
     plan.pop("tagline")
     plan["gotcha"] = {"text": "Browser support varies."}
-    svg = finalize_svg(poster_from_brief(MARKER + "\n" + json.dumps(plan), "Heading", "Author"))
+    svg = finalize_svg(poster_from_brief(MARKER + "\n" + json.dumps(plan), "Heading", "Author",
+                                          style="guide", theme="ocean"))
     assert svg is not None and "Watch out" in svg

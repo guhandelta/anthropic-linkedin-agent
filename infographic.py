@@ -368,6 +368,10 @@ def render_svg(svg: str, path: Path) -> Path:
     return path
 
 
+# How a poster's GIF moves: one step at a time, back and forth, building up, or all breathing.
+MOTIONS = ("flow", "wave", "build", "pulse")
+
+
 def gif_frame_svgs(svg: str, n_frames: int = 12) -> list[str]:
     """Build the per-frame SVGs the animated GIF is rendered from (see render_svg_to_gif)."""
     import math
@@ -392,6 +396,11 @@ def gif_frame_svgs(svg: str, n_frames: int = 12) -> list[str]:
 
     base_svg = re.sub(r'<(line|polyline|path)\s+([^>]*(?:x1=|d="M|points=)[^>]*)>', _ensure_dashed, svg)
     motion_steps = sorted({int(step) for step in re.findall(r'data-motion-step="(\d+)"', svg)})
+    # Themed posters name their highlight colour; others keep the original blue.
+    themed = re.search(r'data-highlight="(#[0-9A-Fa-f]{6})"', svg)
+    highlight = themed.group(1) if themed else "#3768B7"
+    named = re.search(r'data-motion="([a-z]+)"', svg)
+    motion = named.group(1) if named and named.group(1) in MOTIONS else "flow"
 
     frame_svgs = []
     dash_period = 20  # 20 matches dash pattern "10 10" and loops seamlessly without jump cuts
@@ -399,25 +408,46 @@ def gif_frame_svgs(svg: str, n_frames: int = 12) -> list[str]:
     for i in range(n_frames):
         phase = 2 * math.pi * (i / n_frames)
         flow_offset = int((i / n_frames) * dash_period)
+        if motion == "wave":
+            flow_offset = dash_period - flow_offset  # connectors flow the other way
         pulse_r_delta = 8 * (0.5 + 0.5 * math.sin(phase))
         pulse_op = round(0.85 - 0.45 * (0.5 + 0.5 * math.sin(phase)), 2)
 
         frame_svg = base_svg
 
-        # Spotlight one diagram node at a time; all labels remain visible in every frame.
+        # Highlight the diagram's steps; every label stays visible in every frame. The poster names
+        # its motion style, so different posters move differently.
         if motion_steps:
-            active_step = motion_steps[(i * len(motion_steps)) // n_frames]
+            count = len(motion_steps)
+            position = (i * count) // n_frames
+            if motion == "wave":  # back and forth, two neighbours lit together
+                pairs = max(1, count - 1)
+                bounce = list(range(pairs)) + list(range(pairs - 2, 0, -1))
+                at = bounce[(i * len(bounce)) // n_frames]
+                lit = {motion_steps[at], motion_steps[min(at + 1, count - 1)]}
+            elif motion == "build":  # steps light up one after another and stay lit
+                lit = set(motion_steps[:position + 1])
+            elif motion == "pulse":  # every step breathes together
+                lit = set(motion_steps)
+            else:  # "flow": one step at a time
+                lit = {motion_steps[position]}
+            width = 3 + round(5 * (0.5 + 0.5 * math.sin(phase))) if motion == "pulse" else 7
 
             def _highlight_node(match):
                 tag = match.group(0)
                 step = int(re.search(r'data-motion-step="(\d+)"', tag).group(1))
-                if step == active_step:
-                    tag = re.sub(r'stroke="[^"]*"', 'stroke="#3768B7"', tag)
-                    tag = re.sub(r'stroke-width="[^"]*"', 'stroke-width="7"', tag)
+                if step in lit:
+                    tag = re.sub(r'stroke="[^"]*"', f'stroke="{highlight}"', tag)
+                    tag = re.sub(r'stroke-width="[^"]*"', f'stroke-width="{width}"', tag)
                 return tag
 
             frame_svg = re.sub(r'<rect\s+[^>]*data-motion-step="\d+"[^>]*>',
                                _highlight_node, frame_svg)
+        if motion == "build":
+            # A progress bar fills along the top edge as the steps light up.
+            bar = round(1080 * (i + 1) / n_frames)
+            frame_svg = frame_svg.replace(
+                "</svg>", f'<rect x="0" y="0" width="{bar}" height="8" fill="{highlight}"/></svg>')
 
         # Shift dashoffset on all dashed connector lines to simulate flowing data packets
         def _shift_dash(m):

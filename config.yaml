@@ -46,7 +46,7 @@ linkedin:
     - https://www.linkedin.com/groups/121615/
 
 telegram:
-  timeout_hours: 3          # wait this long for your Approve/Reject, then skip the day
+  timeout_hours: 3          # wait this long for your Approve/Reject, then skip the day (fits the 4-hour Actions job)
   remind_every_minutes: 20  # ping you on Telegram until you answer
   commit_inactivity:
     interval_days: 20       # remind every 20 days (e.g. day 20, day 40)

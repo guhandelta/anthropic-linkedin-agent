@@ -92,5 +92,105 @@
         "claim": "Industry best practices and guidelines"
       }
     ]
+  },
+  {
+    "date": "2026-10-31T22:28:01",
+    "draft_id": "20261031-0a53e3f6",
+    "source_domain": "react.dev/reference",
+    "headline": "Integrating Slack with v0: Streamlining Team Collaboration",
+    "post_urn": "urn:li:share:7522483154079772674",
+    "chars": 2907,
+    "sources": [
+      {
+        "url": "https://v0.app/docs/slack",
+        "publication_date": null,
+        "claim": "The v0 bot for Slack lets anyone on your team contribute to production by mentioning `@v0` in a Slack channel. v0 reads the conversation thread for context, writes the code changes, creates a branch, and opens a pull request -- all without leaving Slack."
+      },
+      {
+        "url": "https://v0.app/docs/slack",
+        "publication_date": null,
+        "claim": "To target a specific repository or branch, use structured syntax: `@v0 [repo=acme/dashboard] Add a chart to the analytics page` or `@v0 [repo=acme/dashboard branch=feature-x] Fix the broken tooltip`."
+      },
+      {
+        "url": "https://v0.app/docs/slack",
+        "publication_date": null,
+        "claim": "Access channel settings by using the command `@v0 settings` to configure default repository and branch for the channel."
+      },
+      {
+        "url": "https://v0.app/docs/slack",
+        "publication_date": null,
+        "claim": "Once v0 opens a pull request, Vercel generates a preview deployment on every commit pushed to that branch, allowing your team to view and QA changes directly in the browser."
+      }
+    ]
+  },
+  {
+    "date": "2026-11-01T08:41:17",
+    "draft_id": "20261101-direct-af8f78",
+    "source_domain": "Direct Post",
+    "headline": "The End of Client Caching",
+    "post_urn": "direct",
+    "chars": 82,
+    "sources": []
+  },
+  {
+    "date": "2026-11-01T10:11:30",
+    "draft_id": "20261101-direct-2d6411",
+    "source_domain": "Direct Post",
+    "headline": "Death of Client-Side Caching",
+    "post_urn": "direct",
+    "chars": 2679,
+    "sources": []
+  },
+  {
+    "date": "2026-11-03T23:15:07",
+    "draft_id": "20261103-b26b8179",
+    "source_domain": "developer.mozilla.org/en-US/docs/Web/API",
+    "headline": "High-Contrast \"Terminal-First\" Brutalist UI",
+    "post_urn": "urn:li:share:7523597543390244864",
+    "chars": 2899,
+    "sources": [
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/@media/forced-colors",
+        "publication_date": "2026-04-20",
+        "claim": "In forced colors mode, properties like box-shadow are forced to 'none'."
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/system-color",
+        "publication_date": "2026-08-12",
+        "claim": "The <system-color> keywords expose colors chosen by forced colors mode, such as Canvas and CanvasText, allowing pages to integrate seamlessly."
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/forced-color-adjust",
+        "publication_date": "2026-08-27",
+        "claim": "The forced-color-adjust CSS property allows authors to opt specific elements out of forced colors mode."
+      }
+    ]
+  },
+  {
+    "date": "2026-11-04T15:07:45",
+    "draft_id": "20261104-direct-c8f4f2",
+    "source_domain": "Direct Post",
+    "headline": "Generative UX for Microfrontends",
+    "post_urn": "direct",
+    "chars": 1612,
+    "sources": []
+  },
+  {
+    "date": "2026-11-05T11:44:24",
+    "draft_id": "20261105-direct-fcddc8",
+    "source_domain": "Direct Post",
+    "headline": "Astro Islands vs Module Federation",
+    "post_urn": "direct",
+    "chars": 2637,
+    "sources": []
+  },
+  {
+    "date": "2026-11-05T19:43:13",
+    "draft_id": "20261105-direct-b3ed95",
+    "source_domain": "Direct Post",
+    "headline": "Micro-Frontends: Architecture or Complexity?",
+    "post_urn": "direct",
+    "chars": 2814,
+    "sources": []
   }
 ]

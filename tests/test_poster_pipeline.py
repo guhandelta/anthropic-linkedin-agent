@@ -1,4 +1,5 @@
 import json
+import re
 from unittest.mock import MagicMock
 
 import pytest
@@ -106,3 +107,98 @@ def test_draw_poster_designer_render_error_then_gives_up(monkeypatch, tmp_path):
     monkeypatch.setattr(agent, "render_poster_files", MagicMock(side_effect=ValueError("render boom")))
     media, feedback = agent.draw_poster("post", "plain idea", "Head", "Footer", tmp_path / "p.png")
     assert media is None and feedback == "render boom"
+
+
+# --- Varied layouts and themes: the next poster never repeats the last one's layout or colours ---
+
+def test_draw_poster_remembers_the_layout_and_the_next_poster_differs(monkeypatch, tmp_path):
+    seen = []
+    monkeypatch.setattr(agent, "layout_issues", lambda svg: [])
+    monkeypatch.setattr(agent, "render_poster_files", lambda svg, p: seen.append(svg) or p)
+    for _ in range(3):
+        media, feedback = agent.draw_poster("post", BRIEF, "Head", "Footer", tmp_path / "p.png")
+        assert media == tmp_path / "p.png" and feedback is None
+    styles = [re.search(r'data-style="(\w+)"', s).group(1) for s in seen]
+    themes = [re.search(r'data-theme="(\w+)"', s).group(1) for s in seen]
+    motions = [re.search(r'data-motion="(\w+)"', s).group(1) for s in seen]
+    assert len(set(styles)) == 3 and len(set(themes)) == 3
+    assert motions[0] != motions[1] != motions[2]
+    saved = json.loads(agent.poster_style_path().read_text())
+    details = [re.search(r'data-details="(\w+)"', s).group(1) for s in seen]
+    finishes = [re.search(r'data-finish="(\w+)"', s).group(1) for s in seen]
+    assert details[0] != details[1] != details[2] and finishes[0] != finishes[1] != finishes[2]
+    assert saved == {"styles": styles, "themes": themes, "motions": motions,
+                     "details": details, "finishes": finishes}
+
+
+def test_style_history_keeps_the_last_ten():
+    names = [f"style_{c}" for c in "abcdefghijkl"]
+    for style in names:
+        agent._remember_poster_style(f'<svg data-style="{style}" data-theme="ocean"/>')
+    assert agent._recent_poster_styles() == {"styles": names[-10:], "themes": ["ocean"] * 10,
+                                             "motions": [], "details": [], "finishes": []}
+
+
+def test_style_history_reads_the_older_single_value_file():
+    path = agent.poster_style_path()
+    path.parent.mkdir(parents=True)
+    path.write_text('{"style": "guide", "theme": "ocean"}')
+    assert agent._recent_poster_styles() == {"styles": ["guide"], "themes": ["ocean"], "motions": [],
+                                             "details": [], "finishes": []}
+    path.write_text('{"styles": "guide", "themes": ["ocean"]}')
+    assert agent._recent_poster_styles() == {"styles": [], "themes": ["ocean"], "motions": [],
+                                             "details": [], "finishes": []}
+
+
+def test_draw_poster_runs_the_rendered_layout_check_on_the_structured_poster(monkeypatch, tmp_path):
+    monkeypatch.setattr(agent, "layout_issues", lambda svg: ["'Title' overlaps icon"])
+    monkeypatch.setattr(agent, "design_svg", MagicMock(side_effect=ValueError("cut off")))
+    monkeypatch.setattr(agent, "render_poster_files", lambda svg, p: p)
+    media, feedback = agent.draw_poster("post", BRIEF, "Head", "Footer", tmp_path / "p.png")
+    assert media == tmp_path / "p.png"  # still published as the best valid drawing
+    assert not agent.poster_style_path().exists()  # only a clean structured poster is remembered
+
+
+@pytest.mark.parametrize("content", ["not json", "[1, 2]"])
+def test_last_poster_style_ignores_a_damaged_file(content):
+    path = agent.poster_style_path()
+    path.parent.mkdir(parents=True)
+    path.write_text(content)
+    assert agent._recent_poster_styles() == {"styles": [], "themes": [], "motions": [], "details": [],
+                                             "finishes": []}
+
+
+def test_last_poster_style_is_empty_before_the_first_poster():
+    assert agent._recent_poster_styles() == {"styles": [], "themes": [], "motions": [], "details": [],
+                                             "finishes": []}
+
+
+def test_remember_poster_style_skips_drawings_without_a_style():
+    agent._remember_poster_style("<svg/>")
+    assert not agent.poster_style_path().exists()
+
+
+def test_remember_poster_style_never_raises(monkeypatch, tmp_path, capsys):
+    blocker = tmp_path / "file"
+    blocker.write_text("x")
+    monkeypatch.setattr(agent, "poster_style_path", lambda: blocker / "sub" / "style.json")
+    agent._remember_poster_style('<svg data-style="guide" data-theme="ocean"/>')
+    assert "Could not save the poster style" in capsys.readouterr().out
+
+
+def test_planner_is_asked_for_a_theme(monkeypatch):
+    call = MagicMock(return_value=PLAN)
+    monkeypatch.setattr(agent, "call_json", call)
+    agent.plan_infographic("post", "Head", "idea")
+    system = call.call_args.args[0]
+    assert '"theme": "ocean | forest | sunset | grape | midnight | ember | tangerine' in system
+    assert "volcano for security threats" in system
+    assert "midnight for infrastructure" in system and "THEME_" not in system
+    assert '"post_type": "release | bug_fix' in system and "incident for bug fixes" in system
+    assert "LAYOUT_" not in system and "POST_TYPES" not in system
+    assert '"cards": [{"title"' in system and "matrix for lists of 6 or 9" in system
+
+
+def test_poster_style_lives_in_the_git_ignored_state_folder(monkeypatch):
+    monkeypatch.undo()  # drop the conftest redirect to see the real location
+    assert agent.poster_style_path() == agent.ROOT / "state" / "poster_style.json"

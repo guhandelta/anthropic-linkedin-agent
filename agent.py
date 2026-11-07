@@ -85,6 +85,10 @@ load_dotenv(ROOT / ".env")
 
 # Load central configuration file
 CFG = yaml.safe_load((ROOT / "config.yaml").read_text())
+# A GitHub Actions job is capped (timeout-minutes in daily-post.yml), so the workflow can shorten the
+# approval wait without changing the Mac's config.yaml.
+if os.environ.get("TELEGRAM_TIMEOUT_HOURS"):
+    CFG["telegram"]["timeout_hours"] = float(os.environ["TELEGRAM_TIMEOUT_HOURS"])
 RS = CFG["research"]
 
 # Allowed categorizations for technical posts
@@ -607,12 +611,40 @@ def call_json(system: str, content, tools: list | None = None, max_tokens: int =
     chain = _failover_chain(ACTIVE_LLM_PROVIDER == "anthropic" and "anthropic" not in DISABLED_PROVIDERS)
     for i, prov in enumerate(chain):
         try:
-            return callers[prov](system, content, tools=tools, max_tokens=max_tokens)
+            return _with_network_retries(
+                lambda: callers[prov](system, content, tools=tools, max_tokens=max_tokens))
         except Exception as e:
             if i == len(chain) - 1:
                 raise
             notify_provider_switch(prov, chain[i + 1], str(e))
             ACTIVE_LLM_PROVIDER = chain[i + 1]
+
+
+# A dropped connection is worth retrying on the same provider; an empty credit balance is not.
+_TRANSIENT = ("incomplete chunked read", "peer closed connection", "connection reset",
+              "connection aborted", "remoteprotocolerror", "remote end closed", "timed out",
+              "timeout", "temporarily unavailable", "service unavailable", "bad gateway", "503", "502")
+_PERMANENT = ("credit", "quota", "billing", "api key", "api_key", "permission", "invalid_request")
+
+
+def _is_transient(error: Exception) -> bool:
+    text = f"{type(error).__name__} {error}".lower()
+    return any(m in text for m in _TRANSIENT) and not any(m in text for m in _PERMANENT)
+
+
+def _with_network_retries(call, attempts: int = 3, delays: tuple = (3, 8)):
+    """Run call(); on a transient network error wait and try again (attempts in total)."""
+    import time
+
+    for n in range(attempts):
+        try:
+            return call()
+        except Exception as e:
+            if n == attempts - 1 or not _is_transient(e):
+                raise
+            wait = delays[min(n, len(delays) - 1)]
+            print(f"Network hiccup ({str(e)[:80]}); retrying in {wait}s...")
+            time.sleep(wait)
 
 
 # -----------------------------------------------------------------------------
@@ -669,7 +701,7 @@ Return ONLY JSON:
 
 
 def write_draft(source: str, feedback: str | None, posted: set[str], topic: str | None = None,
-                prior_topics: list[str] | None = None) -> dict:
+                prior_topics: list[str] | None = None, item: dict | None = None) -> dict:
     """
     Executes the research and drafting phase.
     
@@ -719,6 +751,13 @@ infographic_idea. Never use an example or placeholder URL as a source."""
             min_emoji=CFG["post"]["min_emojis"], max_emoji=CFG["post"]["max_emojis"],
         )
         msg = f"Browse {source} and write the post."
+        if item:
+            # The topic was already checked against the posting history: write about it, not a new one.
+            msg = (f"Write the post about this item from {source}. It has been checked and is new "
+                   f"for this account, so do not switch to a different topic.\n"
+                   f"Item: {item['topic']}\nAngle: {item.get('angle', '')}\n"
+                   f"Technical takeaway: {item['technical_takeaway']}\n"
+                   f"Start from this page: {item['source_url']}")
         tool_domains = [search_domain]
 
     if feedback:
@@ -726,24 +765,6 @@ infographic_idea. Never use an example or placeholder URL as a source."""
                 f"or keep the same item:\n{feedback}")
     res = call_json(system, msg, tools=web_tools(list(dict.fromkeys(tool_domains))), max_tokens=8000)
 
-    # If the draft post was produced but is shorter than 2600 chars, perform an expansion pass
-    if isinstance(res, dict) and "post" in res and not res.get("no_item"):
-        post_text = res["post"]
-        if len(post_text) < 2600:
-            expand_sys = (
-                f"You are a LinkedIn ghostwriter for {a['name']}, {a['role']}. "
-                f"LinkedIn posts should be comprehensive, in-depth technical deep-dives strictly between "
-                f"{CFG['post']['min_chars']} and {CFG['post']['max_chars']} characters. "
-                "Expand the provided post with deeper technical analysis, architectural trade-offs, "
-                "code explanations, edge cases, and actionable takeaways so that the total character count "
-                f"is approximately 2980 characters. Maintain the author voice. Return ONLY valid JSON: {{\"post\": \"...\"}}"
-            )
-            try:
-                expanded = call_json(expand_sys, f"Current post ({len(post_text)} chars):\n\n{post_text}", max_tokens=8000)
-                if expanded.get("post") and len(expanded["post"]) > len(post_text):
-                    res["post"] = expanded["post"]
-            except Exception:
-                pass
     return res
 
 
@@ -835,13 +856,32 @@ Return ONLY JSON:
           "caption": "at most 50 chars",
           "left_label": "before_after only: heading for the old way", "right_label": "before_after only: heading for the new way",
           "nodes": [{"label": "at most 18 chars", "detail": "at most 22 chars, a complete phrase", "icon": "ICON"}]},
- "modules": [{"kind": "code | checklist | stats | pros_cons | steps",
+ "modules": [{"kind": "code | checklist | stats | chart | pros_cons | steps",
               "heading": "at most 26 chars", "icon": "ICON",
-              "lines": ["at most 30 chars each, 3-4 lines, each a complete phrase; never end a line with an ellipsis. For kind=code use real code lines from the post; for stats use 'value | caption'"]}],
+              "lines": ["at most 30 chars each, 3-4 lines, each a complete phrase; never end a line with an ellipsis. For kind=code copy code lines character for character from the post; for stats and chart use 'value | caption'"]}],
  "gotcha": {"heading": "Watch out", "text": "at most 70 chars: the limitation, tradeoff or breaking change"},
- "takeaway": "at most 70 chars: the one thing to remember"}
+ "takeaway": "at most 70 chars: the one thing to remember",
+ "post_type": "POST_TYPES",
+ "layout": "LAYOUT_LIST",
+ "theme": "THEME_LIST",
+ "cards": [{"title": "at most 24 chars", "text": "at most 70 chars", "fix": "at most 50 chars", "icon": "ICON"}],
+ "table": {"left": "name, at most 16 chars", "right": "name, at most 16 chars",
+           "left_about": "at most 70 chars", "right_about": "at most 70 chars",
+           "rows": [{"aspect": "at most 16 chars", "left": "at most 40 chars", "right": "at most 40 chars"}],
+           "left_when": ["at most 40 chars"], "right_when": ["at most 40 chars"]},
+ "layers": [{"name": "at most 22 chars", "items": [{"label": "at most 18 chars", "detail": "at most 26 chars", "icon": "ICON"}]}],
+ "stages": [{"label": "at most 16 chars, short words", "detail": "at most 40 chars", "icon": "ICON"}],
+ "profiles": [{"name": "at most 18 chars", "icon": "ICON", "about": "at most 60 chars",
+               "a_label": "at most 12 chars, e.g. Used in", "a_items": ["at most 18 chars"],
+               "b_label": "at most 12 chars, e.g. Key ideas", "b_items": ["at most 18 chars"]}],
+ "scorecard": {"left": "at most 14 chars", "right": "at most 14 chars", "left_value": "at most 7 chars, e.g. $0.58",
+               "right_value": "at most 7 chars", "left_caption": "at most 24 chars", "right_caption": "at most 24 chars",
+               "ratio": "at most 6 chars, e.g. 5.2x", "ratio_caption": "at most 14 chars"},
+ "decision": {"question": "at most 30 chars, a yes/no check", "yes": "at most 40 chars: what happens on yes",
+              "no": "at most 50 chars: what happens on no (the loop back)"},
+ "pros": ["at most 40 chars"], "cons": ["at most 40 chars"]}
 
-Rules: choose hero.form from the content: before_after when the post contrasts an old way with a new way (exactly 4 nodes, 2 per side, with left_label and right_label); layers when the post is an ordered stack of levels or layers (3-4 nodes); otherwise flow (a sequence of steps). hero.nodes has 3-5 items (2 per side for before_after). modules has 3-4 items and must include a "code" module when the post has code, and a "stats" module when the post has numbers or versions. Each ICON must be one of: ICON_LIST."""
+Rules: choose hero.form from the content: before_after when the post contrasts an old way with a new way (exactly 4 nodes, 2 per side, with left_label and right_label); layers when the post is an ordered stack of levels or layers (3-4 nodes); otherwise flow (a sequence of steps). hero.nodes has 3-5 items (2 per side for before_after). modules has 3-4 items and must include a "code" module when the post has code, and a "stats" module when the post has numbers or versions. Use kind "chart" instead of "stats" when the post gives 2-4 numbers in the same unit that are worth comparing (for example latencies in ms, sizes in KB, percentages, speed-ups such as 3x); it is drawn as a bar chart, so every value must start with the number. Each ICON must be one of: ICON_LIST. Choose theme, the colour palette, to suit the topic: THEME_HINTS. Set post_type to what the post is. Suggest the page layout that best fits the post: LAYOUT_HINTS. Always include at least two of cards, table, layers, stages, profiles, scorecard, decision or pros/cons, choosing the ones that match the post's shape best and using only facts from the post; when nothing else fits, give 4-6 cards for the post's key points, tips or steps, each with a fix when the post gives one. This extra content unlocks the more distinctive layouts. cards: 4-9 when the post lists problems, mistakes, tips, principles or ordered steps (6 or 9 suit a grid; give each a fix when there is one). table: when the post compares two tools or approaches (3-5 rows, 2-3 "when" items each). layers: 2-4 layers of 1-3 items when the post describes a system architecture or stack. stages: 3-5 stages when the post describes a progression or maturity model. hero may also carry "hub": at most 18 chars naming the central component. profiles: 3-6 when the post describes several types, models, tools or personas, each with 2-3 items per list. scorecard: when the post benchmarks two contenders with a headline number each (also give a stats module with the other numbers). decision: when the process has a yes/no check that loops back (hero.nodes then are start, 1-3 parallel branches, and the merge step). pros and cons: 2-5 each when the post weighs a technology's benefits and drawbacks."""
 
 
 def plan_infographic(post: str, headline: str, idea: str) -> str:
@@ -853,15 +893,46 @@ def plan_infographic(post: str, headline: str, idea: str) -> str:
     idea, and only has to focus on layout. Any failure falls back to the plain idea.
     """
     try:
-        system = BLUEPRINT_SYSTEM.replace("ICON_LIST", ", ".join(ICON_NAMES))
-        plan = call_json(system, f"HEADLINE: {headline}\n\nPOST:\n{post}\n\nWRITER'S IDEA:\n{idea}", max_tokens=2500)
+        from poster_layout import LAYOUT_HINTS, POST_TYPES, THEME_HINTS
+
+        system = (BLUEPRINT_SYSTEM.replace("ICON_LIST", ", ".join(ICON_NAMES))
+                  .replace("THEME_LIST", " | ".join(THEME_HINTS))
+                  .replace("THEME_HINTS", "; ".join(f"{k} for {v}" for k, v in THEME_HINTS.items()))
+                  .replace("POST_TYPES", " | ".join(POST_TYPES))
+                  .replace("LAYOUT_LIST", " | ".join(LAYOUT_HINTS))
+                  .replace("LAYOUT_HINTS", "; ".join(f"{k} for {v}" for k, v in LAYOUT_HINTS.items())))
+        plan = call_json(system, f"HEADLINE: {headline}\n\nPOST:\n{post}\n\nWRITER'S IDEA:\n{idea}", max_tokens=3500)
     except Exception as e:  # noqa: BLE001 - planning is an enhancement, never a blocker
         print(f"Infographic planning skipped ({e}); using the writer's idea only.")
         return idea
     if not isinstance(plan, dict) or not plan.get("modules"):
         return idea
+    _keep_verbatim_code(plan, post)
     return (f"{idea}\n\nCONTENT BLUEPRINT (draw exactly this content; every fact comes from the post):\n"
             + json.dumps(plan, ensure_ascii=False, indent=1))
+
+
+def _keep_verbatim_code(plan: dict, post: str) -> None:
+    """Keep only code lines that appear in the post (spacing aside); drop a code module left empty.
+
+    A reviewer rightly rejects a poster whose code differs from the post's, and the planner
+    sometimes paraphrases code, so the poster may only quote it.
+    """
+    squash = lambda text: re.sub(r"\s+", "", str(text))  # noqa: E731
+    body = squash(post)
+    modules = plan.get("modules")
+    if not isinstance(modules, list):
+        return
+    kept = []
+    for module in modules:
+        if isinstance(module, dict) and str(module.get("kind", "")).strip().lower() == "code":
+            lines = module.get("lines") if isinstance(module.get("lines"), list) else []
+            lines = [line for line in lines if squash(line) and squash(line) in body]
+            if not lines:
+                continue
+            module["lines"] = lines
+        kept.append(module)
+    plan["modules"] = kept
 
 
 def _designer_prompt(headline: str, footer: str) -> str:
@@ -931,8 +1002,56 @@ def render_poster_files(svg: str, image_path: Path) -> Path:
         return image_path
 
 
+def poster_style_path() -> Path:
+    """Where the last poster's layout and colour theme are kept, so the next one differs."""
+    return ROOT / "state" / "poster_style.json"
+
+
+def _recent_poster_styles() -> dict:
+    """Layouts and themes of the last few posters, oldest first (empty when unknown)."""
+    try:
+        data = json.loads(poster_style_path().read_text())
+    except (OSError, ValueError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    out = {}
+    for key, single in (("styles", "style"), ("themes", "theme"), ("motions", "motion"),
+                        ("details", "detail"), ("finishes", "finish")):
+        values = data.get(key, [data[single]] if single in data else [])
+        out[key] = [str(v) for v in values] if isinstance(values, list) else []
+    return out
+
+
+def _remember_poster_style(svg: str) -> None:
+    """Record the layout, theme, motion, details and finish of the poster that was delivered.
+
+    Only the final poster of a post is recorded (produce_infographic calls this once), so
+    rejected drafts never push real posts out of the history.
+    """
+    from poster_layout import HISTORY
+
+    style = re.search(r'data-style="([a-z_]+)"', svg)
+    theme = re.search(r'data-theme="([a-z_]+)"', svg)
+    if not (style and theme):
+        return
+    recent = _recent_poster_styles()
+    data = {"styles": (recent["styles"] + [style.group(1)])[-HISTORY:],
+            "themes": (recent["themes"] + [theme.group(1)])[-HISTORY:]}
+    for key, attr in (("motions", "motion"), ("details", "details"), ("finishes", "finish")):
+        found = re.search(rf'data-{attr}="([a-z_]+)"', svg)
+        data[key] = (recent[key] + ([found.group(1)] if found else []))[-HISTORY:]
+    try:
+        path = poster_style_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data))
+    except OSError as e:  # remembering is a nicety; never fail a post over it
+        print(f"Could not save the poster style ({e}).")
+
+
 def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: Path,
-                feedback: str | None = None) -> tuple[Path | None, str | None]:
+                feedback: str | None = None,
+                drafts: dict | None = None) -> tuple[Path | None, str | None]:
     """
     Ask the designer for a poster, validate it, and render it. Returns (media_path, last_feedback).
 
@@ -944,19 +1063,41 @@ def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: P
     # Best drawing that passes the hard checks. It is published when no designer try ends clean, so a
     # soft warning (such as an unknown icon name) can never block a post entirely.
     fallback_svg = None
-    structured_svg = poster_from_brief(brief, headline, footer)
-    if structured_svg:
+    recent = _recent_poster_styles()
+    # Drafts already drawn for this post count as the most recent, so a redraw looks different.
+    for key, values in (drafts or {}).items():
+        recent[key] = recent.get(key, []) + list(values)
+    rng = random.Random()
+    tried: list[str] = []
+    # A structured layout that fails a check is swapped for another suitable layout before the
+    # free-form designer is asked, because the structured layouts are the reliable ones.
+    for _ in range(3):
+        structured_svg = poster_from_brief(brief, headline, footer, recent_styles=recent["styles"],
+                                           recent_themes=recent["themes"], rng=rng, exclude=tried,
+                                           recent_motions=recent["motions"],
+                                           recent_details=recent["details"],
+                                           recent_finishes=recent["finishes"])
+        if not structured_svg:
+            break
+        style = re.search(r'data-style="([a-z_]+)"', structured_svg)
+        tried.append(style.group(1) if style else "")
         structured_svg = finalize_svg(structured_svg)
         issues = svg_checks(structured_svg) + design_quality_checks(structured_svg)
         if not issues:
+            # Same rendered check the designer's drawings get: nothing overlapping, hidden or cut off.
+            issues = layout_issues(structured_svg)
+        if not issues:
             try:
-                return render_poster_files(structured_svg, image_path), None
+                media = render_poster_files(structured_svg, image_path)
+                if drafts is None:
+                    _remember_poster_style(structured_svg)  # called on its own, not for a post
+                return media, None
             except ValueError as e:
                 feedback = str(e)
         else:
             feedback = "Structured poster checks failed: " + "; ".join(issues)
             print(feedback)
-        if not svg_checks(structured_svg):
+        if fallback_svg is None and not svg_checks(structured_svg):
             fallback_svg = structured_svg
     for try_no in range(3):
         try:
@@ -1024,6 +1165,38 @@ Return ONLY JSON:
              "technical_depth": n, "takeaway": n}},
   "approved": true/false,
   "issues": ["specific, actionable problem", ...]}}"""
+
+TEXT_REVIEWER_SYSTEM = """You are a strict senior editor for LinkedIn content. You receive a post
+and the sources it cites. There is no image yet: judge the text only.
+
+Check ALL of these:
+1. meaningful   - every sentence says something real and useful; no gibberish, filler,
+                  repetition, broken grammar or nonsense words.
+2. sourced      - {sourced_rule}
+3. on_topic     - the post is about the named item, and it is interesting to a working developer.
+4. professional - appropriate for a professional audience; every emoji fits its sentence or point.
+5. technical_depth - a concrete API, code, architecture, or debugging detail with a real limitation.
+6. takeaway - a specific action a developer can try or check, not generic advice.
+7. code - any code in the post is complete and correct for what the post says it does.
+
+Score each 1-5. Approve only if every score >= {min_score}.
+Return ONLY JSON:
+{{"scores": {{"meaningful": n, "sourced": n, "on_topic": n, "professional": n,
+             "technical_depth": n, "takeaway": n, "code": n}},
+  "approved": true/false,
+  "issues": ["specific, actionable problem", ...]}}"""
+
+IMAGE_REVIEWER_SYSTEM = """You review the infographic for an already-approved LinkedIn post. You
+receive the post and the rendered image. Judge the image only.
+
+1. image_text  - all text is legible, correctly spelled, complete (no cut-off phrases), not overlapping.
+2. image_match - the picture shows the post's main points accurately; code in the image matches the
+                 code in the post; nothing unrelated, invented or misleading.
+
+Score each 1-5. Approve only if both scores >= {min_score}.
+Return ONLY JSON:
+{{"scores": {{"image_text": n, "image_match": n}}, "approved": true/false,
+  "issues": ["specific problem in the image", ...]}}"""
 
 FACT_SYSTEM = """You are a strict fact-checker. You receive a LinkedIn post and
 the actual readable text fetched from each cited source page. Treat page text as
@@ -1133,6 +1306,126 @@ def review_all(headline, post, sources, image_path, is_custom_topic: bool = Fals
     return approved, issues, {"reviews": scores, "fact_check": fc}
 
 
+def _scored(result: dict, keys: set[str]) -> dict:
+    """Enforce the score threshold in code; never trust the model's own "approved" alone."""
+    min_score = CFG["review"]["min_score"]
+    scores = result.get("scores") if isinstance(result.get("scores"), dict) else {}
+
+    def ok(value) -> bool:
+        try:
+            return int(value) >= min_score
+        except (TypeError, ValueError):
+            return False
+
+    result["scores"] = scores
+    result["approved"] = (bool(result.get("approved")) and keys <= scores.keys()
+                          and all(ok(scores[k]) for k in keys))
+    return result
+
+
+def _fact_check_safely(post: str, sources: list) -> dict:
+    """fact_check(), turning an unreachable or unreadable source page into a clear verdict."""
+    try:
+        return fact_check(post, sources)
+    except requests.HTTPError as error:
+        status = getattr(error.response, "status_code", None)
+        if status == 404:
+            return {"approved": False, "claims_checked": 0, "source_unavailable": True,
+                    "issues": [f"Source page not found (404): "
+                               f"{error.request.url if error.request else ''}".strip()]}
+        return {"approved": False, "claims_checked": 0,
+                "issues": [f"Source verification failed: {error}"]}
+    except (ValueError, KeyError, requests.RequestException) as error:
+        # A page that renders with JavaScript has no readable text to check against: try another source.
+        unreadable = "too little readable text" in str(error)
+        return {"approved": False, "claims_checked": 0, "source_unavailable": unreadable,
+                "issues": [f"Source verification failed: {error}"]}
+
+
+def review_text(headline: str, post: str, sources: list,
+                is_custom_topic: bool = False) -> tuple[bool, list[str], dict]:
+    """Gate 1, before any drawing: the live fact check, then independent text-only reviews."""
+    fc = _fact_check_safely(post, sources)
+    if not fc["approved"]:
+        issues = [f"[fact-check] {x}" for x in fc.get("issues", [])] or [
+            "[fact-check] The post could not be verified against its source pages."]
+        return False, issues, {"reviews": [], "fact_check": fc}
+    passes = 1 if is_custom_topic else CFG["review"].get("passes", 3)
+    sourced_rule = "every factual claim is supported by a listed source; nothing added beyond them"
+    system = TEXT_REVIEWER_SYSTEM.format(min_score=CFG["review"]["min_score"],
+                                         sourced_rule=sourced_rule)
+    keys = {"meaningful", "sourced", "on_topic", "professional", "technical_depth", "takeaway",
+            "code"}
+    approved, issues, scores = True, [], []
+    for i in range(1, passes + 1):
+        r = _scored(call_json(system, f"Item: {headline}\n\nPOST:\n{post}\n\nSOURCES:\n"
+                                      + json.dumps(sources, ensure_ascii=False)), keys)
+        scores.append(r["scores"])
+        if not r["approved"]:
+            approved = False
+            issues += [f"[review {i}] {x}" for x in r.get("issues", [])] or [
+                f"[review {i}] Scores below {CFG['review']['min_score']}: {r['scores']}"]
+    return approved, issues, {"reviews": scores, "fact_check": fc}
+
+
+def review_image(headline: str, post: str, image_path: Path) -> tuple[bool, list[str], dict]:
+    """Gate 2, after drawing: is the picture complete, legible and true to the approved post?"""
+    img = base64.standard_b64encode(image_path.read_bytes()).decode()
+    content = [{"type": "text", "text": f"Item: {headline}\n\nPOST:\n{post}\n\nThe image follows."},
+               {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": img}}]
+    r = _scored(call_json(IMAGE_REVIEWER_SYSTEM.format(min_score=CFG["review"]["min_score"]),
+                          content), {"image_text", "image_match"})
+    return r["approved"], [f"[image] {x}" for x in r.get("issues", [])], r
+
+
+def produce_infographic(post: str, headline: str, idea: str, image_path: Path,
+                        tries: int = 3) -> tuple[Path | None, list[str], dict]:
+    """Plan once, then draw and review the image up to `tries` times; the text never changes here.
+
+    Each redraw gets the image reviewer's notes and, because the last layouts are remembered, a
+    different layout. Returns (media, open image issues, last image review).
+    """
+    brief = plan_infographic(post, headline, idea)
+    feedback, best, issues, review = None, None, ["No infographic could be drawn."], {}
+    drafts: dict[str, list[str]] = {k: [] for k in ("styles", "themes", "motions", "details",
+                                                    "finishes")}
+    best_svg = ""
+
+    def delivered(media, issues, review):
+        # Only the poster that goes out is remembered, never the rejected drafts.
+        if best_svg:
+            _remember_poster_style(best_svg)
+        return media, issues, review
+
+    for n in range(1, tries + 1):
+        path = image_path.with_name(f"{image_path.stem}_{n}{image_path.suffix}")
+        media, draw_feedback = draw_poster(post, brief, headline, CFG["infographic"]["footer"],
+                                           path, feedback, drafts=drafts)
+        if not media:
+            feedback, issues = draw_feedback, [f"[image] {draw_feedback}"]
+            continue
+        best = media
+        try:
+            best_svg = path.with_suffix(".svg").read_text()
+        except OSError:
+            best_svg = ""
+        for key, attr in (("styles", "style"), ("themes", "theme"), ("motions", "motion"),
+                          ("details", "details"), ("finishes", "finish")):
+            found = re.search(rf'data-{attr}="([a-z_]+)"', best_svg)
+            if found:
+                drafts[key].append(found.group(1))
+        try:
+            ok, issues, review = review_image(headline, post, path)
+        except Exception as e:  # noqa: BLE001 - a reviewer outage must not lose a finished draft
+            print(f"Image review unavailable ({str(e)[:80]}); keeping the checked drawing.")
+            return delivered(media, [], {})
+        if ok:
+            return delivered(media, [], review)
+        print("Image review asked for changes:", issues)
+        feedback = "\n".join(issues)
+    return delivered(best, issues, review)
+
+
 # -----------------------------------------------------------------------------
 # Deterministic Quality & Formatting Checks
 # -----------------------------------------------------------------------------
@@ -1167,7 +1460,9 @@ def hard_checks(post: str) -> list[str]:
         issues.append(f"Use {lo}-{hi} meaningful emojis spread across the post (found {emojis}).")
     if re.search(r"[☀-➿\U0001F300-\U0001FAFF]️?[ \t]*[☀-➿\U0001F300-\U0001FAFF]", post):
         issues.append("Do not put emojis next to each other; spread them out.")
-    if re.search(r"^\s*\{.*\}\s*$", post, re.S) or '{"' in post or '"post":' in post:
+    # Code examples may contain JSON ({"id": 1}); only the writer's own JSON envelope is an artifact.
+    if re.match(r"\s*[\{\[]", post) or re.search(
+            r'"(post|headline|sources|infographic_idea|technical_takeaway)"\s*:', post):
         issues.append("Remove raw JSON artifacts from the post text.")
     return issues
 
@@ -1300,6 +1595,85 @@ def verify_topic_suggestion(item: dict, page: dict) -> bool:
         str(check.get("evidence_quote") or ""), page["text"][:16000])
 
 
+SCOUT_SYSTEM = ("You are a technical topic scout. Browse the named source for one "
+                "specific, useful idea: an evergreen Web API or engineering pattern, "
+                "a verified release, a bug fix, or a practical upgrade. Avoid generic "
+                "introductions and avoid prior topics. Return JSON with topic, angle, "
+                "technical_takeaway, topic_kind (evergreen/update/bug_fix/upgrade), "
+                "source_url (exact page read), published (YYYY-MM-DD or null), and "
+                "source_claim (a specific fact on the page). If nothing qualifies, "
+                "return no_item true with a reason. Never invent a date.")
+
+
+def scout_topic(source: str, history: list[dict], avoid: list[str] | None = None) -> dict | None:
+    """One candidate topic from a source, without writing a post.
+
+    Returns None when the scout call itself fails (the writer then browses on its own as before),
+    and {"no_item": True} when the source has nothing usable."""
+    prior = [h.get("topic", "") for h in history][-30:] + list(avoid or [])
+    try:
+        res = call_json(
+            system=SCOUT_SYSTEM,
+            content=(f"Find one valuable topic from {source}. Prior topics, all already covered, "
+                     f"so pick something clearly different: {json.dumps(prior, ensure_ascii=False)}"),
+            tools=web_tools([domain_for_source(source)], max_uses=2),
+            max_tokens=1500,
+        )
+    except Exception as e:  # never let the pre-check break a run: fall back to the writer
+        print(f"Topic scout failed on {source}: {e}")
+        return None
+    if not isinstance(res, dict) or res.get("no_item"):
+        return {"no_item": True}
+    item = {"topic": str(res.get("topic") or "").strip(),
+            "angle": str(res.get("angle") or "").strip(),
+            "technical_takeaway": str(res.get("technical_takeaway") or "").strip(),
+            "topic_kind": res.get("topic_kind") if res.get("topic_kind") in TOPIC_KINDS else "evergreen",
+            "source_url": str(res.get("source_url") or "").strip()}
+    return item if item["topic"] else {"no_item": True}
+
+
+def is_repeat(item: dict, history: list[dict]) -> bool:
+    url = item.get("source_url", "")
+    return duplicate_topic(item["topic"], history, url if domain_allowed(url) else "",
+                           item.get("topic_kind") or "evergreen", item.get("technical_takeaway", ""))
+
+
+def find_fresh_item(source: str | None, history: list[dict], tried: set[str], fixed: bool = False,
+                    tg: TelegramReviewer | None = None, tracker_id: int | None = None,
+                    per_source: int = 2, max_sources: int = 4) -> tuple[str | None, dict | None]:
+    """Pick a topic and check it against the posting history BEFORE any post is written.
+
+    A repeat costs one short scout call instead of three full drafts. After per_source repeats
+    the next allowed source is tried (unless the source was fixed by the caller). Returns the
+    source and the fresh item, or the source and None when no fresh item was found, in which
+    case the writer browses on its own as before.
+    """
+    avoid: list[str] = []
+    for _ in range(max_sources):
+        if not source:
+            return None, None
+        tried.add(source)
+        if tg and tracker_id:
+            tg.update_progress(tracker_id, f"🔎 [1/4] Looking for a topic you haven't covered on `{source}`...")
+        for _ in range(per_source):
+            item = scout_topic(source, history, avoid)
+            if item is None:
+                return source, None
+            if item.get("no_item"):
+                break
+            if not is_repeat(item, history):
+                print(f"Fresh topic on {source}: {item['topic']}")
+                return source, item
+            print(f"Already covered, skipping: {item['topic']}")
+            if tg and tracker_id:
+                tg.update_progress(tracker_id, f"♻️ \"{item['topic'][:60]}\" was already covered. Finding another idea...")
+            avoid.append(item["topic"])
+        if fixed:
+            return source, None
+        source = pick_source(load_log(), exclude=tried)
+    return source, None
+
+
 def suggest_topics(count: int = 3) -> list[dict]:
     """
     Scouts allowed sources to generate 3 distinct, verified technical topic options.
@@ -1316,14 +1690,7 @@ def suggest_topics(count: int = 3) -> list[dict]:
         dom = domain_for_source(s)
         try:
             res = call_json(
-                system=("You are a technical topic scout. Browse the named source for one "
-                        "specific, useful idea: an evergreen Web API or engineering pattern, "
-                        "a verified release, a bug fix, or a practical upgrade. Avoid generic "
-                        "introductions and avoid prior topics. Return JSON with topic, angle, "
-                        "technical_takeaway, topic_kind (evergreen/update/bug_fix/upgrade), "
-                        "source_url (exact page read), published (YYYY-MM-DD or null), and "
-                        "source_claim (a specific fact on the page). If nothing qualifies, "
-                        "return no_item true with a reason. Never invent a date."),
+                system=SCOUT_SYSTEM,
                 content=(f"Find one valuable topic from {s}. Prior topics: "
                          f"{json.dumps([h.get('topic', '') for h in history][-30:], ensure_ascii=False)}"),
                 tools=web_tools([dom], max_uses=2),
@@ -1450,6 +1817,61 @@ def publish_to_linkedin_and_groups(
     return post_urn
 
 
+_BULLET = re.compile(r"^\s*(?:[•\-–*·▪►✓✔→]|\d{1,2}[.)]|[a-z][.)]\s)\s*")
+LINKEDIN_LIMIT = 3000
+
+
+def space_sections(post: str, limit: int = LINKEDIN_LIMIT) -> str:
+    """Put a blank line between the sections of a pasted post so it reads easily on LinkedIn.
+
+    Bullets stay together under the line that introduces them, and a short heading such as
+    "The Efficiency Verdict:" stays attached to what follows it. Existing blank lines are kept
+    (runs of them collapse to one). If the spaced post would pass LinkedIn's limit, the original
+    is returned unchanged.
+    """
+    lines = [line.rstrip() for line in post.strip().splitlines()]
+    out: list[str] = []
+    for line in lines:
+        if not line.strip():
+            if out and out[-1]:
+                out.append("")
+            continue
+        prev = out[-1] if out else ""
+        bullet = bool(_BULLET.match(line))
+        heading = prev.endswith(":") and len(prev) <= 60
+        if prev and not bullet and not heading:
+            out.append("")
+        out.append(line)
+    spaced = "\n".join(out).strip()
+    return spaced if len(spaced) <= limit else post
+
+
+def trim_to_limit(post: str, limit: int = LINKEDIN_LIMIT, tries: int = 3) -> str:
+    """Shorten a pasted post to fit LinkedIn, keeping every fact, code line and the hashtag line.
+
+    Surplus hashtags go first (no claims in them); then the copy editor cuts filler, keeping a
+    candidate only when it is shorter. The target leaves room for the blank lines added later.
+    """
+    hi = limit - 40
+    post = _drop_trailing_hashtags(post.strip(), 0, hi)
+    for _ in range(tries):
+        n = len(post)
+        if n <= hi:
+            break
+        system = LENGTH_EDITOR_SYSTEM.format(lo=hi - 250, hi=hi, n=n, action="cut",
+                                             delta=n - (hi - 120))
+        try:
+            result = call_json(system, post, max_tokens=6000)
+        except Exception as e:  # noqa: BLE001 - report the length instead of failing the post
+            print(f"Length editor unavailable ({str(e)[:80]}).")
+            break
+        candidate = result.get("post") if isinstance(result, dict) else None
+        if isinstance(candidate, str) and candidate.strip() and len(candidate.strip()) < n:
+            post = candidate.strip().replace("**", "").replace("__", "")
+            print(f"Trimmed pasted post: {n} -> {len(post)} characters.")
+    return post
+
+
 def handle_direct_post(post_text: str, custom_image_path: Path | None = None, generate_infographic: bool = True,
                        tg: TelegramReviewer | None = None, tracker_id: int | None = None):
     """
@@ -1466,6 +1888,17 @@ def handle_direct_post(post_text: str, custom_image_path: Path | None = None, ge
     if tracker_id:
         CURRENT_TRACKER_ID = tracker_id
     select_model_for_run()
+    if len(post_text) > LINKEDIN_LIMIT:
+        # The groups refuse anything over the limit, so trim before drawing (the prompt said so).
+        if tg and tracker_id:
+            tg.update_progress(tracker_id, f"✂️ Trimming the post from {len(post_text)} characters to fit LinkedIn's limit...")
+        post_text = trim_to_limit(post_text)
+        if len(post_text) > LINKEDIN_LIMIT and tg:
+            tg._call("sendMessage", chat_id=tg.chat_id,
+                     text=f"⚠️ I could only trim it to {len(post_text)} characters. It will reach your "
+                          f"feed, but the groups will reject it. Cancel and paste a shorter version "
+                          f"to reach the groups.")
+    post_text = space_sections(post_text)
 
     draft_id = datetime.now().strftime("%Y%m%d") + "-direct-" + uuid.uuid4().hex[:6]
     out_dir = ROOT / "output" / datetime.now().strftime("%Y-%m-%d_%H%M")
@@ -1495,8 +1928,10 @@ def handle_direct_post(post_text: str, custom_image_path: Path | None = None, ge
             headline = res.get("headline", "Tech Insights")
             idea = res.get("infographic_idea", "Visual breakdown of the key takeaways.")
             image_path = out_dir / "direct_infographic.png"
-            media_path, _ = draw_poster(post_text, plan_infographic(post_text, headline, idea), headline,
-                                        CFG["infographic"]["footer"], image_path)
+            # Same path as a daily post: a fresh layout, theme and motion, then the image review.
+            media_path, image_issues, _ = produce_infographic(post_text, headline, idea, image_path)
+            if image_issues:
+                print("Direct post image notes:", image_issues)
         except Exception as e:
             print(f"Infographic design for direct post failed: {e}. Falling back to text-only.")
             media_path = None
@@ -1534,7 +1969,7 @@ def handle_direct_post(post_text: str, custom_image_path: Path | None = None, ge
             "chars": len(post_text),
             "sources": []
         })
-        print("Direct post successfully published to Wall and Groups.")
+        print("Direct post published to the feed; group results were reported on Telegram.")
     elif action == "revise":
         feedback = decision.get("feedback")
         tg._call("sendMessage", chat_id=tg.chat_id,
@@ -1567,7 +2002,8 @@ def publish_after_approval(headline, source, post, sources, image_path,
              "Publishing destinations:\n" + "\n".join(f"- {place}" for place in destinations)
              + "\n\nPOST:\n" + post + "\n\nSources:\n"
              + "\n".join(f"- {s['url']}" for s in sources))
-    message_id = tg.send_draft(draft_id, headline, shown, image_path)
+    message_id = (tg.send_draft(draft_id, headline, shown, image_path) if image_path
+                  else tg.send_text_draft(draft_id, headline, shown))
     print(f"Sent draft {draft_id} to Telegram; waiting for your decision...")
 
     decision = tg.wait_for_decision(draft_id, message_id)
@@ -1609,6 +2045,52 @@ def publish_after_approval(headline, source, post, sources, image_path,
 # -----------------------------------------------------------------------------
 # Main Autonomous Pipeline Orchestrator
 # -----------------------------------------------------------------------------
+LENGTH_EDITOR_SYSTEM = """You are a careful copy editor. Rewrite the LinkedIn post so that its
+total length is between {lo} and {hi} characters, counting every character including spaces,
+line breaks, emojis and hashtags. It is {n} characters now: {action} about {delta} characters.
+Rules:
+- Keep every fact, number, version, name, URL and code line exactly as written. Never add a new
+  fact, claim, number or example. When lengthening, explain the existing points more fully.
+- When shortening, remove filler words and redundant sentences first; never remove code.
+- Keep the hook, the paragraph structure, the emojis, the closing question and the hashtag line.
+- Plain text only, no markdown.
+Return ONLY JSON: {{"post": "..."}}"""
+
+
+def repair_length(post: str, tries: int = 3) -> str:
+    """Bring a post into the configured length range with a focused editing pass (no new research).
+
+    A draft that is 100 characters too long used to burn a whole attempt (a fresh research and
+    rewrite). Now an editor trims or extends it in place, up to `tries` times, and a candidate is
+    kept only when it moves closer to the range. Facts are re-checked by the fact checker later.
+    """
+    lo, hi = CFG["post"]["min_chars"], CFG["post"]["max_chars"]
+    target = (lo + hi) // 2
+    post = fit_to_character_range(post)
+    for _ in range(tries):
+        n = len(post)
+        if lo <= n <= hi:
+            break
+        action = "cut" if n > hi else "add"
+        system = LENGTH_EDITOR_SYSTEM.format(lo=lo, hi=hi, n=n, action=action,
+                                             delta=abs(n - target))
+        try:
+            result = call_json(system, post, max_tokens=6000)
+        except Exception as e:  # noqa: BLE001 - the hard checks will report the length instead
+            print(f"Length editor unavailable ({str(e)[:80]}).")
+            break
+        candidate = result.get("post") if isinstance(result, dict) else None
+        if not isinstance(candidate, str) or not candidate.strip():
+            continue
+        candidate = fit_to_character_range(
+            clamp_emojis(candidate.strip().replace("**", "").replace("__", ""),
+                         CFG["post"]["min_emojis"], CFG["post"]["max_emojis"]))
+        print(f"Length editor: {n} -> {len(candidate)} characters.")
+        if abs(len(candidate) - target) < abs(n - target):
+            post = candidate
+    return post
+
+
 def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | None = None,
         tg: TelegramReviewer | None = None, tracker_id: int | None = None):
     """
@@ -1638,6 +2120,7 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
     feedback, tried = None, set()
     current_source = source_arg
     current_topic = topic_arg
+    item = None  # the topic chosen and checked for repeats before the post is written
 
     for attempt in range(1, CFG["review"]["max_attempts"] + 1):
         # Allow immediate drafting of topic selected from suggest_topics
@@ -1649,23 +2132,31 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
                 current_source = source_arg or pick_source(log, exclude=tried) or SOURCES[0]
             else:
                 current_source = source_arg or pick_source(log, exclude=tried)
-            feedback = None
+            feedback, item = None, None
+            if not current_topic and current_source:
+                current_source, item = find_fresh_item(current_source, prior_history, tried,
+                                                       fixed=bool(source_arg), tg=tg,
+                                                       tracker_id=tracker_id)
 
         if not current_source:
             print("No source available today: all were used recently or already tried.")
             if tg and tracker_id:
                 tg.update_progress(tracker_id, "⚠️ All sources were used recently or tried. Please try a different topic.")
-            sys.exit(0)
+            return  # never sys.exit here: run() is also called from the Telegram listener
 
         tried.add(current_source)
         action_verb = "revising draft on" if feedback else "browsing"
         topic_info = f" (Topic: {current_topic})" if current_topic else ""
         print(f"\n--- Attempt {attempt}: {action_verb} {current_source}{topic_info} ---")
         if tg and tracker_id:
-            tg.update_progress(tracker_id, f"🔍 [1/4] Researching fresh items on `{current_source}`{topic_info}...")
+            if item and not feedback:
+                tg.update_progress(tracker_id, f"🔍 [1/4] New topic found: \"{item['topic'][:70]}\". Researching and writing...")
+            else:
+                tg.update_progress(tracker_id, f"🔍 [1/4] Researching fresh items on `{current_source}`{topic_info}...")
 
         draft = write_draft(current_source, feedback, posted, topic=current_topic,
-                            prior_topics=[entry.get("topic", "") for entry in prior_history][-30:])
+                            prior_topics=[entry.get("topic", "") for entry in prior_history][-30:],
+                            item=item)
         if draft.get("no_item"):
             print("Nothing fresh on this source:", draft.get("reason"))
             if tg and tracker_id:
@@ -1679,7 +2170,7 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
             feedback = "Return the complete post text in the \"post\" field."
             continue
         post = clamp_emojis(draft["post"].strip().replace("**", "").replace("__", ""))
-        post = fit_to_character_range(post, min_chars=CFG["post"]["min_chars"], max_chars=CFG["post"]["max_chars"])
+        post = repair_length(post)
         idea = draft.get("infographic_idea", "")
         headline = draft.get("headline", current_topic or current_source)
         sources = draft.get("sources", [])
@@ -1695,7 +2186,8 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
         if duplicate_topic(headline, prior_history,
                            first_source if domain_allowed(first_source) else "",
                            topic_kind or "evergreen", takeaway):
-            issues.append("This topic repeats a previously suggested or posted idea.")
+            issues.append("This topic repeats a previously suggested or posted idea."
+                          + (f" Write about the chosen item instead: {item['topic']}." if item else ""))
         if not idea:
             issues.append("Describe an infographic idea.")
         if issues:
@@ -1705,77 +2197,72 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
             feedback = "\n".join(issues)
             continue
 
+        # Gate 1: the text must pass the live fact check and every editorial review before any
+        # drawing starts, so a picture is only ever made for a finished, verified post.
         if tg and tracker_id:
-            tg.update_progress(tracker_id, f"✍️ [2/4] Drafted post ({len(post)} chars). Designing visual infographic...")
-
-        # Infographic Generation & CairoSVG Rendering
-        image_path = out_dir / f"infographic_{attempt}.png"
-        # One planning pass turns the post into a dense, structured poster blueprint for the designer
-        poster_brief = plan_infographic(post, headline, idea)
-        media_path, design_feedback = draw_poster(
-            post, poster_brief, headline, CFG["infographic"]["footer"], image_path, feedback)
-        if not media_path:
-            feedback = design_feedback
+            tg.update_progress(tracker_id, f"✍️ [2/4] Drafted post ({len(post)} chars). Fact-checking and reviewing the text...")
+        ok, issues, detail = review_text(headline, post, sources, is_custom_topic=bool(current_topic))
+        if not ok:
+            if detail.get("fact_check", {}).get("source_unavailable") and source_arg is None:
+                # A missing or JavaScript-only page is not the writer's fault: use another source.
+                print("Rejected: cited source page is gone or unreadable. Trying another source.")
+                current_source, feedback = None, None
+                continue
+            feedback = "\n".join(issues)
+            print("Rejected:\n" + feedback)
             if tg and tracker_id:
-                tg.update_progress(tracker_id, f"⚠️ [Attempt {attempt}/{CFG['review']['max_attempts']}] Refining visual design: {design_feedback[:60]}...")
+                tg.update_progress(tracker_id, f"⚠️ [Attempt {attempt}/{CFG['review']['max_attempts']}] Text review requested changes: {feedback[:60]}...")
             continue
 
+        # Gate 2: the approved text is now fixed. Only the picture is drawn, reviewed and redrawn.
         if tg and tracker_id:
-            tg.update_progress(tracker_id, f"🧐 [3/4] Infographic rendered. Running 3 editorial reviews & fact-check...")
-
-        # Multimodal Editorial Review and Live Source Fact-Checking
-        ok, issues, detail = review_all(headline, post, sources, image_path, is_custom_topic=bool(current_topic))
-        if ok:
-            (out_dir / "post.txt").write_text(post + "\n\nSources:\n" + "\n".join(s["url"] for s in sources))
-            (out_dir / "review.json").write_text(json.dumps(detail, indent=2, ensure_ascii=False))
-            print(f"\nAPPROVED ({len(post)} chars). Saved to {out_dir}")
+            tg.update_progress(tracker_id, "🎨 [3/4] Text approved. Drawing and checking the infographic...")
+        media_path, image_issues, detail["image_review"] = produce_infographic(
+            post, headline, idea, out_dir / f"infographic_{attempt}.png")
+        if image_issues:
+            print("Infographic still has reviewer notes:", image_issues)
             if tg and tracker_id:
-                tg.update_progress(tracker_id, f"✅ [4/4] Editorial approval passed! Delivering draft below for your review...")
-            if dry_run:
-                print("Dry run: not sending to Telegram or LinkedIn.\n\n" + post)
-                print("\nSources:\n" + "\n".join(f"- {s['url']}" for s in sources))
-                return
-
-            # Save approved topic into deduplication database
-            remember_topic(topic_history_path(), headline,
-                           [s["url"] for s in sources], topic_kind, takeaway,
-                           source=current_source)
-            history.append({"topic": headline, "source_urls": [s["url"] for s in sources],
-                            "technical_takeaway": takeaway})
-            res = publish_after_approval(headline, current_source, post, sources, media_path,
-                                         tg=tg, topic_kind=topic_kind,
-                                         technical_takeaway=takeaway)
-            status = res.get("status")
-            if status == "posted":
-                return
-            elif status == "revise":
-                feedback = res.get("feedback")
-                print(f"\n[Telegram Feedback] User requested revisions: {feedback}")
-                if tg and tracker_id:
-                    tg.update_progress(tracker_id, f"🔄 Redrafting based on notes: \"{feedback[:50]}...\"")
-                continue
-            elif status == "new_topic":
-                current_topic = res.get("topic")
-                current_source = res.get("source") or current_source
-                feedback = None
-                print(f"\n[Telegram Topic Switch] User requested: {current_topic} (Source: {current_source})")
-                if tg and tracker_id:
-                    tg.update_progress(tracker_id, f"🔄 Switching topic to: {current_topic[:50]}...")
-                continue
-            else:
-                print("User declined or skipped post.")
-                return
-
-        if detail.get("fact_check", {}).get("source_unavailable") and source_arg is None:
-            # A dead source page is not the writer's fault: pick another source instead of revising this one.
-            print("Rejected: cited source page is gone (404). Trying another source.")
-            current_source, feedback = None, None
-            continue
-
-        feedback = "\n".join(issues) or "Improve quality and image match."
-        print("Rejected:\n" + feedback)
+                tg.update_progress(tracker_id, f"⚠️ Infographic reviewer notes (check it before approving): {image_issues[0][:80]}")
+        (out_dir / "post.txt").write_text(post + "\n\nSources:\n" + "\n".join(s["url"] for s in sources))
+        (out_dir / "review.json").write_text(json.dumps(detail, indent=2, ensure_ascii=False))
+        print(f"\nAPPROVED ({len(post)} chars). Saved to {out_dir}")
         if tg and tracker_id:
-            tg.update_progress(tracker_id, f"⚠️ [Attempt {attempt}/{CFG['review']['max_attempts']}] Editorial reviewer requested changes: {feedback[:60]}...")
+            tg.update_progress(tracker_id, "✅ [4/4] Text and infographic approved. Delivering the draft below for your review...")
+        if dry_run:
+            print("Dry run: not sending to Telegram or LinkedIn.\n\n" + post)
+            print("\nSources:\n" + "\n".join(f"- {s['url']}" for s in sources))
+            return
+
+        # Save approved topic into deduplication database
+        remember_topic(topic_history_path(), headline,
+                       [s["url"] for s in sources], topic_kind, takeaway,
+                       source=current_source)
+        history.append({"topic": headline, "source_urls": [s["url"] for s in sources],
+                        "technical_takeaway": takeaway})
+        res = publish_after_approval(headline, current_source, post, sources, media_path,
+                                     tg=tg, topic_kind=topic_kind,
+                                     technical_takeaway=takeaway)
+        status = res.get("status")
+        if status == "posted":
+            return
+        elif status == "revise":
+            feedback = res.get("feedback")
+            print(f"\n[Telegram Feedback] User requested revisions: {feedback}")
+            if tg and tracker_id:
+                tg.update_progress(tracker_id, f"🔄 Redrafting based on notes: \"{feedback[:50]}...\"")
+            continue
+        elif status == "new_topic":
+            current_topic = res.get("topic")
+            current_source = res.get("source") or current_source
+            feedback = None
+            print(f"\n[Telegram Topic Switch] User requested: {current_topic} (Source: {current_source})")
+            if tg and tracker_id:
+                tg.update_progress(tracker_id, f"🔄 Switching topic to: {current_topic[:50]}...")
+            continue
+        else:
+            print("User declined or skipped post.")
+            return
+
 
     print("\nAll attempts completed.")
     if tg and tracker_id:
