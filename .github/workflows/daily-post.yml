@@ -167,11 +167,12 @@ jobs:
           # never push that branch's code to main, and main may have moved during the approval wait.
           keep="$RUNNER_TEMP/history"
           mkdir -p "$keep/state"
-          cp posted.json topic_history.json "$keep/"
+          cp posted.json topic_history.json scripts/merge_history.py "$keep/"
           if [ -f state/poster_style.json ]; then cp state/poster_style.json "$keep/state/"; fi
           for attempt in 1 2 3 4; do
             git fetch origin main && git checkout -f -B history-update origin/main
-            cp "$keep/posted.json" "$keep/topic_history.json" .
+            # Keep main's entries and add this run's new ones (a git merge of two lists conflicts)
+            python "$keep/merge_history.py" "$keep" .
             git add posted.json topic_history.json
             # Poster history keeps every post's layout and colours different across runs
             if [ -f "$keep/state/poster_style.json" ]; then

@@ -350,3 +350,17 @@ def test_a_menu_tap_keeps_the_topic_list_open_on_actions(monkeypatch):
     monkeypatch.setattr(reviewer, "_poll_updates", lambda params: batches.pop(0) if batches else [])
     assert reviewer.choose_topic("L", [{"topic": "A", "source": "s"}], timeout_s=5)["topic"] == "A"
     assert any("still open" in (t or "") for t in sent) and reviewer.deferred == []
+
+
+def test_history_merge_keeps_main_entries_and_adds_the_runs(tmp_path):
+    import json, importlib.util
+    spec = importlib.util.spec_from_file_location("merge_history", ROOT / "scripts/merge_history.py")
+    mh = importlib.util.module_from_spec(spec); spec.loader.exec_module(mh)
+    run, main = tmp_path / "run", tmp_path / "main"
+    run.mkdir(); main.mkdir()
+    (main / "topic_history.json").write_text(json.dumps([{"topic": "A"}, {"topic": "M"}]))
+    (run / "topic_history.json").write_text(json.dumps([{"topic": "A"}, {"topic": "R"}]))
+    (run / "posted.json").write_text(json.dumps([{"draft_id": "d1"}]))
+    mh.main(str(run), str(main))
+    assert json.loads((main / "topic_history.json").read_text()) == [{"topic": "A"}, {"topic": "M"}, {"topic": "R"}]
+    assert json.loads((main / "posted.json").read_text()) == [{"draft_id": "d1"}]
