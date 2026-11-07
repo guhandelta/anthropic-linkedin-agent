@@ -43,4 +43,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           POSTING_WORKFLOW: daily-post.yml
           POSTING_REF: main
+          PYTHONUNBUFFERED: "1"   # show what the check did in the log
         run: python telegram_inbox.py
