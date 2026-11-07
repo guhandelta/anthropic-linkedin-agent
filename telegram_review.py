@@ -189,6 +189,12 @@ def record_commit_reminder_sent(days: int, state_file: Path | None = None):
         print(f"[Commit Reminder] Could not persist reminder state: {e}")
 
 
+LINKEDIN_LIMIT = 3000  # characters LinkedIn accepts in a post; groups refuse anything longer
+MENU_TEXTS = {"✍️ Post from Topic", "📝 Direct Post", "💡 Suggest Topics", "🚀 Run Daily Post",
+              "📊 Status & History", "❓ Help & Commands"}
+MENU_COMMANDS = {"/start", "/help", "/status", "/suggest", "/daily", "/topic", "/direct", "/publish"}
+
+
 class TelegramReviewer:
     """Client for managing human editorial reviews and conversational bot interactions via Telegram."""
     
@@ -199,6 +205,13 @@ class TelegramReviewer:
         self.timeout_s = timeout_s          # Max seconds to wait for owner approval (default 3 hours)
         self.remind_every_s = remind_every_s  # Reminder frequency (default 20 minutes)
         self.offset = None                  # Telegram update_id offset for long polling
+        # Menu taps that arrived while a topic list was open; the listener handles them next.
+        self.deferred: list[dict] = []
+
+    @staticmethod
+    def _is_menu(text: str) -> bool:
+        """A main-menu button or a menu command: never a topic, feedback or post text."""
+        return text in MENU_TEXTS or text.split(" ", 1)[0] in MENU_COMMANDS and " " not in text
 
     def _call(self, method: str, files=None, **params):
         """Execute a raw HTTP request to Telegram's Bot API with error handling."""
@@ -359,14 +372,25 @@ class TelegramReviewer:
         """Prompt user whether to auto-design an infographic or publish text-only for direct posts."""
         choice_id = uuid.uuid4().hex[:8]
         preview = (text[:280] + "...") if len(text) > 280 else text
+        too_long = len(text) > LINKEDIN_LIMIT
+        if too_long:
+            # LinkedIn groups refuse a post over 3,000 characters, so offer to trim it first.
+            question = (f"⚠️ This is {len(text)} characters, {len(text) - LINKEDIN_LIMIT} over "
+                        f"LinkedIn's {LINKEDIN_LIMIT:,} limit, so the groups would reject it. "
+                        "Trim it to fit (facts, code and hashtags kept), or cancel and paste a "
+                        "shorter version.")
+            buttons = [[("✂️ Trim to fit + Infographic", f"direct_info:{choice_id}")],
+                       [("✂️ Trim to fit (Text Only)", f"direct_text:{choice_id}")],
+                       [("❌ Cancel", f"direct_cancel:{choice_id}")]]
+        else:
+            question = "How would you like to publish?"
+            buttons = [[("🎨 Auto-Design Infographic & Review", f"direct_info:{choice_id}")],
+                       [("⚡ Post As-Is (Text Only)", f"direct_text:{choice_id}")],
+                       [("❌ Cancel", f"direct_cancel:{choice_id}")]]
         msg = self._call(
             "sendMessage", chat_id=self.chat_id,
-            text=f"📝 Direct post received ({len(text)} chars):\n\n\"{preview}\"\n\nHow would you like to publish?",
-            reply_markup=self._buttons(
-                [("🎨 Auto-Design Infographic & Review", f"direct_info:{choice_id}")],
-                [("⚡ Post As-Is (Text Only)", f"direct_text:{choice_id}")],
-                [("❌ Cancel", f"direct_cancel:{choice_id}")]
-            )
+            text=f"📝 Direct post received ({len(text)} chars):\n\n\"{preview}\"\n\n{question}",
+            reply_markup=self._buttons(*buttons)
         )
         message_id = msg["message_id"]
         start = time.time()
@@ -460,6 +484,13 @@ class TelegramReviewer:
                     text = (msg.get("text") or "").strip()
 
                     if sender == self.chat_id and chat == self.chat_id:
+                        if self._is_menu(text):
+                            # The draft keeps waiting; a menu tap is never taken as feedback.
+                            self._call("sendMessage", chat_id=self.chat_id,
+                                       reply_to_message_id=message_id,
+                                       text=f"⏳ This draft is still waiting for Approve or Reject. "
+                                            f"Answer it first, then tap {text} again.")
+                            continue
                         if text.startswith(("/topic ", "/post ")):
                             custom_topic = text.split(" ", 1)[1].strip()
                             self._call("sendMessage", chat_id=self.chat_id,
@@ -580,6 +611,12 @@ class TelegramReviewer:
                     text = (msg_obj.get("text") or "").strip()
                     chat = str(msg_obj.get("chat", {}).get("id"))
                     if sender == self.chat_id and chat == self.chat_id and text:
+                        if self._is_menu(text):
+                            # A menu tap closes the list and runs that action, never a topic search.
+                            self.deferred.append(up)
+                            self._call("sendMessage", chat_id=self.chat_id,
+                                       text="⏹️ Topic list closed.")
+                            return {"action": "rejected"}
                         if text.startswith(("/topic ", "/post ")):
                             text = text.split(" ", 1)[1].strip()
                         self._call("sendMessage", chat_id=self.chat_id,
@@ -701,14 +738,15 @@ class TelegramReviewer:
                 params["offset"] = self.offset
 
             try:
-                updates = self._call("getUpdates", **params)
+                updates = self.deferred + self._call("getUpdates", **params)
+                self.deferred = []
             except Exception as e:
                 print(f"Telegram polling error: {e}")
                 time.sleep(poll_interval_s)
                 continue
 
             for up in updates:
-                self.offset = up["update_id"] + 1
+                self.offset = max(self.offset or 0, up["update_id"] + 1)
                 msg = up.get("message")
                 cq = up.get("callback_query")
                 if cq:

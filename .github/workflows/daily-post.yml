@@ -107,6 +107,7 @@ jobs:
           LI_AT: ${{ secrets.LI_AT }}
           TOPIC: ${{ inputs.topic }}
           RUN_MODE: ${{ inputs.run_mode }}
+          TELEGRAM_TIMEOUT_HOURS: "3"   # must stay below the job's 240-minute timeout
         run: |
           case "${RUN_MODE:-publish}" in
             fallback-check)

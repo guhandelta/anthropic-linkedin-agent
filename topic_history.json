@@ -1,1 +1,172 @@
-[]
+[
+  {
+    "topic": "Integrating Slack with v0: Streamlining Team Collaboration",
+    "source_urls": [
+      "https://v0.app/docs/slack",
+      "https://v0.app/docs/slack",
+      "https://v0.app/docs/slack",
+      "https://v0.app/docs/slack"
+    ],
+    "technical_takeaway": "{'action': 'Implement the v0 Slack integration to enable your team to request and review code changes directly within Slack, enhancing collaboration and efficiency.', 'limitation': \"While v0 automates many processes, it's crucial to review pull requests before merging to ensure code quality and maintainability.\"}",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-10-31"
+  },
+  {
+    "topic": "React useOptimistic Hook",
+    "source_urls": [
+      "https://react.dev/reference/react/useOptimistic"
+    ],
+    "technical_takeaway": "Call useOptimistic(value, reducer) to provide immediate UI feedback during asynchronous Actions. It provides a temporary state that is applied instantly but is automatically discarded and reverted to the true underlying value once the pending Transition or Action completes, eliminating the need to manually implement error recovery or state rollback logic.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-01"
+  },
+  {
+    "topic": "Web Locks API",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/Web_Locks_API"
+    ],
+    "technical_takeaway": "Developers can use navigator.locks.request() to acquire exclusive or shared locks asynchronously, enabling safe coordination of shared resources across multiple tabs or workers within the same origin.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-01"
+  },
+  {
+    "topic": "HTML autocomplete=\"one-time-code\"",
+    "source_urls": [
+      "https://web.dev/learn/forms/autofill"
+    ],
+    "technical_takeaway": "Apply autocomplete=\"one-time-code\" to verification inputs so browsers like Safari (14+) can parse SMS codes and suggest them directly on the user's virtual keyboard.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-01"
+  },
+  {
+    "topic": "View Transition API",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/View_Transition_API"
+    ],
+    "technical_takeaway": "The View Transition API drastically simplifies complex transition logic by taking visual snapshots of old and new DOM states and automatically animating between them, rather than requiring manual loading and repositioning logic via CSS/JS.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-02"
+  },
+  {
+    "topic": "v0 Shopify Integration Architecture",
+    "source_urls": [
+      "https://v0.app/docs/shopify"
+    ],
+    "technical_takeaway": "v0's Shopify integration avoids hardcoding product data by leveraging the Shopify Admin API to dynamically create products and upload AI-generated images into the store, then wiring the generated application to fetch this live catalog data at runtime via the Shopify Storefront API.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "v0.app/docs/shopify",
+    "recorded_at": "2026-11-02"
+  },
+  {
+    "topic": "Custom Elements in Micro-Frontends",
+    "source_urls": [
+      "https://micro-frontends.org/"
+    ],
+    "technical_takeaway": "Architect micro-frontends using Custom Elements to hide implementation details and provide a framework-neutral interface. This allows independent teams to choose or upgrade their technology stack without coordinating with others. Maintain strict isolation by avoiding shared runtimes or global states, and instead namespace CSS, events, and Local Storage to prevent collisions.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "micro-frontends.org",
+    "recorded_at": "2026-11-02"
+  },
+  {
+    "topic": "Audio Session API",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/Audio_Session_API"
+    ],
+    "technical_takeaway": "Utilize the Audio Session API to declare the type of audio your web app produces (e.g., 'playback', 'transient', or 'ambient'), enabling the OS to automatically mix, pause, or duck (lower the volume of) competing audio sources.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-02"
+  },
+  {
+    "topic": "HTML Dialog Element",
+    "source_urls": [
+      "https://web.dev/learn/html/dialog"
+    ],
+    "technical_takeaway": "Developers can close a native HTML <dialog> element without writing custom JavaScript event listeners by setting formmethod=\"dialog\" on a form's submit button.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-02"
+  },
+  {
+    "topic": "CSS Container Queries with JS Fallback",
+    "source_urls": [
+      "https://web.dev/blog/how-to-use-container-queries-now"
+    ],
+    "technical_takeaway": "Enable container queries natively by setting `container-type: inline-size` on parent elements. For unsupported older browsers, implement a custom `<responsive-container>` web component that uses a ResizeObserver to manually trigger scoped breakpoint classes, avoiding the performance penalty of a full CSS polyfill.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/blog",
+    "recorded_at": "2026-11-02"
+  },
+  {
+    "topic": "Fetch Priority API",
+    "source_urls": [
+      "https://web.dev/learn/performance/resource-hints"
+    ],
+    "technical_takeaway": "Apply fetchpriority=\"high\" to critical above-the-fold assets, such as the LCP image, to bypass the browser's default low-priority queue and trigger an immediate high-priority download before the layout phase.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-03"
+  },
+  {
+    "topic": "High-Contrast \"Terminal-First\" Brutalist UI",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/CSS/@media/forced-colors",
+      "https://developer.mozilla.org/en-US/docs/Web/CSS/system-color",
+      "https://developer.mozilla.org/en-US/docs/Web/CSS/forced-color-adjust"
+    ],
+    "technical_takeaway": "Action: Use @media (forced-colors: active) and <system-color> keywords to natively theme high-contrast UIs without JS. Limitation: Forced-colors forces box-shadow to none and overrides custom borders, requiring reliance on structure over CSS tricks.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-03"
+  },
+  {
+    "topic": "HTML Focus Management and the autofocus Attribute",
+    "source_urls": [
+      "https://web.dev/learn/html/focus"
+    ],
+    "technical_takeaway": "Avoid using the autofocus attribute globally, as it scrolls the element into view but skips prior elements in the document's sequential focus navigation order, disrupting accessibility. The primary safe exception is within <dialog> elements, where autofocus can be used to explicitly target which interactive element receives focus upon opening, overriding the default behavior of focusing the first focusable element.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-06"
+  },
+  {
+    "topic": "Broadcast Channel API",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/Broadcast_Channel_API"
+    ],
+    "technical_takeaway": "The Broadcast Channel API enables seamless bi-directional messaging between tabs, windows, iframes, and Web Workers of the same origin. By instantiating a BroadcastChannel with a shared name, developers can sync state across contexts without needing to manage window or worker references.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-06"
+  },
+  {
+    "topic": "v0 Database Integrations and AI SQL Execution",
+    "source_urls": [
+      "https://v0.app/docs/databases"
+    ],
+    "technical_takeaway": "v0 provides one-click integrations for databases like Supabase, Neon, Snowflake, and Upstash directly from the chat UI, automatically provisioning user accounts and environment variables, and enabling the AI to natively generate and execute SQL to manage tables.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "v0.app/docs/databases",
+    "recorded_at": "2026-11-06"
+  }
+]

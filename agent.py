@@ -85,6 +85,10 @@ load_dotenv(ROOT / ".env")
 
 # Load central configuration file
 CFG = yaml.safe_load((ROOT / "config.yaml").read_text())
+# A GitHub Actions job is capped (timeout-minutes in daily-post.yml), so the workflow can shorten the
+# approval wait without changing the Mac's config.yaml.
+if os.environ.get("TELEGRAM_TIMEOUT_HOURS"):
+    CFG["telegram"]["timeout_hours"] = float(os.environ["TELEGRAM_TIMEOUT_HOURS"])
 RS = CFG["research"]
 
 # Allowed categorizations for technical posts
@@ -877,7 +881,7 @@ Return ONLY JSON:
               "no": "at most 50 chars: what happens on no (the loop back)"},
  "pros": ["at most 40 chars"], "cons": ["at most 40 chars"]}
 
-Rules: choose hero.form from the content: before_after when the post contrasts an old way with a new way (exactly 4 nodes, 2 per side, with left_label and right_label); layers when the post is an ordered stack of levels or layers (3-4 nodes); otherwise flow (a sequence of steps). hero.nodes has 3-5 items (2 per side for before_after). modules has 3-4 items and must include a "code" module when the post has code, and a "stats" module when the post has numbers or versions. Use kind "chart" instead of "stats" when the post gives 2-4 numbers in the same unit that are worth comparing (for example latencies in ms, sizes in KB, percentages, speed-ups such as 3x); it is drawn as a bar chart, so every value must start with the number. Each ICON must be one of: ICON_LIST. Choose theme, the colour palette, to suit the topic: THEME_HINTS. Set post_type to what the post is. Suggest the page layout that best fits the post: LAYOUT_HINTS. cards, table, layers and stages are optional: include only the one that matches the post's shape, and only with facts from the post. cards: 4-9 when the post lists problems, mistakes, tips, principles or ordered steps (6 or 9 suit a grid; give each a fix when there is one). table: when the post compares two tools or approaches (3-5 rows, 2-3 "when" items each). layers: 2-4 layers of 1-3 items when the post describes a system architecture or stack. stages: 3-5 stages when the post describes a progression or maturity model. hero may also carry "hub": at most 18 chars naming the central component. profiles: 3-6 when the post describes several types, models, tools or personas, each with 2-3 items per list. scorecard: when the post benchmarks two contenders with a headline number each (also give a stats module with the other numbers). decision: when the process has a yes/no check that loops back (hero.nodes then are start, 1-3 parallel branches, and the merge step). pros and cons: 2-5 each when the post weighs a technology's benefits and drawbacks."""
+Rules: choose hero.form from the content: before_after when the post contrasts an old way with a new way (exactly 4 nodes, 2 per side, with left_label and right_label); layers when the post is an ordered stack of levels or layers (3-4 nodes); otherwise flow (a sequence of steps). hero.nodes has 3-5 items (2 per side for before_after). modules has 3-4 items and must include a "code" module when the post has code, and a "stats" module when the post has numbers or versions. Use kind "chart" instead of "stats" when the post gives 2-4 numbers in the same unit that are worth comparing (for example latencies in ms, sizes in KB, percentages, speed-ups such as 3x); it is drawn as a bar chart, so every value must start with the number. Each ICON must be one of: ICON_LIST. Choose theme, the colour palette, to suit the topic: THEME_HINTS. Set post_type to what the post is. Suggest the page layout that best fits the post: LAYOUT_HINTS. Always include at least two of cards, table, layers, stages, profiles, scorecard, decision or pros/cons, choosing the ones that match the post's shape best and using only facts from the post; when nothing else fits, give 4-6 cards for the post's key points, tips or steps, each with a fix when the post gives one. This extra content unlocks the more distinctive layouts. cards: 4-9 when the post lists problems, mistakes, tips, principles or ordered steps (6 or 9 suit a grid; give each a fix when there is one). table: when the post compares two tools or approaches (3-5 rows, 2-3 "when" items each). layers: 2-4 layers of 1-3 items when the post describes a system architecture or stack. stages: 3-5 stages when the post describes a progression or maturity model. hero may also carry "hub": at most 18 chars naming the central component. profiles: 3-6 when the post describes several types, models, tools or personas, each with 2-3 items per list. scorecard: when the post benchmarks two contenders with a headline number each (also give a stats module with the other numbers). decision: when the process has a yes/no check that loops back (hero.nodes then are start, 1-3 parallel branches, and the merge step). pros and cons: 2-5 each when the post weighs a technology's benefits and drawbacks."""
 
 
 def plan_infographic(post: str, headline: str, idea: str) -> str:
@@ -1012,22 +1016,31 @@ def _recent_poster_styles() -> dict:
     if not isinstance(data, dict):
         data = {}
     out = {}
-    for key, single in (("styles", "style"), ("themes", "theme"), ("motions", "motion")):
+    for key, single in (("styles", "style"), ("themes", "theme"), ("motions", "motion"),
+                        ("details", "detail"), ("finishes", "finish")):
         values = data.get(key, [data[single]] if single in data else [])
         out[key] = [str(v) for v in values] if isinstance(values, list) else []
     return out
 
 
 def _remember_poster_style(svg: str) -> None:
+    """Record the layout, theme, motion, details and finish of the poster that was delivered.
+
+    Only the final poster of a post is recorded (produce_infographic calls this once), so
+    rejected drafts never push real posts out of the history.
+    """
+    from poster_layout import HISTORY
+
     style = re.search(r'data-style="([a-z_]+)"', svg)
     theme = re.search(r'data-theme="([a-z_]+)"', svg)
-    motion = re.search(r'data-motion="([a-z_]+)"', svg)
     if not (style and theme):
         return
     recent = _recent_poster_styles()
-    data = {"styles": (recent["styles"] + [style.group(1)])[-4:],
-            "themes": (recent["themes"] + [theme.group(1)])[-4:],
-            "motions": (recent["motions"] + ([motion.group(1)] if motion else []))[-4:]}
+    data = {"styles": (recent["styles"] + [style.group(1)])[-HISTORY:],
+            "themes": (recent["themes"] + [theme.group(1)])[-HISTORY:]}
+    for key, attr in (("motions", "motion"), ("details", "details"), ("finishes", "finish")):
+        found = re.search(rf'data-{attr}="([a-z_]+)"', svg)
+        data[key] = (recent[key] + ([found.group(1)] if found else []))[-HISTORY:]
     try:
         path = poster_style_path()
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -1037,7 +1050,8 @@ def _remember_poster_style(svg: str) -> None:
 
 
 def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: Path,
-                feedback: str | None = None) -> tuple[Path | None, str | None]:
+                feedback: str | None = None,
+                drafts: dict | None = None) -> tuple[Path | None, str | None]:
     """
     Ask the designer for a poster, validate it, and render it. Returns (media_path, last_feedback).
 
@@ -1050,6 +1064,9 @@ def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: P
     # soft warning (such as an unknown icon name) can never block a post entirely.
     fallback_svg = None
     recent = _recent_poster_styles()
+    # Drafts already drawn for this post count as the most recent, so a redraw looks different.
+    for key, values in (drafts or {}).items():
+        recent[key] = recent.get(key, []) + list(values)
     rng = random.Random()
     tried: list[str] = []
     # A structured layout that fails a check is swapped for another suitable layout before the
@@ -1057,7 +1074,9 @@ def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: P
     for _ in range(3):
         structured_svg = poster_from_brief(brief, headline, footer, recent_styles=recent["styles"],
                                            recent_themes=recent["themes"], rng=rng, exclude=tried,
-                                           recent_motions=recent["motions"])
+                                           recent_motions=recent["motions"],
+                                           recent_details=recent["details"],
+                                           recent_finishes=recent["finishes"])
         if not structured_svg:
             break
         style = re.search(r'data-style="([a-z_]+)"', structured_svg)
@@ -1070,7 +1089,8 @@ def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: P
         if not issues:
             try:
                 media = render_poster_files(structured_svg, image_path)
-                _remember_poster_style(structured_svg)
+                if drafts is None:
+                    _remember_poster_style(structured_svg)  # called on its own, not for a post
                 return media, None
             except ValueError as e:
                 feedback = str(e)
@@ -1367,24 +1387,43 @@ def produce_infographic(post: str, headline: str, idea: str, image_path: Path,
     """
     brief = plan_infographic(post, headline, idea)
     feedback, best, issues, review = None, None, ["No infographic could be drawn."], {}
+    drafts: dict[str, list[str]] = {k: [] for k in ("styles", "themes", "motions", "details",
+                                                    "finishes")}
+    best_svg = ""
+
+    def delivered(media, issues, review):
+        # Only the poster that goes out is remembered, never the rejected drafts.
+        if best_svg:
+            _remember_poster_style(best_svg)
+        return media, issues, review
+
     for n in range(1, tries + 1):
         path = image_path.with_name(f"{image_path.stem}_{n}{image_path.suffix}")
         media, draw_feedback = draw_poster(post, brief, headline, CFG["infographic"]["footer"],
-                                           path, feedback)
+                                           path, feedback, drafts=drafts)
         if not media:
             feedback, issues = draw_feedback, [f"[image] {draw_feedback}"]
             continue
         best = media
         try:
+            best_svg = path.with_suffix(".svg").read_text()
+        except OSError:
+            best_svg = ""
+        for key, attr in (("styles", "style"), ("themes", "theme"), ("motions", "motion"),
+                          ("details", "details"), ("finishes", "finish")):
+            found = re.search(rf'data-{attr}="([a-z_]+)"', best_svg)
+            if found:
+                drafts[key].append(found.group(1))
+        try:
             ok, issues, review = review_image(headline, post, path)
         except Exception as e:  # noqa: BLE001 - a reviewer outage must not lose a finished draft
             print(f"Image review unavailable ({str(e)[:80]}); keeping the checked drawing.")
-            return media, [], {}
+            return delivered(media, [], {})
         if ok:
-            return media, [], review
+            return delivered(media, [], review)
         print("Image review asked for changes:", issues)
         feedback = "\n".join(issues)
-    return best, issues, review
+    return delivered(best, issues, review)
 
 
 # -----------------------------------------------------------------------------
@@ -1807,6 +1846,32 @@ def space_sections(post: str, limit: int = LINKEDIN_LIMIT) -> str:
     return spaced if len(spaced) <= limit else post
 
 
+def trim_to_limit(post: str, limit: int = LINKEDIN_LIMIT, tries: int = 3) -> str:
+    """Shorten a pasted post to fit LinkedIn, keeping every fact, code line and the hashtag line.
+
+    Surplus hashtags go first (no claims in them); then the copy editor cuts filler, keeping a
+    candidate only when it is shorter. The target leaves room for the blank lines added later.
+    """
+    hi = limit - 40
+    post = _drop_trailing_hashtags(post.strip(), 0, hi)
+    for _ in range(tries):
+        n = len(post)
+        if n <= hi:
+            break
+        system = LENGTH_EDITOR_SYSTEM.format(lo=hi - 250, hi=hi, n=n, action="cut",
+                                             delta=n - (hi - 120))
+        try:
+            result = call_json(system, post, max_tokens=6000)
+        except Exception as e:  # noqa: BLE001 - report the length instead of failing the post
+            print(f"Length editor unavailable ({str(e)[:80]}).")
+            break
+        candidate = result.get("post") if isinstance(result, dict) else None
+        if isinstance(candidate, str) and candidate.strip() and len(candidate.strip()) < n:
+            post = candidate.strip().replace("**", "").replace("__", "")
+            print(f"Trimmed pasted post: {n} -> {len(post)} characters.")
+    return post
+
+
 def handle_direct_post(post_text: str, custom_image_path: Path | None = None, generate_infographic: bool = True,
                        tg: TelegramReviewer | None = None, tracker_id: int | None = None):
     """
@@ -1823,6 +1888,16 @@ def handle_direct_post(post_text: str, custom_image_path: Path | None = None, ge
     if tracker_id:
         CURRENT_TRACKER_ID = tracker_id
     select_model_for_run()
+    if len(post_text) > LINKEDIN_LIMIT:
+        # The groups refuse anything over the limit, so trim before drawing (the prompt said so).
+        if tg and tracker_id:
+            tg.update_progress(tracker_id, f"✂️ Trimming the post from {len(post_text)} characters to fit LinkedIn's limit...")
+        post_text = trim_to_limit(post_text)
+        if len(post_text) > LINKEDIN_LIMIT and tg:
+            tg._call("sendMessage", chat_id=tg.chat_id,
+                     text=f"⚠️ I could only trim it to {len(post_text)} characters. It will reach your "
+                          f"feed, but the groups will reject it. Cancel and paste a shorter version "
+                          f"to reach the groups.")
     post_text = space_sections(post_text)
 
     draft_id = datetime.now().strftime("%Y%m%d") + "-direct-" + uuid.uuid4().hex[:6]
@@ -1894,7 +1969,7 @@ def handle_direct_post(post_text: str, custom_image_path: Path | None = None, ge
             "chars": len(post_text),
             "sources": []
         })
-        print("Direct post successfully published to Wall and Groups.")
+        print("Direct post published to the feed; group results were reported on Telegram.")
     elif action == "revise":
         feedback = decision.get("feedback")
         tg._call("sendMessage", chat_id=tg.chat_id,

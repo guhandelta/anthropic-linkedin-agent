@@ -322,3 +322,58 @@ def test_a_failing_direct_post_is_reported_without_stopping_the_listener(monkeyp
     monkeypatch.setattr(reviewer, "_call", sent)
     reviewer._handle_direct_text("A pasted post", MagicMock(side_effect=RuntimeError("design failed")))
     assert "design failed" in sent.call_args.kwargs["text"]
+
+
+def _text_update(update_id, text):
+    return {"update_id": update_id, "message": {"message_id": update_id, "text": text,
+                                                "from": {"id": 12345}, "chat": {"id": 12345}}}
+
+
+def test_a_menu_tap_closes_the_topic_list_instead_of_becoming_a_topic(monkeypatch):
+    reviewer = telegram_review.TelegramReviewer("test-token", "12345")
+    tap = _text_update(200, "📝 Direct Post")
+    calls = MagicMock(side_effect=[{"message_id": 1}, [tap], None])
+    monkeypatch.setattr(reviewer, "_call", calls)
+    choice = reviewer.choose_topic("d1", [{"topic": "A", "source": "react.dev"}])
+    assert choice == {"action": "rejected"}
+    assert reviewer.deferred == [tap]  # the listener runs Direct Post next
+    assert "closed" in calls.call_args_list[-1].kwargs["text"]
+
+
+def test_a_real_custom_topic_is_still_accepted(monkeypatch):
+    reviewer = telegram_review.TelegramReviewer("test-token", "12345")
+    calls = MagicMock(side_effect=[{"message_id": 1}, [_text_update(201, "Edge caching for APIs")],
+                                   None])
+    monkeypatch.setattr(reviewer, "_call", calls)
+    assert reviewer.choose_topic("d1", [{"topic": "A"}]) == {
+        "action": "new_topic", "topic": "Edge caching for APIs", "source": None}
+    assert reviewer.deferred == []
+
+
+def test_a_menu_tap_is_not_taken_as_draft_feedback(monkeypatch, tmp_state):
+    reviewer = telegram_review.TelegramReviewer("test-token", "12345", timeout_s=10, remind_every_s=50)
+    telegram_review.set_status("d2", "pending")
+    approve = {"update_id": 301, "callback_query": {"id": "cq", "data": "approve:d2",
+                                                    "from": {"id": 12345},
+                                                    "message": {"chat": {"id": 12345}}}}
+    calls = MagicMock(side_effect=[[_text_update(300, "🚀 Run Daily Post"), approve], None, None, None])
+    monkeypatch.setattr(reviewer, "_call", calls)
+    assert reviewer.wait_for_decision("d2", 10) == {"action": "approved"}
+    assert "still waiting" in calls.call_args_list[1].kwargs["text"]
+
+
+def test_menu_detection():
+    is_menu = telegram_review.TelegramReviewer._is_menu
+    assert is_menu("💡 Suggest Topics") and is_menu("/daily")
+    assert not is_menu("/topic Edge caching") and not is_menu("Direct Post patterns in React")
+
+
+def test_an_over_limit_post_offers_to_trim_it(monkeypatch):
+    reviewer = telegram_review.TelegramReviewer("test-token", "12345")
+    calls = MagicMock(side_effect=[{"message_id": 5}, [], ])
+    monkeypatch.setattr(reviewer, "_call", calls)
+    monkeypatch.setattr(telegram_review.time, "time", MagicMock(side_effect=[0, 0, 999]))
+    reviewer.prompt_direct_choice("x" * 3035, timeout_s=10)
+    first = calls.call_args_list[0].kwargs
+    assert "35 over" in first["text"]
+    assert "Trim to fit" in json.dumps(first["reply_markup"], ensure_ascii=False)

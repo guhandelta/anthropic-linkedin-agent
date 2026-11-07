@@ -167,7 +167,7 @@ def test_produce_infographic_redraws_only_the_image_with_the_reviewers_notes(mon
     monkeypatch.setattr(agent, "plan_infographic", MagicMock(return_value="brief"))
     feedbacks = []
 
-    def draw(post, brief, headline, footer, path, feedback):
+    def draw(post, brief, headline, footer, path, feedback, drafts=None):
         feedbacks.append(feedback)
         path.write_bytes(b"png")
         return path, None
@@ -182,7 +182,7 @@ def test_produce_infographic_redraws_only_the_image_with_the_reviewers_notes(mon
 
 def test_produce_infographic_keeps_the_drawing_when_the_reviewer_is_down(monkeypatch, tmp_path):
     monkeypatch.setattr(agent, "plan_infographic", MagicMock(return_value="brief"))
-    monkeypatch.setattr(agent, "draw_poster", lambda *a: (tmp_path / "p_1.png", None))
+    monkeypatch.setattr(agent, "draw_poster", lambda *a, **k: (tmp_path / "p_1.png", None))
     monkeypatch.setattr(agent, "review_image", MagicMock(side_effect=RuntimeError("offline")))
     media, issues, review = agent.produce_infographic("post", "H", "idea", tmp_path / "p.png")
     assert media == tmp_path / "p_1.png" and issues == [] and review == {}
@@ -190,14 +190,14 @@ def test_produce_infographic_keeps_the_drawing_when_the_reviewer_is_down(monkeyp
 
 def test_produce_infographic_reports_when_nothing_could_be_drawn(monkeypatch, tmp_path):
     monkeypatch.setattr(agent, "plan_infographic", MagicMock(return_value="brief"))
-    monkeypatch.setattr(agent, "draw_poster", lambda *a: (None, "bad svg"))
+    monkeypatch.setattr(agent, "draw_poster", lambda *a, **k: (None, "bad svg"))
     media, issues, _ = agent.produce_infographic("post", "H", "idea", tmp_path / "p.png", tries=2)
     assert media is None and issues == ["[image] bad svg"]
 
 
 def test_produce_infographic_returns_the_last_drawing_after_every_try_is_rejected(monkeypatch, tmp_path):
     monkeypatch.setattr(agent, "plan_infographic", MagicMock(return_value="brief"))
-    monkeypatch.setattr(agent, "draw_poster", lambda post, b, h, f, path, fb: (path, None))
+    monkeypatch.setattr(agent, "draw_poster", lambda post, b, h, f, path, fb, drafts=None: (path, None))
     monkeypatch.setattr(agent, "review_image", MagicMock(return_value=(False, ["[image] x"], {})))
     media, issues, _ = agent.produce_infographic("post", "H", "idea", tmp_path / "p.png", tries=2)
     assert media.name == "p_2.png" and issues == ["[image] x"]
@@ -592,3 +592,70 @@ def test_spacing_is_applied_to_pasted_posts(monkeypatch, tmp_path):
     sent = tg.send_text_draft.call_args.args[2]
     assert "Federation\n\nMost teams" in sent
     assert "\n\n🧩 Vite" in sent
+
+
+def test_only_the_delivered_poster_is_remembered(monkeypatch, tmp_path):
+    from tests.test_poster_pipeline import BRIEF
+
+    monkeypatch.setattr(agent, "ROOT", tmp_path)
+    monkeypatch.setattr(agent, "plan_infographic", lambda post, headline, idea: BRIEF)
+    monkeypatch.setattr(agent, "layout_issues", lambda svg: [])
+    monkeypatch.setattr(agent, "render_svg_to_gif", lambda svg, p: None)
+    monkeypatch.setattr(agent, "render_svg", lambda svg, p: Path(p).write_bytes(b"png"))
+    reviews = MagicMock(side_effect=[(False, ["wrong order"], {}), (False, ["too busy"], {}),
+                                     (True, [], {})])
+    monkeypatch.setattr(agent, "review_image", reviews)
+    media, issues, _ = agent.produce_infographic("post", "Head", "idea", tmp_path / "info.png")
+    assert issues == [] and reviews.call_count == 3
+    saved = json.loads(agent.poster_style_path().read_text())
+    assert len(saved["styles"]) == 1  # three drafts, one delivered poster
+    final = (tmp_path / "info_3.svg").read_text()
+    assert f'data-style="{saved["styles"][0]}"' in final
+    drafts = [re.search(r'data-style="(\w+)"', (tmp_path / f"info_{n}.svg").read_text()).group(1)
+              for n in (1, 2, 3)]
+    assert len(set(drafts)) == 3  # each redraw tried a different layout
+
+
+# ---------------------------------------------------------------- pasted posts over the limit
+
+def test_a_long_pasted_post_is_trimmed_to_fit_before_drawing(monkeypatch, tmp_path):
+    monkeypatch.setattr(agent, "ROOT", tmp_path)
+    monkeypatch.setattr(agent, "select_model_for_run", lambda *a, **k: "x")
+    long_post = "Fact one stays. " * 200 + "\n#WebDev #APIs"   # about 3,200 characters
+    short = "Fact one stays. " * 150 + "\n#WebDev #APIs"
+    editor = MagicMock(return_value={"post": short})
+    monkeypatch.setattr(agent, "call_json", editor)
+    tg = MagicMock()
+    tg.wait_for_decision.return_value = "cancelled"
+    agent.handle_direct_post(long_post, generate_infographic=False, tg=tg)
+    sent = tg.send_text_draft.call_args.args[2]
+    assert len(sent) <= agent.LINKEDIN_LIMIT and "cut" in editor.call_args.args[0]
+
+
+def test_a_post_within_the_limit_is_never_edited(monkeypatch, tmp_path):
+    monkeypatch.setattr(agent, "ROOT", tmp_path)
+    monkeypatch.setattr(agent, "select_model_for_run", lambda *a, **k: "x")
+    editor = MagicMock()
+    monkeypatch.setattr(agent, "call_json", editor)
+    tg = MagicMock()
+    tg.wait_for_decision.return_value = "cancelled"
+    agent.handle_direct_post("Short post.\n#WebDev", generate_infographic=False, tg=tg)
+    editor.assert_not_called()
+
+
+def test_surplus_hashtags_go_before_any_words(monkeypatch):
+    monkeypatch.setattr(agent, "call_json", MagicMock(side_effect=AssertionError("no edit needed")))
+    tags = " ".join(f"#Tag{i}" for i in range(12))
+    post = "x" * (agent.LINKEDIN_LIMIT - 70) + "\n" + tags
+    trimmed = agent.trim_to_limit(post)
+    assert trimmed.startswith("x" * 100) and len(trimmed) <= agent.LINKEDIN_LIMIT - 40
+
+
+def test_when_trimming_fails_the_post_is_kept_and_the_user_is_told(monkeypatch, tmp_path):
+    monkeypatch.setattr(agent, "ROOT", tmp_path)
+    monkeypatch.setattr(agent, "select_model_for_run", lambda *a, **k: "x")
+    monkeypatch.setattr(agent, "call_json", MagicMock(side_effect=RuntimeError("credit balance")))
+    tg = MagicMock()
+    tg.wait_for_decision.return_value = "cancelled"
+    agent.handle_direct_post("word " * 700, generate_infographic=False, tg=tg)
+    assert "groups will reject it" in tg._call.call_args.kwargs["text"]
