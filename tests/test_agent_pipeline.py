@@ -441,7 +441,8 @@ def test_workflow_keeps_poster_history_and_rebases_before_push():
     root = Path(agent.__file__).parent
     text = (root / ".github/workflows/daily-post.yml").read_text()
     assert "git add state/poster_style.json" in text
-    assert "git pull --rebase origin main" in text and "fetch-depth: 0" in text
+    assert "git checkout -f -B history-update origin/main" in text and "fetch-depth: 0" in text
+    assert "git push origin HEAD:main" in text and "git pull --rebase" not in text
     import subprocess
     ignored = subprocess.run(["git", "check-ignore", "-q", "state/poster_style.json"], cwd=root)
     assert ignored.returncode == 1  # tracked, so Actions remembers recent posters
