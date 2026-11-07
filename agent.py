@@ -1694,6 +1694,25 @@ def scout_topic(source: str, history: list[dict], avoid: list[str] | None = None
     return item if item["topic"] else {"no_item": True}
 
 
+def is_index_page(url: str) -> bool:
+    """True for a source's own starting page (such as MDN's list of all Web APIs).
+
+    Such a page only names topics, so a post written from it has nothing to stand on and every
+    real detail fails review. A suggestion must point at the page about its topic.
+    """
+    try:
+        page = canonical_url(url).split("://", 1)[1].rstrip("/")
+    except ValueError:
+        return True
+    roots = set()
+    for source in SOURCES:
+        try:
+            roots.add(canonical_url("https://" + source.split("://")[-1]).split("://", 1)[1].rstrip("/"))
+        except ValueError:
+            continue
+    return page in roots or "/" not in page
+
+
 def is_repeat(item: dict, history: list[dict]) -> bool:
     url = item.get("source_url", "")
     return duplicate_topic(item["topic"], history, url if domain_allowed(url) else "",
@@ -1765,7 +1784,7 @@ def suggest_topics(count: int = 3) -> list[dict]:
             kind = res.get("topic_kind")
             url = str(res.get("source_url") or "").strip()
             if (kind not in TOPIC_KINDS or len(topic_tokens(topic)) < 3
-                    or len(takeaway.split()) < 6 or not domain_allowed(url)
+                    or len(takeaway.split()) < 6 or not domain_allowed(url) or is_index_page(url)
                     or duplicate_topic(topic, history, url, kind, takeaway)):
                 continue
             source = {"url": url, "published": res.get("published"),

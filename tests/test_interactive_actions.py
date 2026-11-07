@@ -294,3 +294,12 @@ def test_reviewers_defer_to_the_fact_check_on_sourcing(monkeypatch):
                                     "technical_depth", "takeaway", "code")}, "approved": True})
     ok, issues, _ = agent.review_text("H", "post", [{"url": "https://x", "claim": "c"}], is_custom_topic=True)
     assert ok and "already compared every claim with the full text" in seen[0]
+
+
+def test_index_pages_are_not_accepted_as_a_topic_page(monkeypatch):
+    monkeypatch.setattr(agent, "SOURCES", ["developer.mozilla.org/en-US/docs/Web/API", "web.dev/blog"])
+    assert agent.is_index_page("https://developer.mozilla.org/en-US/docs/Web/API")
+    assert agent.is_index_page("https://developer.mozilla.org/en-US/docs/Web/API/")
+    assert agent.is_index_page("https://web.dev")
+    assert not agent.is_index_page("https://developer.mozilla.org/en-US/docs/Web/API/ResizeObserver")
+    assert not agent.is_index_page("https://web.dev/learn/css/anchor-positioning")

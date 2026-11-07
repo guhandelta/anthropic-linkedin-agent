@@ -155,7 +155,7 @@ def test_suggest_topics(tmp_path, monkeypatch):
     monkeypatch.setattr(agent, "load_log", MagicMock(return_value=[]))
     monkeypatch.setattr(agent.random, "sample", lambda values, count: ["react.dev/reference"])
     monkeypatch.setattr(agent, "verify_sources", MagicMock(return_value=[
-        {"url": "https://react.dev/reference",
+        {"url": "https://react.dev/reference/react/useEffect",
          "text": "React effects synchronize components with external systems when needed.",
          "published_dates": []}
     ]))
@@ -163,7 +163,7 @@ def test_suggest_topics(tmp_path, monkeypatch):
         "topic": "Use React effects only for external synchronization",
         "angle": "Avoid unnecessary effects in local state calculations",
         "technical_takeaway": "Move derived values into render and reserve effects for external systems",
-        "topic_kind": "evergreen", "source_url": "https://react.dev/reference",
+        "topic_kind": "evergreen", "source_url": "https://react.dev/reference/react/useEffect",
         "published": None, "source_claim": "Effects synchronize React components with external systems"
     }
     mock_call = MagicMock(side_effect=[candidate, {
