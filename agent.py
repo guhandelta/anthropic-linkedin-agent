@@ -707,6 +707,30 @@ Return ONLY JSON:
   "infographic_idea": "..."}}"""
 
 
+def merge_duplicate_sources(sources: list) -> list:
+    """Cite each page once: entries for the same URL are merged and their claims joined.
+
+    A post built from one picked page used to list that page five times under Sources.
+    """
+    if not isinstance(sources, list):
+        return sources
+    merged: dict[str, dict] = {}
+    for source in sources:
+        if not isinstance(source, dict) or not source.get("url"):
+            continue
+        key = canonical_url(source["url"])
+        if key not in merged:
+            merged[key] = dict(source)
+            continue
+        kept = merged[key]
+        claim = str(source.get("claim") or "").strip()
+        if claim and claim not in str(kept.get("claim") or ""):
+            kept["claim"] = "; ".join(c for c in (str(kept.get("claim") or "").strip(), claim) if c)
+        for field, value in source.items():
+            kept.setdefault(field, value)
+    return list(merged.values()) or sources
+
+
 def drop_dead_sources(sources: list) -> list:
     """Remove cited pages that can't be opened (a made-up or moved URL), keeping at least one.
 
@@ -1888,9 +1912,12 @@ def publish_to_linkedin_and_groups(
                 failed = group_res.get("failed", [])
                 summary_msg = (f"⚠️ Published to personal wall, but only {success_count}/{len(target_groups)} "
                                "LinkedIn groups. Failed groups: " + ", ".join(failed))
+                if group_res.get("error"):
+                    summary_msg = (f"⚠️ Published to personal wall, but only {success_count}/"
+                                   f"{len(target_groups)} LinkedIn groups.\n\n{group_res['error']}")
             if tg and grp_tracker_id:
                 tg.update_progress(grp_tracker_id, summary_msg)
-            elif tg and success_count > 0 and message_id:
+            elif tg and (success_count > 0 or group_res.get("error")) and message_id:
                 try:
                     tg._call("sendMessage", chat_id=tg.chat_id, reply_to_message_id=message_id, text=summary_msg)
                 except Exception:
@@ -2368,7 +2395,7 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
         post = repair_length(post)
         idea = draft.get("infographic_idea", "")
         headline = draft.get("headline", current_topic or current_source)
-        sources = drop_dead_sources(draft.get("sources", []))
+        sources = drop_dead_sources(merge_duplicate_sources(draft.get("sources", [])))
         topic_kind = draft.get("topic_kind")
         takeaway = str(draft.get("technical_takeaway") or "").strip()
         issues = hard_checks(post) + source_checks(
