@@ -27,7 +27,7 @@ def _browser_with(pages: dict[str, str], redirects: dict[str, str] | None = None
         def handle(route):
             url = route.request.url
             for prefix, target in redirects.items():
-                if url.startswith(prefix):  # LinkedIn's bounce to its sign-in wall
+                if url.split('?')[0] == prefix:  # LinkedIn's bounce to another page
                     return route.fulfill(status=200, content_type="text/html",
                                          body=f"<script>location.replace({target!r})</script>")
             for prefix, html in pages.items():
@@ -143,3 +143,101 @@ def test_group_stop_reason_reaches_telegram(monkeypatch):
                                          draft_id="d", message_id=1, tg=tg)
     final = tg.update_progress.call_args_list[-1].args[1]
     assert "0/2" in final and "sign-in wall" in final
+
+
+GROUP_WITH_BOX = ("<html><head><title>Group | LinkedIn</title></head><body><nav class='global-nav'>nav</nav>"
+                  "<button>Start a post</button></body></html>")
+
+
+def test_check_groups_finds_the_post_box_without_clicking(monkeypatch, debug_dir):
+    monkeypatch.setattr(lg, "get_browser_context", _browser_with({
+        "https://www.linkedin.com/feed/": SIGNED_IN_FEED,
+        "https://www.linkedin.com/groups/": GROUP_WITH_BOX}))
+    res = lg.check_groups(["https://www.linkedin.com/groups/1/"], settle_ms=50)
+    assert res["ok"] and res["post_box"] and "Nothing was posted" in res["detail"]
+    assert (debug_dir / "check-group.png").exists()
+
+
+def test_check_groups_reports_a_missing_post_box(monkeypatch, debug_dir):
+    monkeypatch.setattr(lg, "get_browser_context", _browser_with({
+        "https://www.linkedin.com/feed/": SIGNED_IN_FEED,
+        "https://www.linkedin.com/groups/": GROUP_NO_BOX}))
+    res = lg.check_groups(["https://www.linkedin.com/groups/1/"], settle_ms=50)
+    assert res["logged_in"] and not res["ok"] and "no post box" in res["detail"]
+
+
+def test_check_groups_reports_the_sign_in_wall(monkeypatch, debug_dir):
+    monkeypatch.setattr(lg, "get_browser_context", _browser_with({"https://www.linkedin.com/feed/": AUTHWALL}))
+    res = lg.check_groups(["https://www.linkedin.com/groups/1/"], settle_ms=50)
+    assert not res["logged_in"] and "did not accept" in res["detail"]
+
+
+def test_workflow_has_a_check_only_groups_mode():
+    from pathlib import Path
+    text = (Path(lg.__file__).parent / ".github/workflows/daily-post.yml").read_text()
+    assert "- groups-check" in text and "python linkedin_groups.py --check-groups" in text
+
+
+NEW_LAYOUT_FEED = "<html><head><title>Feed | LinkedIn</title></head><body><main>posts</main></body></html>"
+
+
+def test_new_layout_feed_counts_as_signed_in(monkeypatch, debug_dir):
+    """LinkedIn's newer feed (/feed/foryou/) has no global-nav markers but is signed in."""
+    fake = _browser_with({"https://www.linkedin.com/feed/foryou/": NEW_LAYOUT_FEED},
+                         {"https://www.linkedin.com/feed/": "https://www.linkedin.com/feed/foryou/"})
+    with sync_playwright() as p:
+        ctx = fake(p)
+        page = ctx.new_page()
+        assert lg.is_logged_in(page) is True
+        ctx.close()
+
+
+def test_missing_post_box_lists_the_page_controls(monkeypatch, debug_dir):
+    monkeypatch.setattr(lg, "get_browser_context", _browser_with({
+        "https://www.linkedin.com/feed/": SIGNED_IN_FEED,
+        "https://www.linkedin.com/groups/": GROUP_NO_BOX.replace("<p>About</p>", "<button aria-label='Create post'>x</button>")}))
+    res = lg.check_groups(["https://www.linkedin.com/groups/1/"], settle_ms=50)
+    assert "button: Create post" in res["detail"]
+
+
+def test_redirect_loop_means_the_cookie_was_rejected(debug_dir):
+    """An ended li_at session makes Chromium give up with ERR_TOO_MANY_REDIRECTS on the feed."""
+    from playwright.sync_api import Error
+
+    with sync_playwright() as p:
+        ctx = _browser_with({})(p)
+        page = ctx.new_page()
+
+        def looping_goto(url, **kw):
+            raise Error(f"Page.goto: net::ERR_TOO_MANY_REDIRECTS at {url}")
+
+        page.goto = looping_goto
+        assert lg.is_logged_in(page) is False
+        assert "rejected the LI_AT session" in lg.page_block_reason(page)
+        ctx.close()
+
+
+def test_groups_are_skipped_when_switched_off(monkeypatch):
+    from unittest.mock import MagicMock
+    mock_li = MagicMock()
+    mock_li.post_text.return_value = mock_li.post_with_image.return_value = "urn:li:share:1"
+    monkeypatch.setattr(agent, "LinkedInClient", MagicMock(return_value=mock_li))
+    groups = MagicMock()
+    monkeypatch.setattr(agent, "post_to_groups", groups)
+    monkeypatch.setenv("LINKEDIN_ACCESS_TOKEN", "fake")
+    monkeypatch.setenv("POST_TO_GROUPS", "false")
+    monkeypatch.setitem(agent.CFG, "linkedin", {"api_version": "202610", "target_groups": ["g1"],
+                                                "group_delay_seconds": 0})
+    tg = MagicMock()
+    urn = agent.publish_to_linkedin_and_groups(post="p", image_path=None, headline="h",
+                                               sources=[{"url": "https://react.dev", "claim": "c"}],
+                                               draft_id="d", message_id=1, tg=tg)
+    assert urn == "urn:li:share:1"
+    groups.assert_not_called()
+    assert "switched off" in tg._call.call_args.kwargs["text"]
+
+
+def test_workflow_switches_group_posting_off():
+    from pathlib import Path
+    text = (Path(lg.__file__).parent / ".github/workflows/daily-post.yml").read_text()
+    assert 'POST_TO_GROUPS: "false"' in text

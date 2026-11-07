@@ -36,6 +36,7 @@ on:
           - dry-run
           - publish
           - direct
+          - groups-check
       post_text:
         description: "direct mode only: the post text to publish (the Telegram inbox check fills this)"
         required: false
@@ -118,6 +119,8 @@ jobs:
           RUN_MODE: ${{ inputs.run_mode }}
           POST_TEXT: ${{ inputs.post_text }}
           PYTHONUNBUFFERED: "1"         # log lines with their real times
+          # LinkedIn logs the owner out when LI_AT is used from a GitHub server, so groups are skipped here.
+          POST_TO_GROUPS: "false"
           # The three waits must fit the job's 350-minute timeout with time left for the work.
           TELEGRAM_TOPIC_WAIT_MINUTES: "60"
           TELEGRAM_TEXT_WAIT_MINUTES: "120"
@@ -141,6 +144,10 @@ jobs:
             direct)
               if [ -z "$POST_TEXT" ]; then echo "direct mode needs post_text" >&2; exit 2; fi
               python agent.py --interactive --direct "$POST_TEXT"
+              ;;
+            groups-check)
+              # Posts nothing: checks that LinkedIn accepts LI_AT and shows the first group's post box
+              python linkedin_groups.py --check-groups
               ;;
             *)
               echo "Unknown run mode: $RUN_MODE" >&2

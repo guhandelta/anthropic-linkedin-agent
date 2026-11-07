@@ -196,6 +196,7 @@ Review and command your agent directly from your mobile device via Telegram:
 * **Personal LinkedIn Wall:** Uses the official LinkedIn REST API (Restli 2.0) with direct image upload (`images?action=initializeUpload`) and structured text payloads.
 * **Source Attribution:** Automatically posts cited documentation URLs as the first comment on your publication to keep the main post clean and boost feed reach.
 * **Target LinkedIn Groups:** Uses headless Playwright browser automation with persistent session authentication, navigating to each group in your config, entering the text, attaching the image, and publishing with anti-bot delays.
+* **Checking group access without posting:** run the *Daily LinkedIn post* workflow with run mode `groups-check`. It opens your feed and the first group with the `LI_AT` cookie, says whether the post box is there, and saves screenshots to the run's `output` download (`group_debug/`). A real run that hits LinkedIn's sign-in wall stops after two groups and explains why on Telegram.
 
 ---
 
