@@ -140,6 +140,60 @@ def is_logged_in(page) -> bool:
                         "header.global-nav, [data-test-global-nav]").count() > 0
 
 
+START_SELECTORS = [
+    "button:has-text('Start a post')",
+    "button:has-text('Start a public post')",
+    "button:has-text('Start a')",
+    "div[data-placeholder*='Start a']",
+    "button.share-box-feed-entry__trigger",
+    "button[aria-label*='Start a']",
+]
+
+
+def find_start_button(page):
+    """The group's visible 'Start a post' control, or None when the page has no post box."""
+    for sel in START_SELECTORS:
+        loc = page.locator(sel).first
+        if loc.is_visible():
+            return loc
+    return None
+
+
+def check_groups(groups: list[str], headless: bool = True, settle_ms: int = 3000) -> dict:
+    """Check, without posting anything, that LinkedIn accepts the session and shows a post box.
+
+    Opens the feed and the first group only. Screenshots go to output/group_debug.
+    Returns {"ok": bool, "logged_in": bool, "post_box": bool, "detail": str}.
+    """
+    result = {"ok": False, "logged_in": False, "post_box": False, "detail": ""}
+    with sync_playwright() as p:
+        context = get_browser_context(p, headless=headless)
+        page = context.new_page()
+        try:
+            if not is_logged_in(page):
+                seen = save_page_debug(page, "check-login")
+                reason = page_block_reason(page) or "the feed did not load as a signed-in page"
+                result["detail"] = f"LinkedIn did not accept the session: {reason}. Page: {seen}"
+                return result
+            result["logged_in"] = True
+            save_page_debug(page, "check-feed")
+            if not groups:
+                result.update(ok=True, detail="Signed in. No target groups are configured.")
+                return result
+            page.goto(groups[0], wait_until="domcontentloaded", timeout=45000)
+            page.wait_for_timeout(settle_ms)
+            seen = save_page_debug(page, "check-group")
+            if find_start_button(page) is not None:
+                result.update(ok=True, post_box=True,
+                              detail=f"Signed in, and {groups[0]} shows the post box. Nothing was posted.")
+            else:
+                reason = page_block_reason(page) or "no post box on the group page"
+                result["detail"] = f"Signed in, but {groups[0]}: {reason}. Page: {seen}"
+            return result
+        finally:
+            context.close()
+
+
 def post_to_single_group(page, group_url: str, text: str, image_path: Path | None = None,
                          diagnostics: dict | None = None) -> bool:
     """Publish an update (with optional image/GIF attachment) to a single LinkedIn group page.
@@ -156,21 +210,10 @@ def post_to_single_group(page, group_url: str, text: str, image_path: Path | Non
     page.wait_for_timeout(3000)
 
     # 1. Locate and click the 'Start a post' button
-    start_selectors = [
-        "button:has-text('Start a post')",
-        "button:has-text('Start a public post')",
-        "button:has-text('Start a')",
-        "div[data-placeholder*='Start a']",
-        "button.share-box-feed-entry__trigger",
-        "button[aria-label*='Start a']",
-    ]
-    started = False
-    for sel in start_selectors:
-        loc = page.locator(sel).first
-        if loc.is_visible():
-            loc.click()
-            started = True
-            break
+    start_button = find_start_button(page)
+    started = start_button is not None
+    if started:
+        start_button.click()
 
     if not started:
         label = "group-" + group_url.rstrip("/").rsplit("/", 1)[-1]
@@ -321,6 +364,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="LinkedIn Group Automated Publisher")
     parser.add_argument("--login", action="store_true", help="Launch visible browser to log in to LinkedIn")
     parser.add_argument("--test", action="store_true", help="Verify browser login status")
+    parser.add_argument("--check-groups", action="store_true",
+                        help="Check the session and the first target group's post box without posting")
     args = parser.parse_args()
 
     if args.login:
@@ -332,5 +377,11 @@ if __name__ == "__main__":
             logged_in = is_logged_in(pg)
             print(f"Login status: {'✅ Logged in' if logged_in else '❌ Not logged in'}")
             ctx.close()
+    elif args.check_groups:
+        import yaml
+        config = yaml.safe_load((ROOT / "config.yaml").read_text()) or {}
+        outcome = check_groups((config.get("linkedin") or {}).get("target_groups") or [])
+        print(("✅ " if outcome["ok"] else "❌ ") + outcome["detail"])
+        sys.exit(0 if outcome["ok"] else 1)
     else:
         parser.print_help()

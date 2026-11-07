@@ -36,6 +36,7 @@ on:
           - dry-run
           - publish
           - direct
+          - groups-check
       post_text:
         description: "direct mode only: the post text to publish (the Telegram inbox check fills this)"
         required: false
@@ -141,6 +142,10 @@ jobs:
             direct)
               if [ -z "$POST_TEXT" ]; then echo "direct mode needs post_text" >&2; exit 2; fi
               python agent.py --interactive --direct "$POST_TEXT"
+              ;;
+            groups-check)
+              # Posts nothing: checks that LinkedIn accepts LI_AT and shows the first group's post box
+              python linkedin_groups.py --check-groups
               ;;
             *)
               echo "Unknown run mode: $RUN_MODE" >&2

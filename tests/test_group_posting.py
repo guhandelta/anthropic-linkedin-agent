@@ -143,3 +143,36 @@ def test_group_stop_reason_reaches_telegram(monkeypatch):
                                          draft_id="d", message_id=1, tg=tg)
     final = tg.update_progress.call_args_list[-1].args[1]
     assert "0/2" in final and "sign-in wall" in final
+
+
+GROUP_WITH_BOX = ("<html><head><title>Group | LinkedIn</title></head><body><nav class='global-nav'>nav</nav>"
+                  "<button>Start a post</button></body></html>")
+
+
+def test_check_groups_finds_the_post_box_without_clicking(monkeypatch, debug_dir):
+    monkeypatch.setattr(lg, "get_browser_context", _browser_with({
+        "https://www.linkedin.com/feed/": SIGNED_IN_FEED,
+        "https://www.linkedin.com/groups/": GROUP_WITH_BOX}))
+    res = lg.check_groups(["https://www.linkedin.com/groups/1/"], settle_ms=50)
+    assert res["ok"] and res["post_box"] and "Nothing was posted" in res["detail"]
+    assert (debug_dir / "check-group.png").exists()
+
+
+def test_check_groups_reports_a_missing_post_box(monkeypatch, debug_dir):
+    monkeypatch.setattr(lg, "get_browser_context", _browser_with({
+        "https://www.linkedin.com/feed/": SIGNED_IN_FEED,
+        "https://www.linkedin.com/groups/": GROUP_NO_BOX}))
+    res = lg.check_groups(["https://www.linkedin.com/groups/1/"], settle_ms=50)
+    assert res["logged_in"] and not res["ok"] and "no post box" in res["detail"]
+
+
+def test_check_groups_reports_the_sign_in_wall(monkeypatch, debug_dir):
+    monkeypatch.setattr(lg, "get_browser_context", _browser_with({"https://www.linkedin.com/feed/": AUTHWALL}))
+    res = lg.check_groups(["https://www.linkedin.com/groups/1/"], settle_ms=50)
+    assert not res["logged_in"] and "did not accept" in res["detail"]
+
+
+def test_workflow_has_a_check_only_groups_mode():
+    from pathlib import Path
+    text = (Path(lg.__file__).parent / ".github/workflows/daily-post.yml").read_text()
+    assert "- groups-check" in text and "python linkedin_groups.py --check-groups" in text
