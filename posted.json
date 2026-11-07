@@ -210,5 +210,40 @@
     "post_urn": "direct",
     "chars": 3035,
     "sources": []
+  },
+  {
+    "date": "2026-11-07T18:21:22",
+    "draft_id": "20261107-695fbe62",
+    "source_domain": "v0.dev/docs",
+    "headline": "Stop Loading 20+ Tools When Your Agent Only Needs 5",
+    "post_urn": "urn:li:share:7524898284776255488",
+    "chars": 2986,
+    "sources": [
+      {
+        "url": "https://v0.dev/docs/api/platform/packages/ai-tools",
+        "publication_date": null,
+        "claim": "Includes 20+ tools which adds significant context to AI calls."
+      },
+      {
+        "url": "https://v0.dev/docs/api/platform/packages/ai-tools",
+        "publication_date": null,
+        "claim": "Choose specific tool categories for better performance using v0ToolsByCategory."
+      },
+      {
+        "url": "https://v0.dev/docs/api/platform/packages/ai-tools",
+        "publication_date": null,
+        "claim": "Chat tools: createChat, sendMessage, getChat, findChats, deleteChat. Hook tools: createHook, getHook, findHooks, updateHook, deleteHook."
+      },
+      {
+        "url": "https://v0.dev/docs/api/platform/packages/ai-tools",
+        "publication_date": null,
+        "claim": "Use stopWhen to control execution. Wrap calls in try-catch blocks handling V0Error and AIError separately."
+      },
+      {
+        "url": "https://v0.dev/docs/api/platform/packages/ai-tools",
+        "publication_date": null,
+        "claim": "Requirements: Node.js 22+, AI SDK 5.0+."
+      }
+    ]
   }
 ]

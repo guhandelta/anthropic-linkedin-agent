@@ -201,5 +201,53 @@
     "status": "suggested",
     "source": "azure.microsoft.com/en-us/blog",
     "recorded_at": "2026-11-07"
+  },
+  {
+    "topic": "v0 SDK AI Tools Adapter: Autonomous Agent Workflows via @v0-sdk/ai-tools",
+    "source_urls": [
+      "https://v0.dev/docs/api/platform/packages/ai-tools"
+    ],
+    "technical_takeaway": "Import `v0ToolsByCategory` from `@v0-sdk/ai-tools` and pass only the specific tool category your agent needs (e.g. `tools.chat` or `tools.hook`) to `generateText`. The package exposes 20+ tools across categories; loading all of them adds significant context overhead to every AI call, so selective loading is a first-class design choice baked into the API. Each category maps to a clean CRUD surface: `createChat / sendMessage / getChat / findChats / deleteChat` for chat tools, and a parallel set for webhooks. Combine with `stopWhen` step limits and try-catch error boundaries for production-safe autonomous loops.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "v0.dev/docs",
+    "recorded_at": "2026-11-07"
+  },
+  {
+    "topic": "Bulma's CSS-Variable-Driven Dark Mode with data-theme and Sass Mixins",
+    "source_urls": [
+      "https://bulma.io/documentation/features/dark-mode/"
+    ],
+    "technical_takeaway": "Bulma exposes every theme token as a namespaced CSS variable (e.g. --bulma-scheme-main-l, --bulma-text-l). Dark mode is applied by redefining those lightness values inside a [data-theme=dark] selector or a @media (prefers-color-scheme: dark) block via the cv.bulma-theme() / cv.system-theme() Sass mixins. Because hue and saturation are preserved and only lightness is flipped, all 7 primary colors and their 21 generated shades stay coherent across both themes without any extra colour overrides. Developers can create a fully custom theme by writing a single Sass mixin that calls register-vars() with their own lightness map.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "bulma.io/blog",
+    "recorded_at": "2026-11-07"
+  },
+  {
+    "topic": "Builder.io Fusion: Parallel AI Agents on Production Codebases",
+    "source_urls": [
+      "https://www.builder.io/compare/builder-vs-bolt"
+    ],
+    "technical_takeaway": "Unlike Bolt.new (single Claude Agent per project) or Figma Make (single agent per Make session), Builder.io Fusion can run hundreds of AI agents simultaneously in cloud containers, each with a full dev environment and browser preview, with output landing as reviewable PRs into your existing GitHub/GitLab/Bitbucket repo — including Azure DevOps on Enterprise. AI-powered review agents additionally flag style, security, accessibility, and performance automatically before merge.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "builder.io/compare",
+    "recorded_at": "2026-11-07"
+  },
+  {
+    "topic": "Stop Loading 20+ Tools When Your Agent Only Needs 5",
+    "source_urls": [
+      "https://v0.dev/docs/api/platform/packages/ai-tools",
+      "https://v0.dev/docs/api/platform/packages/ai-tools",
+      "https://v0.dev/docs/api/platform/packages/ai-tools",
+      "https://v0.dev/docs/api/platform/packages/ai-tools",
+      "https://v0.dev/docs/api/platform/packages/ai-tools"
+    ],
+    "technical_takeaway": "Import `v0ToolsByCategory` from `@v0-sdk/ai-tools` and spread only the specific category your agent step requires (e.g. `tools.chat` or `tools.hook`) into `generateText`. The package's own docs warn that `v0Tools` — which loads all 20+ tools — adds significant context overhead to every AI call. Add `stopWhen: stepCountIs(n)` as a circuit breaker for autonomous loops, and use separate catch branches for `V0Error` vs `AIError` to handle API failures and SDK errors independently.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "v0.dev/docs",
+    "recorded_at": "2026-11-07"
   }
 ]
