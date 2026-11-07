@@ -1407,7 +1407,13 @@ def review_text(headline: str, post: str, sources: list,
             "[fact-check] The post could not be verified against its source pages."]
         return False, issues, {"reviews": [], "fact_check": fc}
     passes = 1 if is_custom_topic else CFG["review"].get("passes", 3)
-    sourced_rule = "every factual claim is supported by a listed source; nothing added beyond them"
+    # The reviewers only see one-line summaries of the sources, while the fact check above read
+    # the full pages and passed every claim. Judging sourcing again from the summaries rejected
+    # true details (for example ResizeObserver's contentRect), so they defer to the fact check.
+    sourced_rule = ("a live fact check has already compared every claim with the full text of the "
+                    "cited pages and passed it. The SOURCES below are only short summaries, so do "
+                    "not lower this score for details missing from them; lower it only if the post "
+                    "cites no source or contradicts one")
     system = TEXT_REVIEWER_SYSTEM.format(min_score=CFG["review"]["min_score"],
                                          sourced_rule=sourced_rule)
     keys = {"meaningful", "sourced", "on_topic", "professional", "technical_depth", "takeaway",

@@ -284,3 +284,13 @@ def test_dead_cited_pages_are_dropped_but_one_source_always_stays(monkeypatch):
     assert agent.drop_dead_sources([dead, good]) == [good]
     assert agent.drop_dead_sources([dead, {"url": "https://web.dev/dead2"}]) == [dead, {"url": "https://web.dev/dead2"}]
     assert agent.drop_dead_sources([dead]) == [dead]
+
+
+def test_reviewers_defer_to_the_fact_check_on_sourcing(monkeypatch):
+    monkeypatch.setattr(agent, "_fact_check_safely", lambda post, sources: {"approved": True})
+    seen = []
+    monkeypatch.setattr(agent, "call_json", lambda system, content, **k: seen.append(system) or {
+        "scores": {k2: 5 for k2 in ("meaningful", "sourced", "on_topic", "professional",
+                                    "technical_depth", "takeaway", "code")}, "approved": True})
+    ok, issues, _ = agent.review_text("H", "post", [{"url": "https://x", "claim": "c"}], is_custom_topic=True)
+    assert ok and "already compared every claim with the full text" in seen[0]
