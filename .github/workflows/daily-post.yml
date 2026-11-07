@@ -162,14 +162,23 @@ jobs:
         run: |
           git config user.name "linkedin-agent"
           git config user.email "agent@users.noreply.github.com"
-          git add posted.json topic_history.json
-          # Poster history keeps every post's layout and colours different across runs
-          if [ -f state/poster_style.json ]; then git add state/poster_style.json; fi
-          git commit -m "Log editorial activity [skip ci]" || echo "nothing to commit"
-          # main may have moved during the approval wait, so rebase onto it before pushing
+          # Save only the history files onto the latest main. A run started from a PR branch must
+          # never push that branch's code to main, and main may have moved during the approval wait.
+          keep="$RUNNER_TEMP/history"
+          mkdir -p "$keep/state"
+          cp posted.json topic_history.json "$keep/"
+          if [ -f state/poster_style.json ]; then cp state/poster_style.json "$keep/state/"; fi
           for attempt in 1 2 3 4; do
-            git pull --rebase origin main && git push origin HEAD:main && exit 0
-            git rebase --abort 2>/dev/null || true
+            git fetch origin main && git checkout -f -B history-update origin/main
+            cp "$keep/posted.json" "$keep/topic_history.json" .
+            git add posted.json topic_history.json
+            # Poster history keeps every post's layout and colours different across runs
+            if [ -f "$keep/state/poster_style.json" ]; then
+              mkdir -p state && cp "$keep/state/poster_style.json" state/ && git add state/poster_style.json
+            fi
+            if git diff --cached --quiet; then echo "nothing to commit"; exit 0; fi
+            git commit -m "Log editorial activity [skip ci]"
+            git push origin HEAD:main && exit 0
             sleep $((attempt * 5))
           done
           echo "Could not push the post history after 4 attempts." >&2
