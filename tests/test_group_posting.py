@@ -27,7 +27,7 @@ def _browser_with(pages: dict[str, str], redirects: dict[str, str] | None = None
         def handle(route):
             url = route.request.url
             for prefix, target in redirects.items():
-                if url.startswith(prefix):  # LinkedIn's bounce to its sign-in wall
+                if url.split('?')[0] == prefix:  # LinkedIn's bounce to another page
                     return route.fulfill(status=200, content_type="text/html",
                                          body=f"<script>location.replace({target!r})</script>")
             for prefix, html in pages.items():
@@ -176,3 +176,25 @@ def test_workflow_has_a_check_only_groups_mode():
     from pathlib import Path
     text = (Path(lg.__file__).parent / ".github/workflows/daily-post.yml").read_text()
     assert "- groups-check" in text and "python linkedin_groups.py --check-groups" in text
+
+
+NEW_LAYOUT_FEED = "<html><head><title>Feed | LinkedIn</title></head><body><main>posts</main></body></html>"
+
+
+def test_new_layout_feed_counts_as_signed_in(monkeypatch, debug_dir):
+    """LinkedIn's newer feed (/feed/foryou/) has no global-nav markers but is signed in."""
+    fake = _browser_with({"https://www.linkedin.com/feed/foryou/": NEW_LAYOUT_FEED},
+                         {"https://www.linkedin.com/feed/": "https://www.linkedin.com/feed/foryou/"})
+    with sync_playwright() as p:
+        ctx = fake(p)
+        page = ctx.new_page()
+        assert lg.is_logged_in(page) is True
+        ctx.close()
+
+
+def test_missing_post_box_lists_the_page_controls(monkeypatch, debug_dir):
+    monkeypatch.setattr(lg, "get_browser_context", _browser_with({
+        "https://www.linkedin.com/feed/": SIGNED_IN_FEED,
+        "https://www.linkedin.com/groups/": GROUP_NO_BOX.replace("<p>About</p>", "<button aria-label='Create post'>x</button>")}))
+    res = lg.check_groups(["https://www.linkedin.com/groups/1/"], settle_ms=50)
+    assert "button: Create post" in res["detail"]

@@ -136,8 +136,32 @@ def is_logged_in(page) -> bool:
     page.wait_for_timeout(2000)
     if page_block_reason(page):
         return False
-    return page.locator("nav.global-nav, #global-nav, .feed-identity-module, "
-                        "header.global-nav, [data-test-global-nav]").count() > 0
+    if page.locator("nav.global-nav, #global-nav, .feed-identity-module, "
+                    "header.global-nav, [data-test-global-nav]").count() > 0:
+        return True
+    # LinkedIn's newer layout has none of those markers; staying on /feed (for example
+    # /feed/foryou/) without a sign-in wall means LinkedIn accepted the session.
+    return "linkedin.com/feed" in (page.url or "")
+
+
+def describe_controls(page, limit: int = 40) -> str:
+    """The visible buttons and editable boxes on the page, so a missing post box can be diagnosed."""
+    try:
+        items = page.evaluate("""(limit) => {
+            const out = [];
+            for (const el of document.querySelectorAll('button, [role=button], [contenteditable=true], [data-placeholder]')) {
+                const r = el.getBoundingClientRect();
+                if (!r.width || !r.height) continue;
+                const label = (el.getAttribute('aria-label') || el.getAttribute('data-placeholder') ||
+                               el.innerText || '').trim().replace(/\\s+/g, ' ').slice(0, 60);
+                if (label) out.push(el.tagName.toLowerCase() + ': ' + label);
+                if (out.length >= limit) break;
+            }
+            return out;
+        }""", limit)
+    except Exception as e:  # noqa: BLE001 - diagnostics only
+        return f"(could not list controls: {e})"
+    return "; ".join(items) or "(no visible controls)"
 
 
 START_SELECTORS = [
@@ -188,7 +212,8 @@ def check_groups(groups: list[str], headless: bool = True, settle_ms: int = 3000
                               detail=f"Signed in, and {groups[0]} shows the post box. Nothing was posted.")
             else:
                 reason = page_block_reason(page) or "no post box on the group page"
-                result["detail"] = f"Signed in, but {groups[0]}: {reason}. Page: {seen}"
+                result["detail"] = (f"Signed in, but {groups[0]}: {reason}. Page: {seen}. "
+                                    f"Controls on the page: {describe_controls(page)}")
             return result
         finally:
             context.close()
@@ -220,6 +245,7 @@ def post_to_single_group(page, group_url: str, text: str, image_path: Path | Non
         reason = page_block_reason(page)
         seen = save_page_debug(page, label)
         print(f"  ⚠️ Could not find 'Start a post' button on {group_url}: {reason or 'no post box'}; page: {seen}")
+        print(f"  Controls on the page: {describe_controls(page)}")
         if diagnostics is not None:
             diagnostics.update(no_post_box=True, blocked=reason, page=seen)
         return False
