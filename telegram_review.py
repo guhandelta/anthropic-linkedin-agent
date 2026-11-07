@@ -658,6 +658,10 @@ class TelegramReviewer:
 
                 data = cq.get("data", "")
                 action, _, rest = data.partition(":")
+                if action in ("pick_topic", "opt_custom", "opt_skip") and rest.rpartition(":")[2] != draft_id:
+                    # A button on an older topic list: never act on it (its numbers mean other topics).
+                    self._answer_cq(cq["id"], text="That list has closed. Use the newest one below.")
+                    continue
 
                 if action == "pick_topic":
                     idx_str, _, cb_draft = rest.partition(":")

@@ -1792,6 +1792,11 @@ def suggest_topics(count: int = 3) -> list[dict]:
             if source_checks([source], posted_urls(load_log()), topic_kind=kind):
                 continue
             page = verify_sources([source], set(ALLOWED))[0]
+            if kind != "evergreen" and not (source["published"]
+                                            and source["published"] in page["published_dates"]):
+                # News, fixes and upgrades must show their date on the page, or every draft
+                # fails the date check later (as "Azure Maia 300" did three times).
+                continue
             item = {"topic": topic, "source": s, "source_url": url,
                     "angle": str(res.get("angle") or "").strip(),
                     "technical_takeaway": takeaway, "topic_kind": kind,

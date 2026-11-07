@@ -303,3 +303,35 @@ def test_index_pages_are_not_accepted_as_a_topic_page(monkeypatch):
     assert agent.is_index_page("https://web.dev")
     assert not agent.is_index_page("https://developer.mozilla.org/en-US/docs/Web/API/ResizeObserver")
     assert not agent.is_index_page("https://web.dev/learn/css/anchor-positioning")
+
+
+def test_buttons_on_an_older_topic_list_are_ignored(monkeypatch):
+    reviewer = telegram_review.TelegramReviewer("t", "1")
+    calls, answers = [], []
+    monkeypatch.setattr(reviewer, "_call", lambda method, **p: calls.append(method) or {"message_id": 9})
+    monkeypatch.setattr(reviewer, "_answer_cq", lambda cid, text: answers.append(text))
+
+    def cq(uid, data):
+        return {"update_id": uid, "callback_query": {"id": str(uid), "data": data, "from": {"id": 1},
+                                                      "message": {"chat": {"id": 1}}}}
+    batches = [[cq(1, "opt_skip:old-list"), cq(2, "pick_topic:2:old-list"), cq(3, "pick_topic:0:new-list")]]
+    monkeypatch.setattr(reviewer, "_poll_updates", lambda params: batches.pop(0) if batches else [])
+    res = reviewer.choose_topic("new-list", [{"topic": "A", "source": "s"}], timeout_s=5)
+    assert res["action"] == "new_topic" and res["topic"] == "A"
+    assert answers[:2] == ["That list has closed. Use the newest one below."] * 2
+
+
+def test_dated_suggestions_need_their_date_on_the_page(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent, "ROOT", tmp_path)
+    monkeypatch.setattr(agent, "load_log", MagicMock(return_value=[]))
+    monkeypatch.setattr(agent.random, "sample", lambda values, count: ["react.dev/blog"])
+    monkeypatch.setattr(agent, "source_checks", lambda *a, **k: [])
+    monkeypatch.setattr(agent, "verify_sources", MagicMock(return_value=[
+        {"url": "u", "text": "React 20 ships a new compiler mode for apps.", "published_dates": []}]))
+    monkeypatch.setattr(agent, "verify_topic_suggestion", lambda item, page: True)
+    candidate = {"topic": "React compiler release notes today", "angle": "What changed",
+                 "technical_takeaway": "Turn on the new compiler mode and measure renders",
+                 "topic_kind": "update", "source_url": "https://react.dev/blog/2026/11/01/react-20",
+                 "published": None, "source_claim": "React 20 ships a new compiler mode"}
+    monkeypatch.setattr(agent, "call_json", MagicMock(return_value=candidate))
+    assert agent.suggest_topics(count=1) == []
