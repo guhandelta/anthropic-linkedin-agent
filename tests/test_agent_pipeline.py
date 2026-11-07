@@ -435,3 +435,15 @@ def test_workflow_can_shorten_the_approval_wait():
     assert out.stdout.strip().splitlines()[-1] == "3.0"
     text = (Path(agent.__file__).parent / ".github/workflows/daily-post.yml").read_text()
     assert 'TELEGRAM_TIMEOUT_HOURS: "3"' in text and "timeout-minutes: 240" in text
+
+
+def test_workflow_keeps_poster_history_and_rebases_before_push():
+    root = Path(agent.__file__).parent
+    text = (root / ".github/workflows/daily-post.yml").read_text()
+    assert "git add state/poster_style.json" in text
+    assert "git pull --rebase origin main" in text and "fetch-depth: 0" in text
+    import subprocess
+    ignored = subprocess.run(["git", "check-ignore", "-q", "state/poster_style.json"], cwd=root)
+    assert ignored.returncode == 1  # tracked, so Actions remembers recent posters
+    other = subprocess.run(["git", "check-ignore", "-q", "state/other.json"], cwd=root)
+    assert other.returncode == 0
