@@ -192,5 +192,23 @@
     "post_urn": "direct",
     "chars": 2814,
     "sources": []
+  },
+  {
+    "date": "2026-11-06T08:38:28",
+    "draft_id": "20261106-direct-71352c",
+    "source_domain": "Direct Post",
+    "headline": "GraphQL Federation vs BFF",
+    "post_urn": "direct",
+    "chars": 3681,
+    "sources": []
+  },
+  {
+    "date": "2026-11-06T15:38:21",
+    "draft_id": "20261106-direct-acc0c3",
+    "source_domain": "Direct Post",
+    "headline": "Sync Tabs With Broadcast Channel",
+    "post_urn": "direct",
+    "chars": 3035,
+    "sources": []
   }
 ]

@@ -135,5 +135,38 @@
     "status": "drafted",
     "source": "developer.mozilla.org/en-US/docs/Web/API",
     "recorded_at": "2026-11-03"
+  },
+  {
+    "topic": "HTML Focus Management and the autofocus Attribute",
+    "source_urls": [
+      "https://web.dev/learn/html/focus"
+    ],
+    "technical_takeaway": "Avoid using the autofocus attribute globally, as it scrolls the element into view but skips prior elements in the document's sequential focus navigation order, disrupting accessibility. The primary safe exception is within <dialog> elements, where autofocus can be used to explicitly target which interactive element receives focus upon opening, overriding the default behavior of focusing the first focusable element.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-06"
+  },
+  {
+    "topic": "Broadcast Channel API",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/Broadcast_Channel_API"
+    ],
+    "technical_takeaway": "The Broadcast Channel API enables seamless bi-directional messaging between tabs, windows, iframes, and Web Workers of the same origin. By instantiating a BroadcastChannel with a shared name, developers can sync state across contexts without needing to manage window or worker references.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-06"
+  },
+  {
+    "topic": "v0 Database Integrations and AI SQL Execution",
+    "source_urls": [
+      "https://v0.app/docs/databases"
+    ],
+    "technical_takeaway": "v0 provides one-click integrations for databases like Supabase, Neon, Snowflake, and Upstash directly from the chat UI, automatically provisioning user accounts and environment variables, and enabling the AI to natively generate and execute SQL to manage tables.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "v0.app/docs/databases",
+    "recorded_at": "2026-11-06"
   }
 ]
