@@ -53,6 +53,8 @@ jobs:
       # Step 1: Check out repository code
       - name: Checkout Code
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0       # full history so the history commit can rebase onto newer main
 
       - name: Validate publish credentials
         if: github.event_name == 'schedule' || inputs.run_mode == 'publish'
@@ -145,5 +147,14 @@ jobs:
           git config user.name "linkedin-agent"
           git config user.email "agent@users.noreply.github.com"
           git add posted.json topic_history.json
+          # Poster history keeps every post's layout and colours different across runs
+          if [ -f state/poster_style.json ]; then git add state/poster_style.json; fi
           git commit -m "Log editorial activity [skip ci]" || echo "nothing to commit"
-          git push
+          # main may have moved during the approval wait, so rebase onto it before pushing
+          for attempt in 1 2 3 4; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            git rebase --abort 2>/dev/null || true
+            sleep $((attempt * 5))
+          done
+          echo "Could not push the post history after 4 attempts." >&2
+          exit 1

@@ -435,3 +435,41 @@ def test_workflow_can_shorten_the_approval_wait():
     assert out.stdout.strip().splitlines()[-1] == "3.0"
     text = (Path(agent.__file__).parent / ".github/workflows/daily-post.yml").read_text()
     assert 'TELEGRAM_TIMEOUT_HOURS: "3"' in text and "timeout-minutes: 240" in text
+
+
+def test_workflow_keeps_poster_history_and_rebases_before_push():
+    root = Path(agent.__file__).parent
+    text = (root / ".github/workflows/daily-post.yml").read_text()
+    assert "git add state/poster_style.json" in text
+    assert "git pull --rebase origin main" in text and "fetch-depth: 0" in text
+    import subprocess
+    ignored = subprocess.run(["git", "check-ignore", "-q", "state/poster_style.json"], cwd=root)
+    assert ignored.returncode == 1  # tracked, so Actions remembers recent posters
+    other = subprocess.run(["git", "check-ignore", "-q", "state/other.json"], cwd=root)
+    assert other.returncode == 0
+
+
+def test_run_without_post_notifies_on_telegram(monkeypatch):
+    sent = []
+
+    class FakeTG:
+        def __init__(self, token, chat):
+            pass
+
+        def _call(self, method, **params):
+            sent.append((method, params["text"]))
+
+    monkeypatch.setattr(agent, "TelegramReviewer", FakeTG)
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "t")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "1")
+    agent.notify_run_without_post(dry_run=True)
+    assert sent == []  # dry runs only fail the job
+    agent.notify_run_without_post()
+    assert sent and sent[0][0] == "sendMessage" and "Nothing was posted" in sent[0][1]
+
+
+def test_command_line_run_fails_when_no_draft_is_approved():
+    text = (Path(agent.__file__).parent / "agent.py").read_text()
+    tail = text[text.index('if __name__ == "__main__":'):]
+    assert "outcome = run(args.source, args.dry_run, topic_arg=args.topic)" in tail
+    assert "notify_run_without_post(dry_run=args.dry_run)" in tail and "sys.exit(1)" in tail

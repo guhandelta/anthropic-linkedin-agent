@@ -2231,7 +2231,7 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
         if dry_run:
             print("Dry run: not sending to Telegram or LinkedIn.\n\n" + post)
             print("\nSources:\n" + "\n".join(f"- {s['url']}" for s in sources))
-            return
+            return "dry_run"
 
         # Save approved topic into deduplication database
         remember_topic(topic_history_path(), headline,
@@ -2244,7 +2244,7 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
                                      technical_takeaway=takeaway)
         status = res.get("status")
         if status == "posted":
-            return
+            return "posted"
         elif status == "revise":
             feedback = res.get("feedback")
             print(f"\n[Telegram Feedback] User requested revisions: {feedback}")
@@ -2261,7 +2261,7 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
             continue
         else:
             print("User declined or skipped post.")
-            return
+            return "declined"
 
 
     print("\nAll attempts completed.")
@@ -2273,6 +2273,22 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
             "💡 Tip: Tap 🔁 Try again to retry the same request, or ✍️ Post from Topic to try another prompt.",
             reply_markup={"inline_keyboard": [[{"text": "🔁 Try again", "callback_data": "retry_last"}]]},
         )
+
+
+def notify_run_without_post(dry_run: bool = False) -> None:
+    """Tell Guha on Telegram that a command-line run ended without a draft to approve."""
+    print("No approved draft was produced in this run.")
+    token, chat = os.environ.get("TELEGRAM_BOT_TOKEN"), os.environ.get("TELEGRAM_CHAT_ID")
+    if dry_run or not (token and chat):
+        return
+    try:
+        TelegramReviewer(token, chat)._call(
+            "sendMessage", chat_id=chat,
+            text=("⚠️ The GitHub run ended without a draft for you to approve: every attempt was "
+                  "rejected or no fresh source was found. Nothing was posted. Send a topic or use "
+                  "Daily Post to try again."))
+    except Exception as e:  # noqa: BLE001 - the job still fails, so GitHub reports it
+        print(f"Could not send the Telegram notice ({e}).")
 
 
 def get_agent_status_text() -> str:
@@ -2404,4 +2420,9 @@ if __name__ == "__main__":
         img = Path(args.image) if args.image else None
         handle_direct_post(args.direct, custom_image_path=img, generate_infographic=not args.no_image)
     else:
-        run(args.source, args.dry_run, topic_arg=args.topic)
+        outcome = run(args.source, args.dry_run, topic_arg=args.topic)
+        if outcome is None:
+            # No approved draft came out of this run. Say so on Telegram and fail the job, so a
+            # scheduled run that posts nothing is not shown as a green success.
+            notify_run_without_post(dry_run=args.dry_run)
+            sys.exit(1)
