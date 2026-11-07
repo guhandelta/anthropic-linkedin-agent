@@ -707,6 +707,25 @@ Return ONLY JSON:
   "infographic_idea": "..."}}"""
 
 
+def drop_dead_sources(sources: list) -> list:
+    """Remove cited pages that can't be opened (a made-up or moved URL), keeping at least one.
+
+    A single dead link used to sink the whole draft at the fact check and waste an attempt.
+    When every source is dead they are all kept, so the checks report it as before.
+    """
+    if not isinstance(sources, list) or len(sources) < 2:
+        return sources
+    alive = []
+    for source in sources:
+        url = source.get("url", "") if isinstance(source, dict) else ""
+        try:
+            fetch_source_page(url, set(ALLOWED))
+            alive.append(source)
+        except Exception as e:  # noqa: BLE001 - any unreadable page is dropped the same way
+            print(f"Dropping a cited page that can't be read: {url} ({str(e)[:60]})")
+    return alive or sources
+
+
 def source_page_text(url: str, limit: int = 16000) -> str:
     """The text of an allowed page as the fact checker sees it, or "" when it can't be read."""
     try:
@@ -2318,7 +2337,7 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
         post = repair_length(post)
         idea = draft.get("infographic_idea", "")
         headline = draft.get("headline", current_topic or current_source)
-        sources = draft.get("sources", [])
+        sources = drop_dead_sources(draft.get("sources", []))
         topic_kind = draft.get("topic_kind")
         takeaway = str(draft.get("technical_takeaway") or "").strip()
         issues = hard_checks(post) + source_checks(

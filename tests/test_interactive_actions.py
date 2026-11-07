@@ -37,6 +37,7 @@ def pipeline(tmp_path, monkeypatch):
     monkeypatch.setattr(agent, "source_checks", lambda *a, **k: [])
     monkeypatch.setattr(agent, "duplicate_topic", lambda *a, **k: False)
     monkeypatch.setattr(agent, "remember_topic", lambda *a, **k: None)
+    monkeypatch.setattr(agent, "drop_dead_sources", lambda sources: sources)
     write = MagicMock(return_value=_draft())
     monkeypatch.setattr(agent, "write_draft", write)
     monkeypatch.setattr(agent, "review_text", MagicMock(return_value=(True, [], {"reviews": []})))
@@ -271,3 +272,15 @@ def test_a_failed_topic_offers_the_remaining_ones(monkeypatch):
     assert agent.interactive_session(tg=tg) == "posted"
     assert run.call_args_list[0].kwargs["item_arg"] is a and run.call_args_list[1].kwargs["item_arg"] is b
     assert tg.choose_topic.call_args_list[1].args[1] == [b]
+
+
+def test_dead_cited_pages_are_dropped_but_one_source_always_stays(monkeypatch):
+    def fetch(url, allowed):
+        if "dead" in url:
+            raise ValueError("Source page not found (404)")
+        return {"text": "ok", "published_dates": []}
+    monkeypatch.setattr(agent, "fetch_source_page", fetch)
+    good, dead = {"url": "https://web.dev/good"}, {"url": "https://web.dev/dead"}
+    assert agent.drop_dead_sources([dead, good]) == [good]
+    assert agent.drop_dead_sources([dead, {"url": "https://web.dev/dead2"}]) == [dead, {"url": "https://web.dev/dead2"}]
+    assert agent.drop_dead_sources([dead]) == [dead]
