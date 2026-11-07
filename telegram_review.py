@@ -216,6 +216,9 @@ class TelegramReviewer:
         self.offset = None                  # Telegram update_id offset for long polling
         # Menu taps that arrived while a topic list was open; the listener handles them next.
         self.deferred: list[dict] = []
+        # The Mac listener runs a menu tap that closes an open topic list. A GitHub Actions run
+        # has no listener, so there a tap must leave the list open instead of ending the run.
+        self.menu_closes_lists = True
 
     @staticmethod
     def _is_menu(text: str) -> bool:
@@ -634,6 +637,11 @@ class TelegramReviewer:
                     text = (msg_obj.get("text") or "").strip()
                     chat = str(msg_obj.get("chat", {}).get("id"))
                     if sender == self.chat_id and chat == self.chat_id and text:
+                        if self._is_menu(text) and not self.menu_closes_lists:
+                            self._call("sendMessage", chat_id=self.chat_id,
+                                       text="⏳ The topic list is still open. Pick a topic above, type "
+                                            "your own, or tap Skip Today.")
+                            continue
                         if self._is_menu(text):
                             # A menu tap closes the list and runs that action, never a topic search.
                             self.deferred.append(up)
@@ -658,6 +666,10 @@ class TelegramReviewer:
 
                 data = cq.get("data", "")
                 action, _, rest = data.partition(":")
+                if action in ("pick_topic", "opt_custom", "opt_skip") and rest.rpartition(":")[2] != draft_id:
+                    # A button on an older topic list: never act on it (its numbers mean other topics).
+                    self._answer_cq(cq["id"], text="That list has closed. Use the newest one below.")
+                    continue
 
                 if action == "pick_topic":
                     idx_str, _, cb_draft = rest.partition(":")

@@ -303,3 +303,64 @@ def test_index_pages_are_not_accepted_as_a_topic_page(monkeypatch):
     assert agent.is_index_page("https://web.dev")
     assert not agent.is_index_page("https://developer.mozilla.org/en-US/docs/Web/API/ResizeObserver")
     assert not agent.is_index_page("https://web.dev/learn/css/anchor-positioning")
+
+
+def test_buttons_on_an_older_topic_list_are_ignored(monkeypatch):
+    reviewer = telegram_review.TelegramReviewer("t", "1")
+    calls, answers = [], []
+    monkeypatch.setattr(reviewer, "_call", lambda method, **p: calls.append(method) or {"message_id": 9})
+    monkeypatch.setattr(reviewer, "_answer_cq", lambda cid, text: answers.append(text))
+
+    def cq(uid, data):
+        return {"update_id": uid, "callback_query": {"id": str(uid), "data": data, "from": {"id": 1},
+                                                      "message": {"chat": {"id": 1}}}}
+    batches = [[cq(1, "opt_skip:old-list"), cq(2, "pick_topic:2:old-list"), cq(3, "pick_topic:0:new-list")]]
+    monkeypatch.setattr(reviewer, "_poll_updates", lambda params: batches.pop(0) if batches else [])
+    res = reviewer.choose_topic("new-list", [{"topic": "A", "source": "s"}], timeout_s=5)
+    assert res["action"] == "new_topic" and res["topic"] == "A"
+    assert answers[:2] == ["That list has closed. Use the newest one below."] * 2
+
+
+def test_dated_suggestions_need_their_date_on_the_page(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent, "ROOT", tmp_path)
+    monkeypatch.setattr(agent, "load_log", MagicMock(return_value=[]))
+    monkeypatch.setattr(agent.random, "sample", lambda values, count: ["react.dev/blog"])
+    monkeypatch.setattr(agent, "source_checks", lambda *a, **k: [])
+    monkeypatch.setattr(agent, "verify_sources", MagicMock(return_value=[
+        {"url": "u", "text": "React 20 ships a new compiler mode for apps.", "published_dates": []}]))
+    monkeypatch.setattr(agent, "verify_topic_suggestion", lambda item, page: True)
+    candidate = {"topic": "React compiler release notes today", "angle": "What changed",
+                 "technical_takeaway": "Turn on the new compiler mode and measure renders",
+                 "topic_kind": "update", "source_url": "https://react.dev/blog/2026/11/01/react-20",
+                 "published": None, "source_claim": "React 20 ships a new compiler mode"}
+    monkeypatch.setattr(agent, "call_json", MagicMock(return_value=candidate))
+    assert agent.suggest_topics(count=1) == []
+
+
+def test_a_menu_tap_keeps_the_topic_list_open_on_actions(monkeypatch):
+    reviewer = telegram_review.TelegramReviewer("t", "1")
+    reviewer.menu_closes_lists = False
+    sent = []
+    monkeypatch.setattr(reviewer, "_call", lambda method, **p: sent.append(p.get("text")) or {"message_id": 9})
+    monkeypatch.setattr(reviewer, "_answer_cq", lambda cid, text: None)
+    status = {"update_id": 1, "message": {"text": "📊 Status & History", "from": {"id": 1}, "chat": {"id": 1}}}
+    pick = {"update_id": 2, "callback_query": {"id": "c", "data": "pick_topic:0:L", "from": {"id": 1},
+                                               "message": {"chat": {"id": 1}}}}
+    batches = [[status], [pick]]
+    monkeypatch.setattr(reviewer, "_poll_updates", lambda params: batches.pop(0) if batches else [])
+    assert reviewer.choose_topic("L", [{"topic": "A", "source": "s"}], timeout_s=5)["topic"] == "A"
+    assert any("still open" in (t or "") for t in sent) and reviewer.deferred == []
+
+
+def test_history_merge_keeps_main_entries_and_adds_the_runs(tmp_path):
+    import json, importlib.util
+    spec = importlib.util.spec_from_file_location("merge_history", ROOT / "scripts/merge_history.py")
+    mh = importlib.util.module_from_spec(spec); spec.loader.exec_module(mh)
+    run, main = tmp_path / "run", tmp_path / "main"
+    run.mkdir(); main.mkdir()
+    (main / "topic_history.json").write_text(json.dumps([{"topic": "A"}, {"topic": "M"}]))
+    (run / "topic_history.json").write_text(json.dumps([{"topic": "A"}, {"topic": "R"}]))
+    (run / "posted.json").write_text(json.dumps([{"draft_id": "d1"}]))
+    mh.main(str(run), str(main))
+    assert json.loads((main / "topic_history.json").read_text()) == [{"topic": "A"}, {"topic": "M"}, {"topic": "R"}]
+    assert json.loads((main / "posted.json").read_text()) == [{"draft_id": "d1"}]
