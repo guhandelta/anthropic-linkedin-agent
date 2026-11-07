@@ -96,6 +96,8 @@ STOP_AFTER_NO_POST_BOX = 2
 
 def page_block_reason(page) -> str:
     """Why this page is LinkedIn's sign-in wall or security check, or "" when it looks normal."""
+    if getattr(page, "_linkedin_block", ""):
+        return page._linkedin_block
     url = page.url or ""
     if any(part in url for part in BLOCKED_URL_PARTS):
         return f"LinkedIn sent the browser to {url.split('?')[0]}"
@@ -132,12 +134,98 @@ def is_logged_in(page) -> bool:
     The feed must show LinkedIn's own navigation. A sign-in wall, the login form or a security
     check all count as not logged in (they used to pass, so group posting failed later instead).
     """
-    page.goto("https://www.linkedin.com/feed/", wait_until="domcontentloaded", timeout=30000)
+    try:
+        page.goto("https://www.linkedin.com/feed/", wait_until="domcontentloaded", timeout=30000)
+    except Exception as e:  # noqa: BLE001
+        if "TOO_MANY_REDIRECTS" not in str(e):
+            raise
+        # An ended li_at session makes LinkedIn bounce the feed between its pages forever
+        page._linkedin_block = "LinkedIn kept redirecting the feed, so it rejected the LI_AT session"
+        return False
     page.wait_for_timeout(2000)
     if page_block_reason(page):
         return False
-    return page.locator("nav.global-nav, #global-nav, .feed-identity-module, "
-                        "header.global-nav, [data-test-global-nav]").count() > 0
+    if page.locator("nav.global-nav, #global-nav, .feed-identity-module, "
+                    "header.global-nav, [data-test-global-nav]").count() > 0:
+        return True
+    # LinkedIn's newer layout has none of those markers; staying on /feed (for example
+    # /feed/foryou/) without a sign-in wall means LinkedIn accepted the session.
+    return "linkedin.com/feed" in (page.url or "")
+
+
+def describe_controls(page, limit: int = 40) -> str:
+    """The visible buttons and editable boxes on the page, so a missing post box can be diagnosed."""
+    try:
+        items = page.evaluate("""(limit) => {
+            const out = [];
+            for (const el of document.querySelectorAll('button, [role=button], [contenteditable=true], [data-placeholder]')) {
+                const r = el.getBoundingClientRect();
+                if (!r.width || !r.height) continue;
+                const label = (el.getAttribute('aria-label') || el.getAttribute('data-placeholder') ||
+                               el.innerText || '').trim().replace(/\\s+/g, ' ').slice(0, 60);
+                if (label) out.push(el.tagName.toLowerCase() + ': ' + label);
+                if (out.length >= limit) break;
+            }
+            return out;
+        }""", limit)
+    except Exception as e:  # noqa: BLE001 - diagnostics only
+        return f"(could not list controls: {e})"
+    return "; ".join(items) or "(no visible controls)"
+
+
+START_SELECTORS = [
+    "button:has-text('Start a post')",
+    "button:has-text('Start a public post')",
+    "button:has-text('Start a')",
+    "div[data-placeholder*='Start a']",
+    "button.share-box-feed-entry__trigger",
+    "button[aria-label*='Start a']",
+]
+
+
+def find_start_button(page):
+    """The group's visible 'Start a post' control, or None when the page has no post box."""
+    for sel in START_SELECTORS:
+        loc = page.locator(sel).first
+        if loc.is_visible():
+            return loc
+    return None
+
+
+def check_groups(groups: list[str], headless: bool = True, settle_ms: int = 3000) -> dict:
+    """Check, without posting anything, that LinkedIn accepts the session and shows a post box.
+
+    Opens the feed and the first group only. Screenshots go to output/group_debug.
+    Returns {"ok": bool, "logged_in": bool, "post_box": bool, "detail": str}.
+    """
+    result = {"ok": False, "logged_in": False, "post_box": False, "detail": ""}
+    with sync_playwright() as p:
+        context = get_browser_context(p, headless=headless)
+        page = context.new_page()
+        try:
+            if not is_logged_in(page):
+                seen = save_page_debug(page, "check-login")
+                reason = page_block_reason(page) or "the feed did not load as a signed-in page"
+                result["detail"] = f"LinkedIn did not accept the session: {reason}. Page: {seen}"
+                return result
+            result["logged_in"] = True
+            save_page_debug(page, "check-feed")
+            if not groups:
+                result.update(ok=True, detail="Signed in. No target groups are configured.")
+                return result
+            page.goto(groups[0], wait_until="domcontentloaded", timeout=45000)
+            page.wait_for_timeout(settle_ms)
+            seen = save_page_debug(page, "check-group")
+            if find_start_button(page) is not None:
+                result.update(ok=True, post_box=True,
+                              detail=f"Signed in, and {groups[0]} shows the post box. Nothing was posted.")
+            else:
+                reason = page_block_reason(page) or "no post box on the group page"
+                result["detail"] = (f"Signed in, but {groups[0]}: {reason}. Page: {seen}. "
+                                    f"Controls on the page: {describe_controls(page)}")
+            return result
+        finally:
+            context.close()
 
 
 def post_to_single_group(page, group_url: str, text: str, image_path: Path | None = None,
@@ -156,27 +244,17 @@ def post_to_single_group(page, group_url: str, text: str, image_path: Path | Non
     page.wait_for_timeout(3000)
 
     # 1. Locate and click the 'Start a post' button
-    start_selectors = [
-        "button:has-text('Start a post')",
-        "button:has-text('Start a public post')",
-        "button:has-text('Start a')",
-        "div[data-placeholder*='Start a']",
-        "button.share-box-feed-entry__trigger",
-        "button[aria-label*='Start a']",
-    ]
-    started = False
-    for sel in start_selectors:
-        loc = page.locator(sel).first
-        if loc.is_visible():
-            loc.click()
-            started = True
-            break
+    start_button = find_start_button(page)
+    started = start_button is not None
+    if started:
+        start_button.click()
 
     if not started:
         label = "group-" + group_url.rstrip("/").rsplit("/", 1)[-1]
         reason = page_block_reason(page)
         seen = save_page_debug(page, label)
         print(f"  ⚠️ Could not find 'Start a post' button on {group_url}: {reason or 'no post box'}; page: {seen}")
+        print(f"  Controls on the page: {describe_controls(page)}")
         if diagnostics is not None:
             diagnostics.update(no_post_box=True, blocked=reason, page=seen)
         return False
@@ -321,6 +399,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="LinkedIn Group Automated Publisher")
     parser.add_argument("--login", action="store_true", help="Launch visible browser to log in to LinkedIn")
     parser.add_argument("--test", action="store_true", help="Verify browser login status")
+    parser.add_argument("--check-groups", action="store_true",
+                        help="Check the session and the first target group's post box without posting")
     args = parser.parse_args()
 
     if args.login:
@@ -332,5 +412,11 @@ if __name__ == "__main__":
             logged_in = is_logged_in(pg)
             print(f"Login status: {'✅ Logged in' if logged_in else '❌ Not logged in'}")
             ctx.close()
+    elif args.check_groups:
+        import yaml
+        config = yaml.safe_load((ROOT / "config.yaml").read_text()) or {}
+        outcome = check_groups((config.get("linkedin") or {}).get("target_groups") or [])
+        print(("✅ " if outcome["ok"] else "❌ ") + outcome["detail"])
+        sys.exit(0 if outcome["ok"] else 1)
     else:
         parser.print_help()
