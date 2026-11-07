@@ -89,22 +89,59 @@ def login_interactive():
     print("Browser profile updated! You are now logged in for automated group posts.")
 
 
+BLOCKED_URL_PARTS = ("/login", "/authwall", "/checkpoint", "/uas/", "/signup", "/m/login")
+DEBUG_DIR = ROOT / "output" / "group_debug"
+STOP_AFTER_NO_POST_BOX = 2
+
+
+def page_block_reason(page) -> str:
+    """Why this page is LinkedIn's sign-in wall or security check, or "" when it looks normal."""
+    url = page.url or ""
+    if any(part in url for part in BLOCKED_URL_PARTS):
+        return f"LinkedIn sent the browser to {url.split('?')[0]}"
+    if page.locator("input#username, input[name='session_key']").count() > 0:
+        return "LinkedIn showed its sign-in form"
+    if page.locator("form#join-form, a[data-tracking-control-name*='auth_wall'], "
+                    "a[href*='/login']:has-text('Sign in')").count() > 0 \
+            and page.locator("nav.global-nav, #global-nav").count() == 0:
+        return "LinkedIn showed its sign-in wall"
+    if page.locator("#captcha-internal, iframe[src*='captcha'], form[action*='checkpoint']").count() > 0:
+        return "LinkedIn showed a security check"
+    return ""
+
+
+def save_page_debug(page, label: str) -> str:
+    """Save a screenshot and the address and title of what LinkedIn showed. Returns a summary."""
+    try:
+        title = page.title()
+    except Exception:  # noqa: BLE001 - the summary is best effort
+        title = ""
+    summary = f"{page.url.split('?')[0]} (title: {title or 'none'})"
+    try:
+        DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(DEBUG_DIR / f"{label}.png"), full_page=False)
+        (DEBUG_DIR / f"{label}.txt").write_text(f"url: {page.url}\ntitle: {title}\n")
+    except Exception as e:  # noqa: BLE001
+        print(f"  (could not save a screenshot: {e})")
+    return summary
+
+
 def is_logged_in(page) -> bool:
-    """Verify whether the browser currently holds an authenticated LinkedIn session.
-    
-    Checks for the presence of global navigation modules or redirects to the login screen.
+    """Whether the browser holds a LinkedIn session that LinkedIn accepts.
+
+    The feed must show LinkedIn's own navigation. A sign-in wall, the login form or a security
+    check all count as not logged in (they used to pass, so group posting failed later instead).
     """
     page.goto("https://www.linkedin.com/feed/", wait_until="domcontentloaded", timeout=30000)
     page.wait_for_timeout(2000)
-    # Check for feed navbar or identity widget
-    if page.locator("nav.global-nav, #global-nav, .feed-identity-module").count() > 0:
-        return True
-    if "login" in page.url or page.locator("input#username").count() > 0:
+    if page_block_reason(page):
         return False
-    return True
+    return page.locator("nav.global-nav, #global-nav, .feed-identity-module, "
+                        "header.global-nav, [data-test-global-nav]").count() > 0
 
 
-def post_to_single_group(page, group_url: str, text: str, image_path: Path | None = None) -> bool:
+def post_to_single_group(page, group_url: str, text: str, image_path: Path | None = None,
+                         diagnostics: dict | None = None) -> bool:
     """Publish an update (with optional image/GIF attachment) to a single LinkedIn group page.
     
     Workflow steps:
@@ -136,7 +173,12 @@ def post_to_single_group(page, group_url: str, text: str, image_path: Path | Non
             break
 
     if not started:
-        print(f"  ⚠️ Could not find 'Start a post' button on {group_url} (are you a member of this group?)")
+        label = "group-" + group_url.rstrip("/").rsplit("/", 1)[-1]
+        reason = page_block_reason(page)
+        seen = save_page_debug(page, label)
+        print(f"  ⚠️ Could not find 'Start a post' button on {group_url}: {reason or 'no post box'}; page: {seen}")
+        if diagnostics is not None:
+            diagnostics.update(no_post_box=True, blocked=reason, page=seen)
         return False
 
     page.wait_for_timeout(2500)
@@ -206,6 +248,7 @@ def post_to_groups(
     - 'failed': list of group URLs that encountered errors
     """
     results = {"success": [], "failed": []}
+    no_box_streak = 0
     if not groups:
         return results
 
@@ -216,9 +259,12 @@ def post_to_groups(
 
         # Check authentication state before starting loop
         if not is_logged_in(page):
+            seen = save_page_debug(page, "login-check")
+            reason = page_block_reason(page) or "LinkedIn's feed did not load as a signed-in page"
             msg = (
-                "Not logged in to LinkedIn in browser_profile. "
-                "Run: python linkedin_groups.py --login once to authenticate."
+                f"LinkedIn did not accept the group-posting session: {reason}. Page: {seen}. "
+                "On GitHub Actions, replace the LI_AT secret with a fresh cookie; "
+                "on the Mac, run: python linkedin_groups.py --login"
             )
             print(f"❌ {msg}")
             if progress_callback:
@@ -232,8 +278,9 @@ def post_to_groups(
             print(f"[{idx}/{len(groups)}] Processing group: {group_url}")
             if progress_callback:
                 progress_callback(status_msg)
+            diag: dict = {}
             try:
-                ok = post_to_single_group(page, group_url, text, image_path)
+                ok = post_to_single_group(page, group_url, text, image_path, diagnostics=diag)
                 if ok:
                     results["success"].append(group_url)
                 else:
@@ -241,6 +288,23 @@ def post_to_groups(
             except Exception as e:
                 print(f"  ❌ Error posting to {group_url}: {e}")
                 results["failed"].append(group_url)
+
+            # A sign-in wall or security check, or no post box on the first two groups, means the
+            # session itself is the problem: stop instead of trying every group the same way.
+            no_box_streak = no_box_streak + 1 if diag.get("no_post_box") else 0
+            if not results["success"] and (diag.get("blocked") or no_box_streak >= STOP_AFTER_NO_POST_BOX):
+                skipped = groups[idx:]
+                results["failed"].extend(skipped)
+                results["error"] = (
+                    f"Stopped after {idx} of {len(groups)} groups: "
+                    f"{diag.get('blocked') or 'no post box on the group pages'}. "
+                    f"LinkedIn showed: {diag.get('page', 'unknown page')}. "
+                    "A screenshot is in the run's 'output' download (group_debug)."
+                )
+                print(f"❌ {results['error']}")
+                if progress_callback:
+                    progress_callback(f"⚠️ {results['error']}")
+                break
 
             # Wait human-like delay between group posts (except after the final group)
             if idx < len(groups) and delay_seconds > 0:
