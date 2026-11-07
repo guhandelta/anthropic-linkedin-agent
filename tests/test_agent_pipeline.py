@@ -434,7 +434,7 @@ def test_workflow_can_shorten_the_approval_wait():
                          capture_output=True, text=True, cwd=Path(agent.__file__).parent)
     assert out.stdout.strip().splitlines()[-1] == "3.0"
     text = (Path(agent.__file__).parent / ".github/workflows/daily-post.yml").read_text()
-    assert 'TELEGRAM_TIMEOUT_HOURS: "3"' in text and "timeout-minutes: 240" in text
+    assert 'TELEGRAM_TIMEOUT_HOURS: "1"' in text and "timeout-minutes: 350" in text
 
 
 def test_workflow_keeps_poster_history_and_rebases_before_push():

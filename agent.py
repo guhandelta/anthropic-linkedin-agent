@@ -89,6 +89,13 @@ CFG = yaml.safe_load((ROOT / "config.yaml").read_text())
 # approval wait without changing the Mac's config.yaml.
 if os.environ.get("TELEGRAM_TIMEOUT_HOURS"):
     CFG["telegram"]["timeout_hours"] = float(os.environ["TELEGRAM_TIMEOUT_HOURS"])
+# Interactive runs also wait for a topic pick and for the text approval before drawing.
+CFG["telegram"].setdefault("topic_wait_minutes", 60)
+CFG["telegram"].setdefault("text_wait_minutes", 120)
+for _key, _env in (("topic_wait_minutes", "TELEGRAM_TOPIC_WAIT_MINUTES"),
+                   ("text_wait_minutes", "TELEGRAM_TEXT_WAIT_MINUTES")):
+    if os.environ.get(_env):
+        CFG["telegram"][_key] = float(os.environ[_env])
 RS = CFG["research"]
 
 # Allowed categorizations for technical posts
@@ -1979,6 +1986,88 @@ def handle_direct_post(post_text: str, custom_image_path: Path | None = None, ge
         print("Direct post was cancelled or rejected.")
 
 
+def make_reviewer() -> TelegramReviewer:
+    """A Telegram reviewer with the configured approval wait and reminders."""
+    return TelegramReviewer(
+        os.environ["TELEGRAM_BOT_TOKEN"], os.environ["TELEGRAM_CHAT_ID"],
+        timeout_s=CFG["telegram"]["timeout_hours"] * 3600,
+        remind_every_s=CFG["telegram"]["remind_every_minutes"] * 60,
+    )
+
+
+def approve_text(headline, post, sources, tg: TelegramReviewer, topic_kind: str = "",
+                 technical_takeaway: str = "") -> dict:
+    """Step 1 of 2 on Telegram: the owner approves the text before any infographic is drawn.
+
+    Returns {"status": "approved" | "revise" | "new_topic" | "rejected", ...}.
+    """
+    draft_id = datetime.now().strftime("%Y%m%d") + "-text-" + uuid.uuid4().hex[:6]
+    shown = (f"Topic type: {topic_kind or 'unspecified'}\n"
+             f"Technical takeaway: {technical_takeaway or 'see post'}\n\nPOST:\n{post}"
+             "\n\nSources:\n" + "\n".join(f"- {s['url']}" for s in sources)
+             + "\n\nApprove the text and I'll draw the infographic, then send both for a final OK.")
+    message_id = tg.send_text_draft(draft_id, headline, shown,
+                                    title="📝 Step 1 of 2: approve the text",
+                                    approve_label="✅ Approve text")
+    print(f"Sent text {draft_id} to Telegram; waiting for your decision...")
+    decision = tg.wait_for_decision(draft_id, message_id, stage="text",
+                                    timeout_s=CFG["telegram"]["text_wait_minutes"] * 60)
+    print("Text decision:", decision)
+    action = decision.get("action") if isinstance(decision, dict) else decision
+    if action == "approved":
+        return {"status": "approved"}
+    if action == "revise":
+        return {"status": "revise", "feedback": decision.get("feedback")}
+    if action == "new_topic":
+        return {"status": "new_topic", "topic": decision.get("topic"), "source": decision.get("source")}
+    if action == "suggest_topics":
+        choice = tg.choose_topic(draft_id, suggest_topics(count=3),
+                                 timeout_s=CFG["telegram"]["topic_wait_minutes"] * 60)
+        if choice.get("action") == "new_topic":
+            return {"status": "new_topic", "topic": choice.get("topic"), "source": choice.get("source")}
+    return {"status": "rejected"}
+
+
+def interactive_session(topic: str | None = None, tg: TelegramReviewer | None = None):
+    """A GitHub Actions run that talks to the owner on Telegram from start to finish.
+
+    Without a topic it offers 3 fresh topics (or the owner types one). The post is then written
+    and fact-checked, the owner approves the text, the infographic is drawn, and the owner gives
+    a final OK before it goes to the feed and the groups. Returns like run().
+    """
+    tg = tg or make_reviewer()
+    select_model_for_run()
+    source = None
+    if not topic:
+        tg._skip_old_updates()
+        tg._call("sendMessage", chat_id=tg.chat_id,
+                 text="🔍 Good day! Finding 3 fresh topics for today's LinkedIn post...")
+        suggestions = suggest_topics(count=3)
+        if not suggestions:
+            tg._call("sendMessage", chat_id=tg.chat_id,
+                     text="⚠️ I couldn't find a fresh topic today. Send /topic <your topic> to start one.")
+            return None
+        choice = tg.choose_topic("pick-" + uuid.uuid4().hex[:6], suggestions,
+                                 timeout_s=CFG["telegram"]["topic_wait_minutes"] * 60)
+        if choice.get("action") != "new_topic" or not choice.get("topic"):
+            print("No topic picked.")
+            return "declined"
+        topic, source = choice["topic"], choice.get("source")
+    tracker_id = tg.send_progress_tracker(f"Generating Post from Topic: {topic[:40]}")
+    return run(source_arg=source, topic_arg=topic, tg=tg, tracker_id=tracker_id, text_first=True)
+
+
+def interactive_direct_post(text: str, tg: TelegramReviewer | None = None) -> None:
+    """A pasted post sent from Telegram: ask infographic or text only, then the usual review."""
+    tg = tg or make_reviewer()
+    tg._skip_old_updates()
+    choice = tg.prompt_direct_choice(text, timeout_s=CFG["telegram"]["topic_wait_minutes"] * 60)
+    if choice in ("infographic", "text_only"):
+        tracker_id = tg.send_progress_tracker("Processing Direct Post")
+        handle_direct_post(text, generate_infographic=choice == "infographic", tg=tg,
+                           tracker_id=tracker_id)
+
+
 def publish_after_approval(headline, source, post, sources, image_path,
                            tg: TelegramReviewer | None = None,
                            topic_kind: str = "", technical_takeaway: str = "") -> dict:
@@ -2092,7 +2181,8 @@ def repair_length(post: str, tries: int = 3) -> str:
 
 
 def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | None = None,
-        tg: TelegramReviewer | None = None, tracker_id: int | None = None):
+        tg: TelegramReviewer | None = None, tracker_id: int | None = None,
+        text_first: bool = False):
     """
     Main execution loop for research, drafting, designing, and publishing.
     
@@ -2103,6 +2193,11 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
       4. SVG Infographic Drawing & CairoSVG Animated GIF Compilation.
       5. 3 Independent Editorial LLM Reviews + Live Web Page Fact-Checking.
       6. Telegram Notification with Live Progress Tracking & Decision Gate.
+
+    With text_first, the owner approves the text on Telegram before the infographic is drawn,
+    then approves text and picture together before anything is posted.
+
+    Returns "posted", "declined" or "dry_run", or None when no approved draft was produced.
     """
     global CURRENT_TELEGRAM_REVIEWER, CURRENT_TRACKER_ID
     if tg:
@@ -2213,6 +2308,27 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
             if tg and tracker_id:
                 tg.update_progress(tracker_id, f"⚠️ [Attempt {attempt}/{CFG['review']['max_attempts']}] Text review requested changes: {feedback[:60]}...")
             continue
+
+        if text_first and not dry_run:
+            # Owner gate on the text alone, so no picture is drawn for a draft that gets rejected.
+            if not tg:
+                tg = make_reviewer()
+            res = approve_text(headline, post, sources, tg, topic_kind=topic_kind,
+                               technical_takeaway=takeaway)
+            status = res.get("status")
+            if status == "revise":
+                feedback = res.get("feedback")
+                print(f"\n[Telegram Feedback] User requested text changes: {feedback}")
+                continue
+            if status == "new_topic":
+                current_topic = res.get("topic")
+                current_source = res.get("source") or current_source
+                feedback, item = None, None
+                print(f"\n[Telegram Topic Switch] User requested: {current_topic}")
+                continue
+            if status != "approved":
+                print("User declined the text.")
+                return "declined"
 
         # Gate 2: the approved text is now fixed. Only the picture is drawn, reviewed and redrawn.
         if tg and tracker_id:
@@ -2332,6 +2448,9 @@ if __name__ == "__main__":
     ap.add_argument("--openai", action="store_true", help="force using OpenAI instead of Claude")
     ap.add_argument("--claude", action="store_true", help="force using Claude instead of OpenAI")
     ap.add_argument("--dry-run", action="store_true", help="write & review without sending to Telegram or LinkedIn")
+    ap.add_argument("--interactive", action="store_true",
+                    help="GitHub Actions: offer topics on Telegram (unless --topic), approve the text, "
+                         "then the infographic, then post; with --direct, ask how to publish it")
     args = ap.parse_args()
 
     # Manual model override flags
@@ -2416,6 +2535,13 @@ if __name__ == "__main__":
             on_suggest_callback=on_telegram_suggest,
             on_status_callback=get_agent_status_text,
         )
+    elif args.direct and args.interactive:
+        interactive_direct_post(args.direct)
+    elif args.interactive and not args.dry_run:
+        outcome = interactive_session(args.topic or None)
+        if outcome is None:
+            notify_run_without_post()
+            sys.exit(1)
     elif args.direct:
         img = Path(args.image) if args.image else None
         handle_direct_post(args.direct, custom_image_path=img, generate_infographic=not args.no_image)

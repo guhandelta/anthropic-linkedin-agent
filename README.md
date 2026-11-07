@@ -415,11 +415,32 @@ Run completely free on GitHub's infrastructure without maintaining a dedicated s
    * `TELEGRAM_CHAT_ID`
    * `LI_AT`
 3. The included workflow [`.github/workflows/daily-post.yml`](file:///.github/workflows/daily-post.yml) automatically triggers every morning at **9:15 AM America/New_York**.
-4. The GitHub Actions runner generates the post, sends the review card to Telegram, and waits up to **4 hours** for your approval before publishing and committing the logs.
+4. Each run talks to you on Telegram from start to finish:
+   1. It offers **3 fresh topics**. Tap one, or type your own topic (60 minutes to pick).
+   2. It writes and fact-checks the post, then sends **the text alone** for approval (120 minutes). **Revise** rewrites it from your notes.
+   3. Only after you approve the text does it draw the infographic. Text and picture then come back for a **final OK** (60 minutes).
+   4. It publishes to your feed and the groups, then commits the post and poster history.
+
+   A run that ends without an approved draft sends a Telegram notice and shows as failed on GitHub. A topic you don't pick, or a draft you reject, simply posts nothing.
+
+#### Starting a run from Telegram (Inbox check)
+
+[`.github/workflows/inbox-check.yml`](.github/workflows/inbox-check.yml) runs [`telegram_inbox.py`](telegram_inbox.py) every 15 minutes. It reads what you sent the bot since the last check:
+
+| You send | What happens |
+| --- | --- |
+| `/topic <topic>`, ✍️ Post from Topic, or any short text | Starts a run on that topic |
+| `/suggest`, 💡 Suggest Topics, 🚀 Run Daily Post | Starts a run that offers 3 topics |
+| `/direct <text>`, 📝 Direct Post, or a pasted post (80+ characters) | Starts a run that publishes your text (infographic or text only) |
+| `/status`, `/help` | Answered directly |
+
+Replies come within about 15 to 30 minutes, because GitHub's 15-minute schedule is not exact. Once a run starts, it answers immediately. The inbox check does nothing while a posting run is active, because that run is reading your taps. **If you run the Mac bot (`agent.py --listen`) again, disable the inbox check first.** Both read the same Telegram messages.
+
+`TelegramInbox` in `telegram_inbox.py` has no LinkedIn code in it, so another Telegram project can reuse it with its own `plan_*` function.
 
 To check both fallbacks safely, open **Actions → Daily LinkedIn post → Run workflow** and leave **Run mode** at `fallback-check`. It simulates an Anthropic failure and verifies a real OpenAI response, then simulates both Anthropic and OpenAI failures and verifies a real Gemini response. Look for both `1/2 passed` and `2/2 passed` in the **Run LinkedIn Agent** log. It does not contact Telegram or LinkedIn. Set `OPENAI_API_KEY` and `GOOGLE_API_KEY` (or their supported alternate names) as repository secrets with working API access.
 
-For a full generation check without publishing, select `dry-run`; the resulting files are uploaded as a workflow artifact. Select `publish` only when you want the Telegram approval flow. Scheduled runs always use the normal publish flow at 9:15 AM America/New_York, including daylight saving changes.
+For a full generation check without publishing, select `dry-run`; the resulting files are uploaded as a workflow artifact. Select `publish` for the Telegram flow above (leave **topic** empty to get 3 suggestions), or `direct` with **post_text** to publish your own text. Scheduled runs always use the normal publish flow at 9:15 AM America/New_York, including daylight saving changes.
 
 ### Option B: Native macOS LaunchAgent Daemon
 

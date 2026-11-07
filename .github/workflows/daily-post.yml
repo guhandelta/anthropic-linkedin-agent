@@ -23,11 +23,11 @@ on:
   workflow_dispatch:
     inputs:
       topic:
-        description: "Optional custom topic (leave empty for autonomous AI research)"
+        description: "Optional custom topic (leave empty to pick from 3 suggested topics on Telegram)"
         required: false
         default: ""
       run_mode:
-        description: "Manual runs: check fallback, generate without publishing, or publish"
+        description: "Manual runs: check fallback, generate without publishing, publish, or publish your own text"
         required: true
         type: choice
         default: fallback-check
@@ -35,6 +35,11 @@ on:
           - fallback-check
           - dry-run
           - publish
+          - direct
+      post_text:
+        description: "direct mode only: the post text to publish (the Telegram inbox check fills this)"
+        required: false
+        default: ""
 
 permissions:
   contents: write            # Required to commit updated posted.json and topic_history.json
@@ -47,7 +52,9 @@ concurrency:
 jobs:
   post:
     runs-on: ubuntu-latest
-    timeout-minutes: 240     # Holds runner up to 4 hours while waiting for user's Telegram decision
+    # Waits on Telegram: topic pick 60 min + text approval 120 min + final OK 60 min, plus the
+    # work in between. GitHub-hosted jobs are capped at 360 minutes.
+    timeout-minutes: 350
 
     steps:
       # Step 1: Check out repository code
@@ -57,7 +64,7 @@ jobs:
           fetch-depth: 0       # full history so the history commit can rebase onto newer main
 
       - name: Validate publish credentials
-        if: github.event_name == 'schedule' || inputs.run_mode == 'publish'
+        if: github.event_name == 'schedule' || inputs.run_mode == 'publish' || inputs.run_mode == 'direct'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -109,7 +116,11 @@ jobs:
           LI_AT: ${{ secrets.LI_AT }}
           TOPIC: ${{ inputs.topic }}
           RUN_MODE: ${{ inputs.run_mode }}
-          TELEGRAM_TIMEOUT_HOURS: "3"   # must stay below the job's 240-minute timeout
+          POST_TEXT: ${{ inputs.post_text }}
+          # The three waits must fit the job's 350-minute timeout with time left for the work.
+          TELEGRAM_TOPIC_WAIT_MINUTES: "60"
+          TELEGRAM_TEXT_WAIT_MINUTES: "120"
+          TELEGRAM_TIMEOUT_HOURS: "1"
         run: |
           case "${RUN_MODE:-publish}" in
             fallback-check)
@@ -121,9 +132,14 @@ jobs:
               python agent.py "${args[@]}"
               ;;
             publish)
-              args=()
+              # Topic picked on Telegram (or given), text approved, then infographic, then posted
+              args=(--interactive)
               if [ -n "$TOPIC" ]; then args+=(--topic "$TOPIC"); fi
               python agent.py "${args[@]}"
+              ;;
+            direct)
+              if [ -z "$POST_TEXT" ]; then echo "direct mode needs post_text" >&2; exit 2; fi
+              python agent.py --interactive --direct "$POST_TEXT"
               ;;
             *)
               echo "Unknown run mode: $RUN_MODE" >&2
@@ -142,7 +158,7 @@ jobs:
 
       # Step 8: Commit updated publication logs and topic history back to remote git repo
       - name: Commit Post & Topic History
-        if: success() && (github.event_name == 'schedule' || inputs.run_mode == 'publish')
+        if: success() && (github.event_name == 'schedule' || inputs.run_mode == 'publish' || inputs.run_mode == 'direct')
         run: |
           git config user.name "linkedin-agent"
           git config user.email "agent@users.noreply.github.com"

@@ -1,0 +1,46 @@
+# ==============================================================================
+# Telegram inbox check: lets you start a post from Telegram without a server.
+# ==============================================================================
+# Every 15 minutes this reads the messages you sent the bot since the last check
+# (telegram_inbox.py). It answers /help and /status itself, and for /topic, /suggest,
+# Run Daily Post or a pasted post it starts "Daily LinkedIn post", which then talks to
+# you on Telegram until it finishes. It does nothing while a posting run is active,
+# because that run is reading your taps. GitHub may start scheduled checks late.
+#
+# If you run the Mac bot (agent.py --listen) again, disable this workflow first:
+# both would read the same Telegram messages.
+# ==============================================================================
+name: Telegram inbox check
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write      # start the posting workflow and see whether it is running
+  contents: read
+
+concurrency:
+  group: telegram-inbox
+  cancel-in-progress: false
+
+jobs:
+  inbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install requests
+        run: pip install "requests==2.34.2"
+      - name: Read Telegram and start a run if asked
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          POSTING_WORKFLOW: daily-post.yml
+          POSTING_REF: main
+        run: python telegram_inbox.py
