@@ -96,6 +96,8 @@ STOP_AFTER_NO_POST_BOX = 2
 
 def page_block_reason(page) -> str:
     """Why this page is LinkedIn's sign-in wall or security check, or "" when it looks normal."""
+    if getattr(page, "_linkedin_block", ""):
+        return page._linkedin_block
     url = page.url or ""
     if any(part in url for part in BLOCKED_URL_PARTS):
         return f"LinkedIn sent the browser to {url.split('?')[0]}"
@@ -132,7 +134,14 @@ def is_logged_in(page) -> bool:
     The feed must show LinkedIn's own navigation. A sign-in wall, the login form or a security
     check all count as not logged in (they used to pass, so group posting failed later instead).
     """
-    page.goto("https://www.linkedin.com/feed/", wait_until="domcontentloaded", timeout=30000)
+    try:
+        page.goto("https://www.linkedin.com/feed/", wait_until="domcontentloaded", timeout=30000)
+    except Exception as e:  # noqa: BLE001
+        if "TOO_MANY_REDIRECTS" not in str(e):
+            raise
+        # An ended li_at session makes LinkedIn bounce the feed between its pages forever
+        page._linkedin_block = "LinkedIn kept redirecting the feed, so it rejected the LI_AT session"
+        return False
     page.wait_for_timeout(2000)
     if page_block_reason(page):
         return False

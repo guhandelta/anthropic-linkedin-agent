@@ -198,3 +198,20 @@ def test_missing_post_box_lists_the_page_controls(monkeypatch, debug_dir):
         "https://www.linkedin.com/groups/": GROUP_NO_BOX.replace("<p>About</p>", "<button aria-label='Create post'>x</button>")}))
     res = lg.check_groups(["https://www.linkedin.com/groups/1/"], settle_ms=50)
     assert "button: Create post" in res["detail"]
+
+
+def test_redirect_loop_means_the_cookie_was_rejected(debug_dir):
+    """An ended li_at session makes Chromium give up with ERR_TOO_MANY_REDIRECTS on the feed."""
+    from playwright.sync_api import Error
+
+    with sync_playwright() as p:
+        ctx = _browser_with({})(p)
+        page = ctx.new_page()
+
+        def looping_goto(url, **kw):
+            raise Error(f"Page.goto: net::ERR_TOO_MANY_REDIRECTS at {url}")
+
+        page.goto = looping_goto
+        assert lg.is_logged_in(page) is False
+        assert "rejected the LI_AT session" in lg.page_block_reason(page)
+        ctx.close()
