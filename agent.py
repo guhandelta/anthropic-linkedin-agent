@@ -74,7 +74,7 @@ from layout_check import layout_issues
 from linkedin import LinkedInClient
 from linkedin_groups import post_to_groups
 from telegram_review import TelegramReviewer, get_status
-from quality import (canonical_url, duplicate_topic, load_history, quote_in_page,
+from quality import (canonical_url, duplicate_topic, fetch_source_page, load_history, quote_in_page,
                      remember_topic, topic_tokens, verify_sources)
 
 # -----------------------------------------------------------------------------
@@ -707,6 +707,15 @@ Return ONLY JSON:
   "infographic_idea": "..."}}"""
 
 
+def source_page_text(url: str, limit: int = 16000) -> str:
+    """The text of an allowed page as the fact checker sees it, or "" when it can't be read."""
+    try:
+        return fetch_source_page(url, set(ALLOWED))["text"][:limit]
+    except Exception as e:  # noqa: BLE001 - the writer can still research the page itself
+        print(f"Could not read {url} for the writer ({str(e)[:80]}).")
+        return ""
+
+
 def write_draft(source: str, feedback: str | None, posted: set[str], topic: str | None = None,
                 prior_topics: list[str] | None = None, item: dict | None = None) -> dict:
     """
@@ -748,6 +757,23 @@ date YYYY-MM-DD or null, and a specific claim stated on the page), and
 infographic_idea. Never use an example or placeholder URL as a source."""
         msg = f"Research and write the post on '{topic}'."
         tool_domains = [search_domain, "web.dev", "developer.mozilla.org", "react.dev", "nextjs.org", "builder.io"]
+        if item and item.get("source_url"):
+            # A suggested topic was already checked against this page: write from it, not the web.
+            msg = (f"Write the post on '{topic}' from this page, which was checked and supports it:\n"
+                   f"{item['source_url']}\n"
+                   f"Angle: {item.get('angle', '')}\n"
+                   f"Technical takeaway: {item.get('technical_takeaway', '')}\n"
+                   f"The page states: {item.get('source_claim', '')}\n"
+                   "Cite this page first. Every fact in the post must be stated on a page you cite. "
+                   "Leave out anything you cannot point to on a page, such as browser support, version "
+                   "numbers or how other frameworks use it, instead of adding it from memory.")
+            page_text = source_page_text(item["source_url"])
+            if page_text:
+                # Ground the writer in the same text the fact checker will read.
+                msg += ("\n\nTEXT OF THAT PAGE (the fact checker reads exactly this; use only facts "
+                        "from it, and copy each source \"claim\" word for word from it):\n"
+                        + page_text)
+            tool_domains = [domain_for_source(item["source_url"]) or search_domain]
     else:
         system = WRITER_SYSTEM.format(
             author=a["name"], author_role=a["role"], voice=a["voice"], source=source,
@@ -770,6 +796,10 @@ infographic_idea. Never use an example or placeholder URL as a source."""
     if feedback:
         msg += ("\n\nYour previous draft was REJECTED. Fix these issues. You may research again "
                 f"or keep the same item:\n{feedback}")
+        if "[fact-check]" in feedback or "not supported" in feedback or "not present" in feedback:
+            msg += ("\nFor each claim the fact check could not find on the page, delete it or replace "
+                    "it with something the page states word for word. Do not add new claims, and only "
+                    "cite pages you actually opened.")
     res = call_json(system, msg, tools=web_tools(list(dict.fromkeys(tool_domains))), max_tokens=8000)
 
     return res
@@ -2028,33 +2058,49 @@ def approve_text(headline, post, sources, tg: TelegramReviewer, topic_kind: str 
     return {"status": "rejected"}
 
 
-def interactive_session(topic: str | None = None, tg: TelegramReviewer | None = None):
+def interactive_session(topic: str | None = None, tg: TelegramReviewer | None = None,
+                        max_picks: int = 3):
     """A GitHub Actions run that talks to the owner on Telegram from start to finish.
 
     Without a topic it offers 3 fresh topics (or the owner types one). The post is then written
     and fact-checked, the owner approves the text, the infographic is drawn, and the owner gives
-    a final OK before it goes to the feed and the groups. Returns like run().
+    a final OK before it goes to the feed and the groups. When a topic cannot produce a draft
+    that passes the checks, the remaining topics are offered again (up to max_picks tries).
+    Returns like run().
     """
     tg = tg or make_reviewer()
     select_model_for_run()
-    source = None
-    if not topic:
-        tg._skip_old_updates()
+    if topic:
+        tracker_id = tg.send_progress_tracker(f"Generating Post from Topic: {topic[:40]}")
+        return run(topic_arg=topic, tg=tg, tracker_id=tracker_id, text_first=True)
+
+    tg._skip_old_updates()
+    tg._call("sendMessage", chat_id=tg.chat_id,
+             text="🔍 Good day! Finding 3 fresh topics for today's LinkedIn post...")
+    suggestions = suggest_topics(count=3)
+    if not suggestions:
         tg._call("sendMessage", chat_id=tg.chat_id,
-                 text="🔍 Good day! Finding 3 fresh topics for today's LinkedIn post...")
-        suggestions = suggest_topics(count=3)
-        if not suggestions:
-            tg._call("sendMessage", chat_id=tg.chat_id,
-                     text="⚠️ I couldn't find a fresh topic today. Send /topic <your topic> to start one.")
-            return None
+                 text="⚠️ I couldn't find a fresh topic today. Send /topic <your topic> to start one.")
+        return None
+    outcome = None
+    for _ in range(max_picks):
         choice = tg.choose_topic("pick-" + uuid.uuid4().hex[:6], suggestions,
                                  timeout_s=CFG["telegram"]["topic_wait_minutes"] * 60)
         if choice.get("action") != "new_topic" or not choice.get("topic"):
             print("No topic picked.")
-            return "declined"
-        topic, source = choice["topic"], choice.get("source")
-    tracker_id = tg.send_progress_tracker(f"Generating Post from Topic: {topic[:40]}")
-    return run(source_arg=source, topic_arg=topic, tg=tg, tracker_id=tracker_id, text_first=True)
+            return outcome or "declined"
+        picked = choice.get("item")
+        tracker_id = tg.send_progress_tracker(f"Generating Post from Topic: {choice['topic'][:40]}")
+        outcome = run(source_arg=choice.get("source"), topic_arg=choice["topic"], tg=tg,
+                      tracker_id=tracker_id, text_first=True, item_arg=picked)
+        if outcome is not None:
+            return outcome
+        suggestions = [s for s in suggestions if s is not picked]
+        if not suggestions:
+            break
+        tg._call("sendMessage", chat_id=tg.chat_id,
+                 text="🔁 That topic didn't pass the fact check. Pick another one, or type your own:")
+    return outcome
 
 
 def interactive_direct_post(text: str, tg: TelegramReviewer | None = None) -> None:
@@ -2182,7 +2228,7 @@ def repair_length(post: str, tries: int = 3) -> str:
 
 def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | None = None,
         tg: TelegramReviewer | None = None, tracker_id: int | None = None,
-        text_first: bool = False):
+        text_first: bool = False, item_arg: dict | None = None):
     """
     Main execution loop for research, drafting, designing, and publishing.
     
@@ -2215,7 +2261,7 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
     feedback, tried = None, set()
     current_source = source_arg
     current_topic = topic_arg
-    item = None  # the topic chosen and checked for repeats before the post is written
+    item = item_arg  # the topic chosen and checked for repeats before the post is written
 
     for attempt in range(1, CFG["review"]["max_attempts"] + 1):
         # Allow immediate drafting of topic selected from suggest_topics
@@ -2227,7 +2273,8 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
                 current_source = source_arg or pick_source(log, exclude=tried) or SOURCES[0]
             else:
                 current_source = source_arg or pick_source(log, exclude=tried)
-            feedback, item = None, None
+            # Keep a picked suggestion's checked page while its topic stands.
+            feedback, item = None, (item if current_topic and item_arg else None)
             if not current_topic and current_source:
                 current_source, item = find_fresh_item(current_source, prior_history, tried,
                                                        fixed=bool(source_arg), tg=tg,
@@ -2244,7 +2291,10 @@ def run(source_arg: str | None = None, dry_run: bool = False, topic_arg: str | N
         topic_info = f" (Topic: {current_topic})" if current_topic else ""
         print(f"\n--- Attempt {attempt}: {action_verb} {current_source}{topic_info} ---")
         if tg and tracker_id:
-            if item and not feedback:
+            if feedback:
+                tg.update_progress(tracker_id, f"✍️ Attempt {attempt}/{CFG['review']['max_attempts']}: "
+                                               f"rewriting to fix what the checks found{topic_info}...")
+            elif item and not feedback:
                 tg.update_progress(tracker_id, f"🔍 [1/4] New topic found: \"{item['topic'][:70]}\". Researching and writing...")
             else:
                 tg.update_progress(tracker_id, f"🔍 [1/4] Researching fresh items on `{current_source}`{topic_info}...")
@@ -2540,7 +2590,8 @@ if __name__ == "__main__":
     elif args.interactive and not args.dry_run:
         outcome = interactive_session(args.topic or None)
         if outcome is None:
-            notify_run_without_post()
+            # The run already explained the failure on Telegram; fail the job so GitHub shows it.
+            print("No approved draft was produced in this run.")
             sys.exit(1)
     elif args.direct:
         img = Path(args.image) if args.image else None

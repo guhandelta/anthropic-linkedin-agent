@@ -243,3 +243,31 @@ def test_workflows_wire_the_interactive_run_and_inbox():
     inbox = (ROOT / ".github/workflows/inbox-check.yml").read_text()
     assert 'cron: "*/15 * * * *"' in inbox and "actions: write" in inbox
     assert "python telegram_inbox.py" in inbox
+
+
+def test_a_picked_topic_is_written_from_its_checked_page(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(agent, "call_json", lambda system, msg, **k: seen.update(msg=msg, tools=k.get("tools")) or {})
+    monkeypatch.setattr(agent, "source_page_text", lambda url: "The API opens an always-on-top window.")
+    item = {"topic": "Document PiP", "source_url": "https://developer.mozilla.org/en-US/docs/Web/API/Document_Picture-in-Picture_API",
+            "angle": "Custom PiP windows", "technical_takeaway": "Use requestWindow for custom controls",
+            "source_claim": "opens an always-on-top window"}
+    agent.write_draft("developer.mozilla.org/en-US/docs/Web/API", "[fact-check] claim not supported", set(),
+                      topic="Document PiP", item=item)
+    assert item["source_url"] in seen["msg"]
+    assert "The API opens an always-on-top window." in seen["msg"]
+    assert "delete it or replace it" in seen["msg"]
+
+
+def test_a_failed_topic_offers_the_remaining_ones(monkeypatch):
+    tg = MagicMock()
+    a, b = {"topic": "A", "source": "s"}, {"topic": "B", "source": "s"}
+    tg.choose_topic.side_effect = [{"action": "new_topic", "topic": "A", "source": "s", "item": a},
+                                   {"action": "new_topic", "topic": "B", "source": "s", "item": b}]
+    monkeypatch.setattr(agent, "select_model_for_run", MagicMock())
+    monkeypatch.setattr(agent, "suggest_topics", MagicMock(return_value=[a, b]))
+    run = MagicMock(side_effect=[None, "posted"])
+    monkeypatch.setattr(agent, "run", run)
+    assert agent.interactive_session(tg=tg) == "posted"
+    assert run.call_args_list[0].kwargs["item_arg"] is a and run.call_args_list[1].kwargs["item_arg"] is b
+    assert tg.choose_topic.call_args_list[1].args[1] == [b]

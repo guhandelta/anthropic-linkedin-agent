@@ -666,7 +666,8 @@ class TelegramReviewer:
                     self._answer_cq(cq["id"], text="Selected!")
                     self._call("sendMessage", chat_id=self.chat_id,
                                text=f"🎯 You selected:\n**{chosen['topic']}**\n(Source: {chosen.get('source')})\nDrafting post...")
-                    return {"action": "new_topic", "topic": chosen["topic"], "source": chosen.get("source")}
+                    return {"action": "new_topic", "topic": chosen["topic"], "source": chosen.get("source"),
+                            "item": chosen}
 
                 if action == "opt_custom":
                     self._answer_cq(cq["id"], text="Type your custom topic...")
