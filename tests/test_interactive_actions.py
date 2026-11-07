@@ -335,3 +335,18 @@ def test_dated_suggestions_need_their_date_on_the_page(tmp_path, monkeypatch):
                  "published": None, "source_claim": "React 20 ships a new compiler mode"}
     monkeypatch.setattr(agent, "call_json", MagicMock(return_value=candidate))
     assert agent.suggest_topics(count=1) == []
+
+
+def test_a_menu_tap_keeps_the_topic_list_open_on_actions(monkeypatch):
+    reviewer = telegram_review.TelegramReviewer("t", "1")
+    reviewer.menu_closes_lists = False
+    sent = []
+    monkeypatch.setattr(reviewer, "_call", lambda method, **p: sent.append(p.get("text")) or {"message_id": 9})
+    monkeypatch.setattr(reviewer, "_answer_cq", lambda cid, text: None)
+    status = {"update_id": 1, "message": {"text": "📊 Status & History", "from": {"id": 1}, "chat": {"id": 1}}}
+    pick = {"update_id": 2, "callback_query": {"id": "c", "data": "pick_topic:0:L", "from": {"id": 1},
+                                               "message": {"chat": {"id": 1}}}}
+    batches = [[status], [pick]]
+    monkeypatch.setattr(reviewer, "_poll_updates", lambda params: batches.pop(0) if batches else [])
+    assert reviewer.choose_topic("L", [{"topic": "A", "source": "s"}], timeout_s=5)["topic"] == "A"
+    assert any("still open" in (t or "") for t in sent) and reviewer.deferred == []

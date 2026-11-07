@@ -2118,6 +2118,7 @@ def interactive_session(topic: str | None = None, tg: TelegramReviewer | None = 
     Returns like run().
     """
     tg = tg or make_reviewer()
+    tg.menu_closes_lists = False  # no listener here: a menu tap must not end the run
     select_model_for_run()
     if topic:
         tracker_id = tg.send_progress_tracker(f"Generating Post from Topic: {topic[:40]}")
