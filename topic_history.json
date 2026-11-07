@@ -168,5 +168,38 @@
     "status": "suggested",
     "source": "v0.app/docs/databases",
     "recorded_at": "2026-11-06"
+  },
+  {
+    "topic": "CSS Anchor Positioning",
+    "source_urls": [
+      "https://web.dev/learn/css/anchor-positioning"
+    ],
+    "technical_takeaway": "Designate a reference element using the `anchor-name` property (e.g., `--my-anchor`), and link an absolutely or fixed-positioned element to it using properties like `position-area` or the `anchor()` function. This native CSS approach eliminates the need for JavaScript-based positioning libraries to manage tooltips and popovers, and includes a built-in system for robust overflow fallbacks.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-07"
+  },
+  {
+    "topic": "Resize Observer API",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/Resize_Observer_API"
+    ],
+    "technical_takeaway": "Replaces inefficient polling of getBoundingClientRect() and window resize listeners by allowing developers to asynchronously observe size changes of specific elements (content or border box), serving as a performant JavaScript-based solution for element queries.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-07"
+  },
+  {
+    "topic": "Azure Maia 300 Architecture",
+    "source_urls": [
+      "https://azure.microsoft.com/en-us/blog/deep-dive-into-azure-maia-300-architecture/"
+    ],
+    "technical_takeaway": "The Azure Maia 300 utilizes a software-defined dataflow architecture (SDLA) and a two-tier scale-up network, increasing rack-scale token throughput by 7x and improving performance-per-watt by more than 2.5x compared to the Maia 200.",
+    "kind": "upgrade",
+    "status": "suggested",
+    "source": "azure.microsoft.com/en-us/blog",
+    "recorded_at": "2026-11-07"
   }
 ]
