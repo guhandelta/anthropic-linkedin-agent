@@ -245,5 +245,14 @@
         "claim": "Requirements: Node.js 22+, AI SDK 5.0+."
       }
     ]
+  },
+  {
+    "date": "2026-11-08T01:53:20",
+    "draft_id": "20261108-direct-64f1a4",
+    "source_domain": "Direct Post",
+    "headline": "Sync Tabs Natively Now",
+    "post_urn": "direct",
+    "chars": 2973,
+    "sources": []
   }
 ]
