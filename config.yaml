@@ -1,6 +1,12 @@
 model: claude-sonnet-5-5
-openai_fallback_model: gpt-6-sol
+openai_fallback_model: gpt-6.1-sol
 gemini_fallback_model: gemini-3.8-flash
+# Lower models tried, in order, when a model itself fails (overloaded, unavailable, bad output),
+# before switching to another AI. Credit, key and network problems skip straight to the next AI.
+model_fallbacks:
+  anthropic: [claude-sonnet-4-6]
+  openai: [gpt-6-sol]
+  gemini: [gemini-3.1-pro-preview]
 model_strategy: random   # "random" | "anthropic" | "openai" | "gemini"
 reasoning_effort: medium # "low" | "medium" | "high" for supported models
 

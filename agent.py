@@ -134,6 +134,12 @@ LAST_TG_REQUEST: dict = {}
 DISABLED_PROVIDERS: set[str] = set()
 # Failover order used when the active provider errors out
 PROVIDER_ORDER = ["anthropic", "openai", "gemini"]
+# Config key holding each provider's main model
+PROVIDER_MODEL_KEYS = {"anthropic": "model", "openai": "openai_fallback_model",
+                       "gemini": "gemini_fallback_model"}
+_DEFAULT_MODELS = {"anthropic": "claude-sonnet-5-5", "openai": "gpt-6.1-sol", "gemini": "gemini-3.8-flash"}
+# Lower model a provider moved to during this run (after its main model failed)
+MODEL_OVERRIDE: dict[str, str] = {}
 
 # Global references for Telegram progress updates during live pipeline execution
 CURRENT_TELEGRAM_REVIEWER = None
@@ -180,6 +186,74 @@ def notify_provider_switch(from_provider: str, to_provider: str, reason: str):
             )
         except Exception:
             pass
+
+
+def provider_models(provider: str) -> list[str]:
+    """A provider's models in the order to try them: the main model, then config `model_fallbacks`."""
+    main = CFG.get(PROVIDER_MODEL_KEYS[provider]) or _DEFAULT_MODELS[provider]
+    lower = (CFG.get("model_fallbacks") or {}).get(provider) or []
+    if isinstance(lower, str):
+        lower = [lower]
+    models = [main]
+    for m in lower:
+        if m and m not in models:
+            models.append(str(m))
+    return models
+
+
+def current_model(provider: str) -> str:
+    """The model to call for a provider now: its main model, or the lower one it moved to."""
+    return MODEL_OVERRIDE.get(provider) or provider_models(provider)[0]
+
+
+# Failures that a lower model of the same provider cannot fix (account, key or network problems)
+_ACCOUNT_WIDE = ("credit", "quota", "billing", "api key", "api_key", "authentication", "unauthorized",
+                 "permission", "not configured", "401", "403", "apiconnectionerror", "connecterror",
+                 "name resolution", "cut off")
+
+
+def is_model_specific_failure(error: Exception) -> bool:
+    """True when trying a lower model could help (overload, model missing, rate limit, bad output).
+
+    False for problems shared by every model of the provider: no credit, a bad key, no network,
+    or a drawing that was cut off (a design problem, not a model problem)."""
+    text = f"{type(error).__name__} {error}".lower()
+    return not any(m in text for m in _ACCOUNT_WIDE)
+
+
+def notify_model_downgrade(provider: str, from_model: str, to_model: str, reason: str):
+    """Logs a move to a lower model of the same provider and tells the user on Telegram."""
+    clean_reason = str(reason).split("\n")[0][:140]
+    name = _fmt_provider(provider)
+    print(f"\n⚠️ [Model Fallback] {name} {from_model} issue: {clean_reason}\n"
+          f"🔄 Trying {to_model} before switching AI...\n")
+    if CURRENT_TELEGRAM_REVIEWER:
+        try:
+            CURRENT_TELEGRAM_REVIEWER._call(
+                "sendMessage",
+                chat_id=CURRENT_TELEGRAM_REVIEWER.chat_id,
+                text=f"⚠️ **AI Model Fallback Notice**\n\n**{from_model}** failed ({clean_reason}).\n\n"
+                     f"🔄 Trying **{to_model}** ({name}) before switching to another AI.")
+        except Exception:
+            pass
+
+
+def call_with_lower_models(provider: str, call):
+    """Run call() on the provider's current model; when that model itself fails, move to the
+    next lower model in config `model_fallbacks` and try again. The move lasts for the rest of
+    the run. Account-wide failures (credit, key, network) are raised at once so the caller can
+    switch to another AI without wasting time."""
+    while True:
+        try:
+            return call()
+        except Exception as e:
+            models = provider_models(provider)
+            now = current_model(provider)
+            idx = models.index(now) if now in models else len(models)
+            if idx + 1 >= len(models) or not is_model_specific_failure(e):
+                raise
+            MODEL_OVERRIDE[provider] = models[idx + 1]
+            notify_model_downgrade(provider, now, models[idx + 1], str(e))
 
 
 def select_model_for_run(preferred: str | None = None) -> str:
@@ -437,7 +511,7 @@ def call_anthropic_json(system: str, content, tools: list | None = None, max_tok
     """
     messages = [{"role": "user", "content": content}]
     for _ in range(6):
-        kwargs = {"model": CFG["model"], "max_tokens": max_tokens,
+        kwargs = {"model": current_model("anthropic"), "max_tokens": max_tokens,
                   "system": system, "messages": messages, **_anthropic_effort_kwargs()}
         if tools:
             kwargs["tools"] = tools
@@ -465,7 +539,7 @@ def call_openai_json(system: str, content, tools: list | None = None, max_tokens
     """
     if not openai_client:
         raise RuntimeError("Claude limit reached and OpenAI API key is not configured in .env.")
-    model_name = CFG.get("openai_fallback_model", "gpt-6-sol")
+    model_name = current_model("openai")
 
     if tools:
         # Research mode with web search enabled
@@ -536,7 +610,7 @@ def call_openai_svg(system: str, msg: str, max_tokens: int = 8000) -> str:
     """
     if not openai_client:
         raise RuntimeError("Claude limit reached and OpenAI API key is not configured in .env.")
-    model_name = CFG.get("openai_fallback_model", "gpt-6-sol")
+    model_name = current_model("openai")
     kwargs = {
         "model": model_name,
         "messages": [
@@ -564,7 +638,7 @@ def call_gemini_json(system: str, content, tools: list | None = None, max_tokens
     """
     if not gemini_client:
         raise RuntimeError("Gemini API key (GOOGLE_API_KEY) is not configured in .env.")
-    model_name = CFG.get("gemini_fallback_model", "gemini-3.8-flash")
+    model_name = current_model("gemini")
 
     if isinstance(content, list):
         parts = []
@@ -607,7 +681,7 @@ def call_gemini_svg(system: str, msg: str, max_tokens: int = 16000) -> str:
     """Invokes Google Gemini to generate pure SVG code for infographics (same rules as OpenAI)."""
     if not gemini_client:
         raise RuntimeError("Gemini API key (GOOGLE_API_KEY) is not configured in .env.")
-    model_name = CFG.get("gemini_fallback_model", "gemini-3.8-flash")
+    model_name = current_model("gemini")
     rules = ("\nCRITICAL SVG RULES:\n- Absolutely NO emoji characters inside SVG text.\n"
              "- Do NOT combine lines in one <text> element. Use separate <text y='...'> elements for each line.\n"
              "- Keep every <text> element under 65 characters total.\n"
@@ -646,8 +720,8 @@ def call_json(system: str, content, tools: list | None = None, max_tokens: int =
     chain = _failover_chain(ACTIVE_LLM_PROVIDER == "anthropic" and "anthropic" not in DISABLED_PROVIDERS)
     for i, prov in enumerate(chain):
         try:
-            return _with_network_retries(
-                lambda: callers[prov](system, content, tools=tools, max_tokens=max_tokens))
+            return call_with_lower_models(prov, lambda: _with_network_retries(
+                lambda: callers[prov](system, content, tools=tools, max_tokens=max_tokens)))
         except Exception as e:
             if i == len(chain) - 1:
                 raise
@@ -1054,7 +1128,7 @@ def _designer_prompt(headline: str, footer: str) -> str:
 def _call_claude_svg(sys_prompt: str, msg: str) -> str:
     """Ask Claude for an SVG drawing; raises ValueError when the output was cut off."""
     resp = anthropic_client.messages.create(
-        model=CFG["model"], max_tokens=16000,
+        model=current_model("anthropic"), max_tokens=16000,
         system=sys_prompt, **_anthropic_effort_kwargs(),
         messages=[{"role": "user", "content": msg}],
     )
@@ -1082,7 +1156,7 @@ def design_svg(post: str, idea: str, headline: str, feedback: str | None, footer
     chain = _failover_chain(ACTIVE_LLM_PROVIDER == "anthropic" and "anthropic" not in DISABLED_PROVIDERS)
     for i, prov in enumerate(chain):
         try:
-            return callers[prov](sys_prompt, msg)
+            return call_with_lower_models(prov, lambda: callers[prov](sys_prompt, msg))
         except Exception as e:
             # A cut-off Claude drawing is a design problem (redraw simpler), not a provider outage
             if i == len(chain) - 1 or (prov == "anthropic" and isinstance(e, ValueError)):
@@ -2592,7 +2666,7 @@ def get_agent_status_text() -> str:
     lines.append(f"\nTarget LinkedIn Groups: **{len(target_groups)}**")
     lines.append(f"Allowed Source URLs: **{len(SOURCES)}**")
 
-    openai_status = f"Ready ({CFG.get('openai_fallback_model', 'gpt-6-sol')})" if openai_client else "Not configured"
+    openai_status = f"Ready ({current_model('openai')})" if openai_client else "Not configured"
     active_str = "OpenAI" if ACTIVE_LLM_PROVIDER == "openai" else "Claude"
     lines.append(f"\n🧠 Primary LLM: **Claude ({CFG['model']})**")
     lines.append(f"🔄 Fallback LLM: **OpenAI ({openai_status})**")
