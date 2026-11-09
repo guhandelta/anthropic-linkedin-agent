@@ -248,8 +248,8 @@ author:
 # AI MODEL CONFIGURATION
 # -----------------------------------------------------------------------------
 model_strategy: "random"          # Options: 'random' | 'anthropic' | 'openai'
-model: "claude-3-5-sonnet-20241022" # Primary Anthropic model
-openai_fallback_model: "gpt-4o"  # Fallback/alternative OpenAI model
+model: "claude-sonnet-5-5"         # Primary Anthropic model
+openai_fallback_model: "gpt-6-sol"  # Fallback/alternative OpenAI model
 reasoning_effort: "medium"        # Reasoning effort for o1/o3 models ('low' | 'medium' | 'high')
 
 # -----------------------------------------------------------------------------
@@ -415,7 +415,7 @@ Run completely free on GitHub's infrastructure without maintaining a dedicated s
    * `TELEGRAM_BOT_TOKEN`
    * `TELEGRAM_CHAT_ID`
    * `LI_AT`
-3. The included workflow [`.github/workflows/daily-post.yml`](file:///.github/workflows/daily-post.yml) automatically triggers every morning at **9:15 AM America/New_York**.
+3. The included workflow [`.github/workflows/daily-post.yml`](file:///.github/workflows/daily-post.yml) automatically triggers every morning at **10:00 AM America/New_York**.
 4. Each run talks to you on Telegram from start to finish:
    1. It offers **3 fresh topics**. Tap one, or type your own topic (60 minutes to pick).
    2. It writes and fact-checks the post, then sends **the text alone** for approval (120 minutes). **Revise** rewrites it from your notes.
@@ -441,7 +441,7 @@ Replies come within about 15 to 30 minutes, because GitHub's 15-minute schedule 
 
 To check both fallbacks safely, open **Actions → Daily LinkedIn post → Run workflow** and leave **Run mode** at `fallback-check`. It simulates an Anthropic failure and verifies a real OpenAI response, then simulates both Anthropic and OpenAI failures and verifies a real Gemini response. Look for both `1/2 passed` and `2/2 passed` in the **Run LinkedIn Agent** log. It does not contact Telegram or LinkedIn. Set `OPENAI_API_KEY` and `GOOGLE_API_KEY` (or their supported alternate names) as repository secrets with working API access.
 
-For a full generation check without publishing, select `dry-run`; the resulting files are uploaded as a workflow artifact. Select `publish` for the Telegram flow above (leave **topic** empty to get 3 suggestions), or `direct` with **post_text** to publish your own text. Scheduled runs always use the normal publish flow at 9:15 AM America/New_York, including daylight saving changes.
+For a full generation check without publishing, select `dry-run`; the resulting files are uploaded as a workflow artifact. Select `publish` for the Telegram flow above (leave **topic** empty to get 3 suggestions), or `direct` with **post_text** to publish your own text. Scheduled runs always use the normal publish flow at 10:00 AM America/New_York, including daylight saving changes.
 
 ### Option B: Native macOS LaunchAgent Daemon
 

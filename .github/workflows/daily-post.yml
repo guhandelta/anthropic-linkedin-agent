@@ -15,9 +15,10 @@ name: Daily LinkedIn post
 
 on:
   schedule:
-    # Run daily at 09:15 New York (EDT). Scheduled runs always publish, even if a post already went out that day.
-    - cron: "15 13 * * *"
-      # GitHub cron runs in UTC: 13:15 UTC is 09:15 New York (EDT)
+    # Run daily at 10:00 New York time. Scheduled runs always publish, even if a post already went out that day.
+    # The timezone key makes GitHub follow New York time, so the run stays at 10:00 through EST/EDT changes.
+    - cron: "0 10 * * *"
+      timezone: "America/New_York"
 
   # Manual on-demand execution via GitHub Web UI
   workflow_dispatch:

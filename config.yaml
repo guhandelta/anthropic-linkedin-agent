@@ -1,11 +1,11 @@
-model: claude-sonnet-4-6
-openai_fallback_model: gpt-4o
-gemini_fallback_model: gemini-3.1-pro-preview
+model: claude-sonnet-5-5
+openai_fallback_model: gpt-6-sol
+gemini_fallback_model: gemini-3.8-flash
 model_strategy: random   # "random" | "anthropic" | "openai" | "gemini"
 reasoning_effort: medium # "low" | "medium" | "high" for supported models
 
 author:
-  name: Guha
+  name: Guhaprasaanth Nandagopal
   role: Senior Full Stack Developer (React, TypeScript, Next.js, Python, GenAI)
   voice: >
     Practical, clear and friendly. Shares hands-on lessons from building real products.
@@ -54,7 +54,7 @@ telegram:
     github_limit_days: 60   # GitHub Actions scheduled workflow inactivity limit
 
 research:
-  search_tool: web_search_20250305   # Anthropic web search tool version
+  search_tool: web_search_20260209   # Anthropic web search tool version
   pick: random_source       # choose one approved source per run
   evergreen_share: 0.4      # sometimes start from Web API and standards references
   evergreen_sources:
