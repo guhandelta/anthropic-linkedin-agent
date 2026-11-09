@@ -298,7 +298,7 @@ def posted_urls(log: list) -> set[str]:
 # -----------------------------------------------------------------------------
 def web_tools(domains: list[str], max_uses: int = 5) -> list:
     """Builds Anthropic web search tool definition constrained to authorized domains."""
-    return [{"type": RS.get("search_tool", "web_search_20250305"), "name": "web_search",
+    return [{"type": RS.get("search_tool", "web_search_20260209"), "name": "web_search",
              "max_uses": max_uses, "allowed_domains": domains}]
 
 
@@ -396,6 +396,38 @@ def extract_json_object(text: str) -> dict:
     raise ValueError(f"Could not parse valid JSON from model output:\n{text}")
 
 
+def _anthropic_effort_kwargs() -> dict:
+    """Effort setting for Claude (config `reasoning_effort`); sent as output_config.effort."""
+    effort = CFG.get("reasoning_effort")
+    return {"output_config": {"effort": effort}} if effort else {}
+
+
+def _openai_is_reasoning(model_name: str) -> bool:
+    """True for OpenAI reasoning models (o-series, GPT-5/6, Sol), which take reasoning effort,
+    use max_completion_tokens and reject a custom temperature."""
+    name = model_name.lower()
+    return any(m in name for m in ("o1", "o3", "o4", "reasoning", "gpt-5", "gpt-6", "sol"))
+
+
+def _openai_chat_kwargs(model_name: str, max_tokens: int) -> dict:
+    """Token-limit, effort and temperature arguments for a Chat Completions call."""
+    if _openai_is_reasoning(model_name):
+        return {"max_completion_tokens": max_tokens,
+                "reasoning_effort": CFG.get("reasoning_effort", "medium")}
+    kw = {"max_tokens": max_tokens}
+    if "gpt-4" in model_name:
+        kw["temperature"] = 0.7
+    return kw
+
+
+def _gemini_thinking_config():
+    """Gemini thinking level from config `reasoning_effort` (low / medium / high), if set."""
+    effort = str(CFG.get("reasoning_effort") or "").upper()
+    if effort in ("MINIMAL", "LOW", "MEDIUM", "HIGH"):
+        return genai_types.ThinkingConfig(thinking_level=effort)
+    return None
+
+
 def call_anthropic_json(system: str, content, tools: list | None = None, max_tokens: int = 4000) -> dict:
     """
     Invokes Anthropic Claude for structured JSON output.
@@ -406,7 +438,7 @@ def call_anthropic_json(system: str, content, tools: list | None = None, max_tok
     messages = [{"role": "user", "content": content}]
     for _ in range(6):
         kwargs = {"model": CFG["model"], "max_tokens": max_tokens,
-                  "system": system, "messages": messages}
+                  "system": system, "messages": messages, **_anthropic_effort_kwargs()}
         if tools:
             kwargs["tools"] = tools
         resp = anthropic_client.messages.create(**kwargs)
@@ -433,7 +465,7 @@ def call_openai_json(system: str, content, tools: list | None = None, max_tokens
     """
     if not openai_client:
         raise RuntimeError("Claude limit reached and OpenAI API key is not configured in .env.")
-    model_name = CFG.get("openai_fallback_model", "gpt-4o")
+    model_name = CFG.get("openai_fallback_model", "gpt-6-sol")
 
     if tools:
         # Research mode with web search enabled
@@ -442,12 +474,15 @@ def call_openai_json(system: str, content, tools: list | None = None, max_tokens
             if isinstance(t, dict) and "allowed_domains" in t:
                 domains.extend(t["allowed_domains"])
         domain_instruction = f"\nAllowed research sources: {', '.join(domains)}. Ground your findings and facts strictly in these sources." if domains else ""
-        resp = openai_client.responses.create(
-            model=model_name,
-            instructions=system + domain_instruction,
-            input=content if isinstance(content, str) else json.dumps(content, ensure_ascii=False),
-            tools=[{"type": "web_search_preview"}],
-        )
+        resp_kwargs = {
+            "model": model_name,
+            "instructions": system + domain_instruction,
+            "input": content if isinstance(content, str) else json.dumps(content, ensure_ascii=False),
+            "tools": [{"type": "web_search_preview"}],
+        }
+        if _openai_is_reasoning(model_name):
+            resp_kwargs["reasoning"] = {"effort": CFG.get("reasoning_effort", "medium")}
+        resp = openai_client.responses.create(**resp_kwargs)
         text = resp.output_text
     else:
         # Standard chat completions (supports multimodal vision and text)
@@ -469,13 +504,8 @@ def call_openai_json(system: str, content, tools: list | None = None, max_tokens
             "model": model_name,
             "messages": messages,
             "response_format": {"type": "json_object"},
-            "max_tokens": max_tokens,
+            **_openai_chat_kwargs(model_name, max_tokens),
         }
-        effort = CFG.get("reasoning_effort", "medium")
-        if any(m in model_name for m in ("o1", "o3", "reasoning")):
-            kwargs["reasoning_effort"] = effort
-        elif "gpt-4" in model_name:
-            kwargs["temperature"] = 0.7
         resp = openai_client.chat.completions.create(**kwargs)
         text = resp.choices[0].message.content or ""
 
@@ -490,7 +520,7 @@ def call_openai_json(system: str, content, tools: list | None = None, max_tokens
                 {"role": "user", "content": text}
             ],
             response_format={"type": "json_object"},
-            max_tokens=max_tokens,
+            **_openai_chat_kwargs(model_name, max_tokens),
         )
         return extract_json_object(fmt_resp.choices[0].message.content or "")
 
@@ -506,20 +536,15 @@ def call_openai_svg(system: str, msg: str, max_tokens: int = 8000) -> str:
     """
     if not openai_client:
         raise RuntimeError("Claude limit reached and OpenAI API key is not configured in .env.")
-    model_name = CFG.get("openai_fallback_model", "gpt-4o")
+    model_name = CFG.get("openai_fallback_model", "gpt-6-sol")
     kwargs = {
         "model": model_name,
         "messages": [
             {"role": "system", "content": system + "\nCRITICAL SVG RULES:\n- Absolutely NO emoji characters inside SVG text.\n- Do NOT combine lines in one <text> element. Use separate <text y='...'> elements for each line.\n- Keep every <text> element under 65 characters total.\n- Do NOT use HTML entities like &#8211; use plain hyphens or ASCII.\n- Escape raw & as &amp;."},
             {"role": "user", "content": msg}
         ],
-        "max_tokens": max_tokens,
+        **_openai_chat_kwargs(model_name, max_tokens),
     }
-    effort = CFG.get("reasoning_effort", "medium")
-    if any(m in model_name for m in ("o1", "o3", "reasoning")):
-        kwargs["reasoning_effort"] = effort
-    elif "gpt-4" in model_name:
-        kwargs["temperature"] = 0.7
     resp = openai_client.chat.completions.create(**kwargs)
     text = resp.choices[0].message.content or ""
     svg = EMOJI_RE.sub("", extract_svg(text))
@@ -539,7 +564,7 @@ def call_gemini_json(system: str, content, tools: list | None = None, max_tokens
     """
     if not gemini_client:
         raise RuntimeError("Gemini API key (GOOGLE_API_KEY) is not configured in .env.")
-    model_name = CFG.get("gemini_fallback_model", "gemini-3.1-pro-preview")
+    model_name = CFG.get("gemini_fallback_model", "gemini-3.8-flash")
 
     if isinstance(content, list):
         parts = []
@@ -559,6 +584,8 @@ def call_gemini_json(system: str, content, tools: list | None = None, max_tokens
     # Bound each Gemini request so a stuck call fails and the run moves on instead of hanging.
     config_kwargs = {"max_output_tokens": max(max_tokens, 8192) * 4,
                      "http_options": genai_types.HttpOptions(timeout=GEMINI_TIMEOUT_MS)}
+    if _gemini_thinking_config():
+        config_kwargs["thinking_config"] = _gemini_thinking_config()
     if tools:
         domains = []
         for t in tools:
@@ -580,7 +607,7 @@ def call_gemini_svg(system: str, msg: str, max_tokens: int = 16000) -> str:
     """Invokes Google Gemini to generate pure SVG code for infographics (same rules as OpenAI)."""
     if not gemini_client:
         raise RuntimeError("Gemini API key (GOOGLE_API_KEY) is not configured in .env.")
-    model_name = CFG.get("gemini_fallback_model", "gemini-3.1-pro-preview")
+    model_name = CFG.get("gemini_fallback_model", "gemini-3.8-flash")
     rules = ("\nCRITICAL SVG RULES:\n- Absolutely NO emoji characters inside SVG text.\n"
              "- Do NOT combine lines in one <text> element. Use separate <text y='...'> elements for each line.\n"
              "- Keep every <text> element under 65 characters total.\n"
@@ -589,7 +616,8 @@ def call_gemini_svg(system: str, msg: str, max_tokens: int = 16000) -> str:
         model=model_name, contents=msg,
         config=genai_types.GenerateContentConfig(system_instruction=system + rules,
                                                  max_output_tokens=max_tokens * 2,
-                                                 http_options=genai_types.HttpOptions(timeout=GEMINI_TIMEOUT_MS)))
+                                                 http_options=genai_types.HttpOptions(timeout=GEMINI_TIMEOUT_MS),
+                                                 thinking_config=_gemini_thinking_config()))
     return finalize_svg(EMOJI_RE.sub("", extract_svg(resp.text or "")))
 
 
@@ -1027,7 +1055,7 @@ def _call_claude_svg(sys_prompt: str, msg: str) -> str:
     """Ask Claude for an SVG drawing; raises ValueError when the output was cut off."""
     resp = anthropic_client.messages.create(
         model=CFG["model"], max_tokens=16000,
-        system=sys_prompt,
+        system=sys_prompt, **_anthropic_effort_kwargs(),
         messages=[{"role": "user", "content": msg}],
     )
     if resp.stop_reason == "max_tokens":
@@ -2564,7 +2592,7 @@ def get_agent_status_text() -> str:
     lines.append(f"\nTarget LinkedIn Groups: **{len(target_groups)}**")
     lines.append(f"Allowed Source URLs: **{len(SOURCES)}**")
 
-    openai_status = f"Ready ({CFG.get('openai_fallback_model', 'gpt-4o')})" if openai_client else "Not configured"
+    openai_status = f"Ready ({CFG.get('openai_fallback_model', 'gpt-6-sol')})" if openai_client else "Not configured"
     active_str = "OpenAI" if ACTIVE_LLM_PROVIDER == "openai" else "Claude"
     lines.append(f"\n🧠 Primary LLM: **Claude ({CFG['model']})**")
     lines.append(f"🔄 Fallback LLM: **OpenAI ({openai_status})**")
