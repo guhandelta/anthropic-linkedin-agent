@@ -7,6 +7,7 @@ import os
 import urllib.error
 import urllib.request
 
+# Main and lower models from config.yaml are tested; keep in step with model_fallbacks.
 PROBES = {
     "anthropic": ["claude-sonnet-5-5", "claude-sonnet-4-6"],
     "openai": ["gpt-6.1-sol", "gpt-6-sol"],

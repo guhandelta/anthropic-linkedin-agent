@@ -249,8 +249,13 @@ author:
 # -----------------------------------------------------------------------------
 model_strategy: "random"          # Options: 'random' | 'anthropic' | 'openai'
 model: "claude-sonnet-5-5"         # Primary Anthropic model
-openai_fallback_model: "gpt-6-sol"  # Fallback/alternative OpenAI model
-reasoning_effort: "medium"        # Reasoning effort for o1/o3 models ('low' | 'medium' | 'high')
+openai_fallback_model: "gpt-6.1-sol"  # Fallback/alternative OpenAI model
+gemini_fallback_model: "gemini-3.8-flash"  # Last-resort Gemini model
+reasoning_effort: "medium"        # Effort sent to every provider ('low' | 'medium' | 'high')
+model_fallbacks:                  # Lower models tried when a model itself fails, before switching AI
+  anthropic: ["claude-sonnet-4-6"]
+  openai: ["gpt-6-sol"]
+  gemini: ["gemini-3.1-pro-preview"]
 
 # -----------------------------------------------------------------------------
 # RESEARCH & CURATED SOURCES
@@ -502,3 +507,7 @@ pytest --cov=. tests/
 <div align="center">
   <sub>Engineered with precision for modern engineering leaders, developer advocates, and technical writers.</sub>
 </div>
+
+## Checking which AI models your keys can use
+
+Run the **Check available AI models** workflow from the Actions tab. It lists the models each stored key can reach and makes a tiny test call to the main and lower models (it prints model names and pass/fail only, never keys). A model that is listed but fails with "insufficient_quota" or "credit" needs a top-up on that provider's billing page.

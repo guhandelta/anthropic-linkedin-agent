@@ -4,8 +4,6 @@ name: Check available AI models
 
 on:
   workflow_dispatch:
-  push:
-    branches: [chore/list-available-models]
 
 permissions:
   contents: read
