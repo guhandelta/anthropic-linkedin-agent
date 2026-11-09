@@ -1,0 +1,29 @@
+# Lists the AI models the stored API keys can use and test-calls the models the agent relies on.
+# Prints model names and pass/fail only; no keys. Start it from the Actions tab (Run workflow).
+name: Check available AI models
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/list-available-models]
+
+permissions:
+  contents: read
+
+jobs:
+  list-models:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: List and test models
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPEN_AI_API_KEY: ${{ secrets.OPEN_AI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python scripts/list_models.py
