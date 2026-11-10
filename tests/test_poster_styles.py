@@ -356,7 +356,7 @@ def test_apply_theme_rejects_unknown_tokens():
 
 
 def test_gif_highlight_uses_the_theme_colour():
-    svg = _svg(_plan(), style="guide", theme="sunset")
+    svg = _svg(_plan(), style="guide", theme="sunset", motion="flow")
     frames = gif_frame_svgs(svg, 4)
     assert f'stroke="{THEMES["sunset"]["primary"]}" stroke-width="7"' in frames[0]
     assert 'stroke="#3768B7" stroke-width="7"' not in frames[0]

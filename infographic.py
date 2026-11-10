@@ -464,6 +464,8 @@ def gif_frame_svgs(svg: str, n_frames: int | None = None) -> list[str]:
     highlight = themed.group(1) if themed else "#3768B7"
     soft_found = re.search(r'data-soft="(#[0-9A-Fa-f]{6})"', svg)
     soft = soft_found.group(1) if soft_found else None
+    card_found = re.search(r'data-card="(#[0-9A-Fa-f]{6})"', svg)
+    card = card_found.group(1) if card_found else None
     motion = _motion_of(svg)
     origin_found = re.search(r'data-origin="(-?\d+),(-?\d+)"', svg)
     origin = (int(origin_found.group(1)), int(origin_found.group(2))) if origin_found else (540, 130)
@@ -523,7 +525,9 @@ def gif_frame_svgs(svg: str, n_frames: int | None = None) -> list[str]:
             def _highlight_node(match):
                 tag = match.group(0)
                 step = int(re.search(r'data-motion-step="(\d+)"', tag).group(1))
-                if step in filled and soft:
+                # Only plain white-card fills are tinted, so text drawn for a coloured card
+                # (white on the banner colour, say) never loses its background.
+                if step in filled and soft and card and f'fill="{card}"' in tag:
                     tag = re.sub(r'fill="[^"]*"', f'fill="{soft}"', tag, count=1)
                 if step in lit:
                     tag = re.sub(r'stroke="[^"]*"', f'stroke="{highlight}"', tag)

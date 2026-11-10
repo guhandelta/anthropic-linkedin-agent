@@ -274,7 +274,8 @@ def test_dashboard_draws_a_bar_chart_for_comparable_numbers():
              "lines": ["120 ms | Vite 6", "340 ms | Webpack 5", "90 ms | Rspack"]}
     svg = poster_from_brief(_brief(_plan(modules=[chart, CHECKS, STEPS])), "H", "F",
                             style="dashboard", theme="ocean")
-    widths = [int(w) for w in re.findall(r'<rect x="\d+" y="\d+" width="(\d+)" height="18"', svg)]
+    widths = [int(w) for w in re.findall(r'<rect data-motion-grow="1" x="\d+" y="\d+" width="(\d+)" '
+                                               r'height="18"', svg)]
     assert len(widths) == 3 and widths[1] == max(widths)  # 340 ms is the longest bar
     assert "340 ms" in svg and "Rspack" in svg
 
@@ -426,7 +427,7 @@ def test_choose_motion_never_repeats_the_last_one():
     for last in MOTIONS:
         assert P.choose_motion(plan, [last]) != last
         assert P.choose_motion(plan, [last], random.Random(3)) != last
-    picks = {P.choose_motion(plan, None, random.Random(i)) for i in range(30)}
+    picks = {P.choose_motion(plan, None, random.Random(i)) for i in range(200)}
     assert picks == set(MOTIONS)
 
 

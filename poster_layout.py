@@ -2232,7 +2232,7 @@ def _render(plan: dict, headline: str, footer: str, style: str, theme: str,
         " data-highlight=", f' data-motion="{motion}" data-details="{details}" '
                             f'data-finish="{finish}" data-header="{header}" '
                             f'data-corners="{corners}" data-origin="{ox},{oy}" '
-                            'data-soft="@soft@" data-highlight=', 1)
+                            'data-soft="@soft@" data-card="@card@" data-highlight=', 1)
     return _apply_theme("".join(parts), theme), list(_CUTS)
 
 
