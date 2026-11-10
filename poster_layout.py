@@ -170,6 +170,9 @@ def _lines(x: int, y: int, value: object, width: int, *, size: int = 22,
 
 def _rect(x: int, y: int, w: int, h: int, fill: str, *, stroke: str = "none",
           radius: int = 18) -> str:
+    if 12 <= radius <= 20:
+        # Cards follow the poster's corner style; thin strips, pills and circles keep their shape.
+        radius = {"square": 4, "soft": radius + 8}.get(_VARIANT.get("corners", "round"), radius)
     return (f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{radius}" '
             f'fill="{fill}" stroke="{stroke}" stroke-width="2"/>')
 
@@ -257,7 +260,8 @@ def _bars(parts: list[str], pairs: list[tuple[str, str]], x: int, y: int, w: int
         parts.append(_text(x, row, _fit_words(caption, caption_w, 22), size=22, fill=muted))
         colour = accent[i % len(accent)] if isinstance(accent, list) else accent
         length = max(18, int(bar_max * number / top))
-        parts.append(_rect(bar_x, row - 16, length, 18, colour, radius=9))
+        parts.append(_rect(bar_x, row - 16, length, 18, colour, radius=9)
+                     .replace("<rect ", '<rect data-motion-grow="1" ', 1))
         parts.append(_text(bar_x + length + 10, row, value, size=22, fill=colour, weight="bold"))
 
 
@@ -417,6 +421,21 @@ def _hero_layers(parts: list[str], nodes: list, accent: list[str]) -> None:
         parts.append(_text(470, y + 38, _fit_words(node.get("detail"), 520, 21), size=21, fill="@muted@"))
 
 
+def _counting(svg_text: str, value: object) -> str:
+    """Mark a plain number (40%, ~$3.5M, 3x) so the "count" motion counts it up from zero.
+
+    Values that are not plain numbers, such as a version like v2.1, stay as they are.
+    """
+    if _number(value) is None:
+        return svg_text
+    return svg_text.replace("<text ", '<text data-motion-count="1" ', 1)
+
+
+def _half(parts: list[str], side: str | None = None) -> None:
+    """Open (side "left" or "right") or close a group the "slide" motion moves in from its side."""
+    parts.append(f'<g data-motion-part="{side}">' if side else "</g>")
+
+
 def _apply_theme(svg: str, theme: str) -> str:
     """Swap every @token@ for the theme's colour."""
     palette = THEMES[theme]
@@ -443,7 +462,22 @@ def _arrow(x1: int, y1: int, x2: int, y2: int) -> str:
 # bars, two side-by-side cards or a quote card.
 DETAILS = ("grid", "rows", "checklist", "tabs")
 FINISHES = ("bars", "split", "quote")
-_VARIANT = {"details": "grid", "finish": "bars"}
+# The header treatment and card corners vary too: "classic" is each header's original look, "bold"
+# adds a filled kicker tab or decoration, "minimal" drops the box for an accent bar and a rule.
+HEADERS = ("classic", "bold", "minimal")
+CORNERS = ("round", "square", "soft")
+_VARIANT = {"details": "grid", "finish": "bars", "header": "classic", "corners": "round",
+            "origin": (540, 130)}
+# Each layout's own header look when nothing else is chosen, so layouts that share a header helper
+# still open differently.
+HEADER_DEFAULTS = {
+    "timeline": "classic", "code_focus": "bold", "architecture": "minimal", "playbook": "bold",
+    "snake": "minimal", "proscons": "classic", "guide": "classic", "comparison": "bold",
+    "dashboard": "minimal", "incident": "classic", "stack": "minimal", "progression": "bold",
+    "hub": "classic", "swimlanes": "bold", "pipeline": "minimal", "matrix": "classic",
+    "versus": "bold", "profiles": "minimal", "columns": "classic", "zigzag": "bold",
+    "scorecard": "minimal", "twin": "classic", "flowchart": "bold", "masonry": "minimal",
+}
 
 
 def details_options(plan: dict) -> list[str]:
@@ -668,11 +702,44 @@ def _bottom_bars(parts: list[str], plan: dict, gotcha: dict) -> None:
                         fill="@on_strong@", weight="bold"))
 
 
+def _kicker_width(kicker: str, size: int = 22) -> int:
+    return int(len(kicker) * size * 0.66)
+
+
+def _panel(parts: list[str], classic: str, top: int, h: int, stripe: str, icon: str, kicker: str,
+           icon_xy: tuple[int, int], kicker_xy: tuple[int, int]) -> None:
+    """The box, icon and kicker of a header panel in the poster's header style.
+
+    classic: the helper's own box (a tinted "soft" card, or a white "card" with a left stripe).
+    bold: a white card with a coloured top strip and the kicker in a filled tab.
+    minimal: no box, a tall accent bar on the left and a rule underneath.
+    """
+    style = _VARIANT.get("header", "classic")
+    (ix, iy), (kx, ky) = icon_xy, kicker_xy
+    if style == "bold":
+        parts.append(_rect(40, top, 1000, h, "@card@", stroke="@card_stroke@"))
+        parts.append(_rect(40, top, 1000, 10, stripe, radius=5))
+        width = kx - ix + _kicker_width(kicker) + 40
+        parts.append(_rect(ix - 14, ky - 31, width, 42, "@strong@", radius=21))
+        parts.append(_icon(icon, ix, ky - 26, "@on_strong@", 1.3))
+        parts.append(_text(kx, ky, kicker, size=22, fill="@on_strong@", weight="bold"))
+        return
+    if style == "minimal":
+        parts.append(_rect(40, top + 6, 10, h - 12, stripe, radius=5))
+        parts.append(f'<line x1="40" y1="{top + h + 4}" x2="1040" y2="{top + h + 4}" '
+                     'stroke="@rule@" stroke-width="2" stroke-dasharray="none"/>')
+    elif classic == "soft":
+        parts.append(_rect(40, top, 1000, h, "@soft@", stroke="@soft_stroke@"))
+    else:
+        parts.append(_rect(40, top, 1000, h, "@card@", stroke="@card_stroke@"))
+        parts.append(_rect(40, top, 12, h, stripe, radius=6))
+    parts.append(_icon(icon, ix, iy, stripe, 1.3 if classic == "card" else 1.4))
+    parts.append(_text(kx, ky, kicker, size=22, fill=stripe, weight="bold"))
+
+
 def _soft_header(parts: list[str], plan: dict, headline: str, kicker: str, icon: str) -> None:
     """Tinted header card (y 35-220): kicker, title of up to two lines and a subtitle."""
-    parts.append(_rect(40, 35, 1000, 185, "@soft@", stroke="@soft_stroke@"))
-    parts.append(_icon(icon, 65, 55, "@primary@", 1.4))
-    parts.append(_text(110, 83, kicker, size=22, fill="@primary@", weight="bold"))
+    _panel(parts, "soft", 35, 185, "@primary@", icon, kicker, (65, 55), (110, 83))
     title = _wrap(plan.get("title") or headline, 940, 46, 2)
     for i, line in enumerate(title):
         parts.append(_text(65, 132 + i * 51, line, size=46, fill="@ink@", weight="bold"))
@@ -700,16 +767,31 @@ def _layout_guide(parts: list[str], plan: dict, headline: str, accent: list[str]
 
 
 def _band_header(parts: list[str], plan: dict, headline: str, kicker: str, icon: str) -> None:
-    """Full-bleed coloured header band (y 0-250) with the title in the banner colour."""
-    parts.append(_rect(0, 0, 1080, 250, "@strong@", radius=0))
-    parts.append(_icon(icon, 45, 40, "@on_strong@", 1.4))
-    parts.append(_text(92, 68, kicker, size=22, fill="@on_strong@", weight="bold"))
+    """Full-bleed header band (y 0-250) with the title in the banner colour.
+
+    classic: a flat band. bold: the band with two large translucent discs and an accent stripe
+    along its foot. minimal: a pale band with dark text and a thin accent line.
+    """
+    style = _VARIANT.get("header", "classic")
+    ink, kick, sub = "@on_strong@", "@on_strong@", "@on_strong@"
+    if style == "minimal":
+        parts.append(_rect(0, 0, 1080, 250, "@soft@", radius=0))
+        parts.append(_rect(0, 244, 1080, 6, "@primary@", radius=0))
+        ink, kick, sub = "@ink@", "@primary@", "@muted@"
+    else:
+        parts.append(_rect(0, 0, 1080, 250, "@strong@", radius=0))
+        if style == "bold":
+            parts.append('<circle cx="1010" cy="40" r="170" fill="@on_strong@" opacity="0.07"/>')
+            parts.append('<circle cx="1060" cy="230" r="110" fill="@on_strong@" opacity="0.06"/>')
+            parts.append(_rect(0, 240, 1080, 10, "@a2@", radius=0))
+    parts.append(_icon(icon, 45, 40, kick, 1.4))
+    parts.append(_text(92, 68, kicker, size=22, fill=kick, weight="bold"))
     title = _wrap(plan.get("title") or headline, 990, 46, 2)
     for i, line in enumerate(title):
-        parts.append(_text(45, 128 + i * 52, line, size=46, fill="@on_strong@", weight="bold"))
+        parts.append(_text(45, 128 + i * 52, line, size=46, fill=ink, weight="bold"))
     subtitle_y = 190 if len(title) == 1 else 226
     parts.extend(_lines(45, subtitle_y, plan.get("subtitle"), 990, size=22, max_lines=1,
-                        fill="@on_strong@"))
+                        fill=sub))
 
 
 def _layout_timeline(parts: list[str], plan: dict, headline: str, accent: list[str]) -> None:
@@ -805,10 +887,7 @@ def _layout_spotlight(parts: list[str], plan: dict, headline: str, accent: list[
 def _card_header(parts: list[str], plan: dict, headline: str, kicker: str, icon: str,
                  stripe: str = "@primary@") -> None:
     """White header card (y 35-215) with a coloured stripe on its left edge."""
-    parts.append(_rect(40, 35, 1000, 180, "@card@", stroke="@card_stroke@"))
-    parts.append(_rect(40, 35, 12, 180, stripe, radius=6))
-    parts.append(_icon(icon, 72, 52, stripe, 1.3))
-    parts.append(_text(114, 78, kicker, size=22, fill=stripe, weight="bold"))
+    _panel(parts, "card", 35, 180, stripe, icon, kicker, (72, 52), (114, 78))
     title = _wrap(plan.get("title") or headline, 930, 44, 2)
     for i, line in enumerate(title):
         parts.append(_text(72, 128 + i * 48, line, size=44, fill="@ink@", weight="bold"))
@@ -824,6 +903,7 @@ def _layout_comparison(parts: list[str], plan: dict, headline: str, accent: list
     columns = [(40, "@bad@", "@bad_soft@", "x", hero.get("left_label") or "Before", nodes[:2], 1),
                (560, "@good@", "@good_soft@", "check", hero.get("right_label") or "After", nodes[2:], 3)]
     for x, colour, tint, icon, heading, column, first in columns:
+        _half(parts, "left" if x < 540 else "right")
         parts.append(_rect(x, 235, 480, 410, tint, stroke=colour))
         parts.append(_icon(icon, x + 22, 256, colour, 1.5))
         parts.append(_text(x + 70, 284, _fit_words(heading, 380, 28), size=28, fill=colour,
@@ -837,6 +917,7 @@ def _layout_comparison(parts: list[str], plan: dict, headline: str, accent: list
                                size=24, fill="@ink@", weight="bold"))
             parts.extend(_lines(x + 40, y + 88, node.get("detail"), 400, size=22,
                                 max_lines=2, step=29))
+        _half(parts)
     parts.append(_arrow(524, 440, 554, 440))
     parts.append(_text(45, 684, _fit_words(hero.get("caption") or "In practice", 990, 24),
                        size=24, fill="@ink@", weight="bold"))
@@ -898,8 +979,8 @@ def _layout_dashboard(parts: list[str], plan: dict, headline: str, accent: list[
                 # A percentage also gets a progress ring in the tile's corner.
                 _ring(parts, x + w - 52, 282, 28, number[0], colour)
                 room = w - 44 - 80
-            parts.append(_text(x + 22, 300, _fit_words(value, room, size), size=size,
-                               fill=colour, weight="bold"))
+            parts.append(_counting(_text(x + 22, 300, _fit_words(value, room, size), size=size,
+                                         fill=colour, weight="bold"), value))
             parts.extend(_lines(x + 22, 342, caption, w - 44, size=22, max_lines=2, step=28))
     parts.append(_text(45, 445, "HOW IT WORKS", size=24, fill="@primary@", weight="bold"))
     _ribbon(parts, plan["hero"]["nodes"], accent, 460, 200)
@@ -1100,8 +1181,23 @@ def _hub_label(plan: dict, headline: str) -> list[str]:
 
 
 def _centre_header(parts: list[str], plan: dict, headline: str, kicker: str) -> int:
-    """Centred kicker, title and subtitle on the page background; returns the next free y."""
-    parts.append(_text(540, 68, kicker, size=22, fill="@primary@", weight="bold", anchor="middle"))
+    """Centred kicker, title and subtitle on the page background; returns the next free y.
+
+    classic: a plain kicker. bold: the kicker in a filled pill. minimal: rules either side of it.
+    """
+    style, half = _VARIANT.get("header", "classic"), _kicker_width(kicker) // 2
+    if style == "bold":
+        parts.append(_rect(540 - half - 26, 39, 2 * half + 52, 42, "@strong@", radius=21))
+        parts.append(_text(540, 68, kicker, size=22, fill="@on_strong@", weight="bold",
+                           anchor="middle"))
+    else:
+        if style == "minimal":
+            for sign in (-1, 1):
+                parts.append(f'<line x1="{540 + sign * (half + 22)}" y1="60" '
+                             f'x2="{540 + sign * (half + 112)}" y2="60" stroke="@primary@" '
+                             'stroke-width="3" stroke-dasharray="none"/>')
+        parts.append(_text(540, 68, kicker, size=22, fill="@primary@", weight="bold",
+                           anchor="middle"))
     title = _wrap(plan.get("title") or headline, 1000, 44, 2)
     for i, line in enumerate(title):
         parts.append(_text(540, 122 + i * 50, line, size=44, fill="@ink@", weight="bold",
@@ -1149,11 +1245,13 @@ def _layout_versus(parts: list[str], plan: dict, headline: str, accent: list[str
     sides = [(40, "@a1@", table["left"], table.get("left_about"), table.get("left_when")),
              (548, "@a2@", table["right"], table.get("right_about"), table.get("right_when"))]
     for x, colour, name, about, _ in sides:
+        _half(parts, "left" if x < 540 else "right")
         parts.append(_rect(x, 235, 492, 140, "@soft2@", stroke=colour))
         parts.append(_icon("layers", x + 24, 256, colour, 1.5))
         parts.append(_text(x + 72, 285, _fit_words(name, 390, 30), size=30, fill=colour,
                            weight="bold"))
         parts.extend(_lines(x + 24, 325, about, 444, size=22, max_lines=2, step=28))
+        _half(parts)
     parts.append(_rect(390, 391, 300, 44, "@strong@", radius=22))
     parts.append(_text(540, 421, "KEY DIFFERENCES", size=22, fill="@on_strong@", weight="bold",
                        anchor="middle"))
@@ -1181,6 +1279,7 @@ def _layout_versus(parts: list[str], plan: dict, headline: str, accent: list[str
         y += 66
     top = y + 20
     for x, colour, name, _, when in sides:
+        _half(parts, "left" if x < 540 else "right")
         parts.append(_rect(x, top, 492, 1085 - top, "@card@", stroke=colour))
         parts.append(_icon("check", x + 22, top + 20, colour, 1.4))
         parts.append(_text(x + 64, top + 44, _fit_words(f"Use {_clean(name)} when", 400, 24),
@@ -1194,6 +1293,7 @@ def _layout_versus(parts: list[str], plan: dict, headline: str, accent: list[str
                 parts.append(_text(x + 24, top + 86 + rows * 28, ("• " if j == 0 else "  ") + line,
                                    size=22, fill="@muted@"))
                 rows += 1
+        _half(parts)
 
 
 def _layout_architecture(parts: list[str], plan: dict, headline: str, accent: list[str]) -> None:
@@ -1269,6 +1369,7 @@ def _layout_hub(parts: list[str], plan: dict, headline: str, accent: list[str]) 
     nodes = plan["hero"]["nodes"]
     _card_header(parts, plan, headline, "AT THE CORE", "network")
     hub_x, hub_y, radius = 540, 458, 100
+    _VARIANT["origin"] = (hub_x, hub_y)  # the ripple motion spreads out from the hub
     parts.append(f'<circle cx="{hub_x}" cy="{hub_y}" r="{radius}" fill="@strong@"/>')
     parts.append(_icon("target", hub_x - 22, hub_y - 82, "@on_strong@", 1.8))
     label = _hub_label(plan, headline)
@@ -1517,12 +1618,14 @@ def _layout_scorecard(parts: list[str], plan: dict, headline: str, accent: list[
              (630, 835, "@a2@", "@soft2@", card["right"], card["right_value"],
               card.get("right_caption"))]
     for x, cx, colour, fill, name, value, caption in sides:
+        _half(parts, "left" if x < 540 else "right")
         parts.append(_rect(x, 255, 410, 240, fill, stroke=colour, radius=16))
         parts.append(_text(cx, 300, _fit_words(name, 330, 26).upper(), size=26, fill=colour,
                            weight="bold", anchor="middle"))
-        parts.append(_text(cx, 385, _fit_words(value, 330, 56), size=56, fill=colour,
-                           weight="bold", anchor="middle"))
+        parts.append(_counting(_text(cx, 385, _fit_words(value, 330, 56), size=56, fill=colour,
+                                     weight="bold", anchor="middle"), value))
         _centred(parts, cx, 428, caption, 330, 2)
+        _half(parts)
     parts.append('<circle cx="540" cy="375" r="86" fill="@card@" stroke="@strong@" '
                  'stroke-width="4"/>')
     ratio = _clean(card.get("ratio"))
@@ -1537,8 +1640,8 @@ def _layout_scorecard(parts: list[str], plan: dict, headline: str, accent: list[
     for i, (value, caption) in enumerate(pairs):
         x, colour = 40 + i * (w + 16), accent[(i + 2) % len(accent)]
         parts.append(_rect(x, 515, w, 140, "@card@", stroke="@card_stroke@"))
-        parts.append(_text(x + 22, 570, _fit_words(value, w - 44, 36), size=36, fill=colour,
-                           weight="bold"))
+        parts.append(_counting(_text(x + 22, 570, _fit_words(value, w - 44, 36), size=36,
+                                     fill=colour, weight="bold"), value))
         parts.extend(_lines(x + 22, 607, caption, w - 44, size=22, max_lines=2, step=26))
     parts.append(_text(45, 700, "WHAT DRIVES IT", size=24, fill="@primary@", weight="bold"))
     _ribbon(parts, plan["hero"]["nodes"], accent, 715, 200)
@@ -1596,6 +1699,7 @@ def _layout_twin(parts: list[str], plan: dict, headline: str, accent: list[str])
                                          table.get("left_when")),
                                         (560, "@a2@", table["right"], table.get("right_about"),
                                          table.get("right_when"))):
+        _half(parts, "left" if x < 540 else "right")
         parts.append(_rect(x, 255, 480, 435, "@card@", stroke=colour, radius=16))
         parts.append(_rect(x, 255, 480, 70, colour, radius=16))
         parts.append(_text(x + 240, 301, _fit_words(name, 430, 30).upper(), size=30,
@@ -1605,6 +1709,7 @@ def _layout_twin(parts: list[str], plan: dict, headline: str, accent: list[str])
         label_y = 362 + len(about_lines) * 28 + 20
         parts.append(_text(x + 24, label_y, "Best for", size=24, fill=colour, weight="bold"))
         _bullets(parts, x + 24, label_y + 36, when, 420, (690 - 20 - label_y - 36) // 28 + 1)
+        _half(parts)
     parts.append('<circle cx="540" cy="290" r="19" fill="@strong@"/>')
     parts.append(_text(540, 297, "VS", size=18, fill="@on_strong@", weight="bold", anchor="middle"))
     parts.append(_text(45, 735, _fit_words(plan["hero"].get("caption") or "How to start", 990, 24),
@@ -1746,6 +1851,7 @@ def _layout_proscons(parts: list[str], plan: dict, headline: str, accent: list[s
     for x, colour, fill, icon, label, items, mark in (
             (40, "@good@", "@good_soft@", "check", "PROS", pros, "+ "),
             (740, "@bad@", "@bad_soft@", "warning", "CONS", cons, "– ")):
+        _half(parts, "left" if x < 540 else "right")
         parts.append(_rect(x, 275, 300, 580, fill, stroke=colour))
         parts.append(_icon(icon, x + 20, 292, colour, 1.4))
         parts.append(_text(x + 66, 320, label, size=26, fill=colour, weight="bold"))
@@ -1759,6 +1865,7 @@ def _layout_proscons(parts: list[str], plan: dict, headline: str, accent: list[s
                 parts.append(_text(x + 22, 368 + used * 27, (mark if j == 0 else "  ") + line,
                                    size=22, fill="@ink@"))
                 used += 1
+        _half(parts)
     parts.append(_text(540, 304, "HOW IT WORKS", size=22, fill="@primary@", weight="bold",
                        anchor="middle"))
     n, gap = len(nodes), 30
@@ -2055,14 +2162,46 @@ def choose_theme(plan: dict, recent: str | list | tuple | None = None, rng=None)
     return names[seed % len(names)]
 
 
-def choose_motion(plan: dict, recent: str | list | tuple | None = None, rng=None) -> str:
-    """The GIF's motion style: never the last one used; random with rng, else stable per title."""
+# The motions that suit each layout, its signature motion first: a timeline draws its path in, two
+# halves slide together, numbers count up, a hub sends ripples out and a grid of cards gets a sweep.
+MOTION_SETS = {
+    "timeline": ("draw", "build", "flow"), "snake": ("draw", "wave", "flow"),
+    "pipeline": ("draw", "build", "flow"), "flowchart": ("draw", "flow", "pulse"),
+    "progression": ("draw", "build", "sweep"), "zigzag": ("draw", "sweep", "wave"),
+    "architecture": ("draw", "build", "ripple"), "swimlanes": ("draw", "wave", "flow"),
+    "comparison": ("slide", "wave", "flow"), "versus": ("slide", "sweep", "build"),
+    "twin": ("slide", "ripple", "flow"), "proscons": ("slide", "draw", "flow"),
+    "dashboard": ("count", "build", "ripple"), "scorecard": ("count", "slide", "pulse"),
+    "hub": ("ripple", "pulse", "draw"), "spotlight": ("ripple", "sweep", "flow"),
+    "guide": ("ripple", "draw", "wave"), "sidebar": ("sweep", "draw", "flow"),
+    "matrix": ("sweep", "pulse", "ripple"), "masonry": ("sweep", "build", "ripple"),
+    "profiles": ("sweep", "wave", "ripple"), "columns": ("sweep", "wave", "build"),
+    "playbook": ("build", "sweep", "draw"), "stack": ("build", "ripple", "wave"),
+    "code_focus": ("draw", "flow", "sweep"), "incident": ("build", "sweep", "wave"),
+}
+
+
+def choose_motion(plan: dict, recent: str | list | tuple | None = None, rng=None,
+                  style: str | None = None) -> str:
+    """The GIF's motion style, never one of the last two used (or at least not the last one).
+
+    With a layout, the choice comes from the motions that suit it (MOTION_SETS): with rng its
+    signature motion about half the time, otherwise one of its motions used longest ago; without
+    rng the first suitable one. Without a layout every motion is a candidate.
+    """
     from infographic import MOTIONS
 
+    options = list(MOTION_SETS.get(style or "", MOTIONS))
+    recent = _recent(recent)
+    fresh = ([m for m in options if m not in recent[-2:]]
+             or [m for m in options if m not in recent[-1:]] or options)
     if rng is not None:
-        return rng.choice(_least_recent(list(MOTIONS), _recent(recent)[-HISTORY:]))
-    names = [m for m in MOTIONS if m not in _recent(recent)[-1:]]
-    return names[sum(ord(c) for c in _clean(plan.get("title"))) % len(names)]
+        if fresh[0] == options[0] and rng.random() < 0.5:
+            return fresh[0]
+        return rng.choice(_least_recent(fresh, recent[-HISTORY:]))
+    if style:
+        return fresh[0]
+    return fresh[sum(ord(c) for c in _clean(plan.get("title"))) % len(fresh)]
 
 
 def choose_variant(options: list[str] | tuple, recent: str | list | tuple | None = None,
@@ -2075,19 +2214,25 @@ def choose_variant(options: list[str] | tuple, recent: str | list | tuple | None
 
 
 def _render(plan: dict, headline: str, footer: str, style: str, theme: str,
-            motion: str = "flow", details: str = "grid",
-            finish: str = "bars") -> tuple[str, list[str]]:
+            motion: str = "flow", details: str = "grid", finish: str = "bars",
+            header: str | None = None, corners: str = "round") -> tuple[str, list[str]]:
     """Draw one layout; returns the SVG and any text that had to be shortened."""
     _CUTS.clear()
-    _VARIANT.update(details=details, finish=finish)
+    header = header if header in HEADERS else HEADER_DEFAULTS.get(style, "classic")
+    corners = corners if corners in CORNERS else "round"
+    _VARIANT.update(details=details, finish=finish, header=header, corners=corners,
+                    origin=(540, 130))
     parts: list[str] = []
     _start(parts, style, theme)
-    parts[0] = parts[0].replace(
-        " data-highlight=", f' data-motion="{motion}" data-details="{details}" '
-                            f'data-finish="{finish}" data-highlight=', 1)
     _LAYOUTS[style](parts, plan, headline, list(ACCENTS))
     _bottom(parts, plan, footer)
     parts.append("</svg>")
+    ox, oy = _VARIANT["origin"]
+    parts[0] = parts[0].replace(
+        " data-highlight=", f' data-motion="{motion}" data-details="{details}" '
+                            f'data-finish="{finish}" data-header="{header}" '
+                            f'data-corners="{corners}" data-origin="{ox},{oy}" '
+                            'data-soft="@soft@" data-highlight=', 1)
     return _apply_theme("".join(parts), theme), list(_CUTS)
 
 
@@ -2098,7 +2243,11 @@ def poster_from_brief(brief: str, headline: str, footer: str, *,
                       recent_motions: str | list | tuple | None = None,
                       recent_details: str | list | tuple | None = None,
                       recent_finishes: str | list | tuple | None = None,
-                      details: str | None = None, finish: str | None = None) -> str | None:
+                      recent_headers: str | list | tuple | None = None,
+                      recent_corners: str | list | tuple | None = None,
+                      details: str | None = None, finish: str | None = None,
+                      header: str | None = None, corners: str | None = None,
+                      motion: str | None = None) -> str | None:
     """Render a complete poster from the blueprint embedded by plan_infographic.
 
     The layout and colour theme follow the content and always differ from the previous poster's
@@ -2128,14 +2277,23 @@ def poster_from_brief(brief: str, headline: str, footer: str, *,
 
     if theme not in THEMES:
         theme = choose_theme(plan, recent_themes, rng)
-    motion = choose_motion(plan, recent_motions, rng)
     options = details_options(plan)
     if details not in options:
         details = choose_variant(options, recent_details, rng)
     if finish not in FINISHES:
         finish = choose_variant(FINISHES, recent_finishes, rng)
+    if header not in HEADERS and rng is not None:
+        header = choose_variant(HEADERS, recent_headers, rng)
+    if corners not in CORNERS:
+        corners = choose_variant(CORNERS, recent_corners, rng)
+
+    def motion_for(name: str) -> str:
+        from infographic import MOTIONS
+        return motion if motion in MOTIONS else choose_motion(plan, recent_motions, rng, name)
+
     if style in _eligible(plan, headline):
-        return _render(plan, headline, footer, style, theme, motion, details, finish)[0]
+        return _render(plan, headline, footer, style, theme, motion_for(style), details, finish,
+                       header, corners)[0]
     order = [s for s in _style_order(plan, recent_styles, headline, rng) if s not in exclude]
     if not order:
         return None
@@ -2145,7 +2303,8 @@ def poster_from_brief(brief: str, headline: str, footer: str, *,
     best: tuple[str, list[str]] | None = None
     for name in order:
         for look in looks:
-            svg, cuts = _render(plan, headline, footer, name, theme, motion, *look)
+            svg, cuts = _render(plan, headline, footer, name, theme, motion_for(name), *look,
+                                header, corners)
             if not cuts:
                 return svg
             if best is None or len(cuts) < len(best[1]):

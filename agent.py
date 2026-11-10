@@ -1199,14 +1199,15 @@ def _recent_poster_styles() -> dict:
         data = {}
     out = {}
     for key, single in (("styles", "style"), ("themes", "theme"), ("motions", "motion"),
-                        ("details", "detail"), ("finishes", "finish")):
+                        ("details", "detail"), ("finishes", "finish"), ("headers", "header"),
+                        ("corners", "corner")):
         values = data.get(key, [data[single]] if single in data else [])
         out[key] = [str(v) for v in values] if isinstance(values, list) else []
     return out
 
 
 def _remember_poster_style(svg: str) -> None:
-    """Record the layout, theme, motion, details and finish of the poster that was delivered.
+    """Record the layout, theme, motion, details, finish, header and corners of the delivered poster.
 
     Only the final poster of a post is recorded (produce_infographic calls this once), so
     rejected drafts never push real posts out of the history.
@@ -1220,7 +1221,8 @@ def _remember_poster_style(svg: str) -> None:
     recent = _recent_poster_styles()
     data = {"styles": (recent["styles"] + [style.group(1)])[-HISTORY:],
             "themes": (recent["themes"] + [theme.group(1)])[-HISTORY:]}
-    for key, attr in (("motions", "motion"), ("details", "details"), ("finishes", "finish")):
+    for key, attr in (("motions", "motion"), ("details", "details"), ("finishes", "finish"),
+                      ("headers", "header"), ("corners", "corners")):
         found = re.search(rf'data-{attr}="([a-z_]+)"', svg)
         data[key] = (recent[key] + ([found.group(1)] if found else []))[-HISTORY:]
     try:
@@ -1258,7 +1260,9 @@ def draw_poster(post: str, brief: str, headline: str, footer: str, image_path: P
                                            recent_themes=recent["themes"], rng=rng, exclude=tried,
                                            recent_motions=recent["motions"],
                                            recent_details=recent["details"],
-                                           recent_finishes=recent["finishes"])
+                                           recent_finishes=recent["finishes"],
+                                           recent_headers=recent["headers"],
+                                           recent_corners=recent["corners"])
         if not structured_svg:
             break
         style = re.search(r'data-style="([a-z_]+)"', structured_svg)
@@ -1576,7 +1580,7 @@ def produce_infographic(post: str, headline: str, idea: str, image_path: Path,
     brief = plan_infographic(post, headline, idea)
     feedback, best, issues, review = None, None, ["No infographic could be drawn."], {}
     drafts: dict[str, list[str]] = {k: [] for k in ("styles", "themes", "motions", "details",
-                                                    "finishes")}
+                                                    "finishes", "headers", "corners")}
     best_svg = ""
 
     def delivered(media, issues, review):
@@ -1598,7 +1602,8 @@ def produce_infographic(post: str, headline: str, idea: str, image_path: Path,
         except OSError:
             best_svg = ""
         for key, attr in (("styles", "style"), ("themes", "theme"), ("motions", "motion"),
-                          ("details", "details"), ("finishes", "finish")):
+                          ("details", "details"), ("finishes", "finish"), ("headers", "header"),
+                          ("corners", "corners")):
             found = re.search(rf'data-{attr}="([a-z_]+)"', best_svg)
             if found:
                 drafts[key].append(found.group(1))

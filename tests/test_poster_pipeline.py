@@ -127,8 +127,12 @@ def test_draw_poster_remembers_the_layout_and_the_next_poster_differs(monkeypatc
     details = [re.search(r'data-details="(\w+)"', s).group(1) for s in seen]
     finishes = [re.search(r'data-finish="(\w+)"', s).group(1) for s in seen]
     assert details[0] != details[1] != details[2] and finishes[0] != finishes[1] != finishes[2]
+    headers = [re.search(r'data-header="(\w+)"', s).group(1) for s in seen]
+    corners = [re.search(r'data-corners="(\w+)"', s).group(1) for s in seen]
+    assert headers[0] != headers[1] != headers[2] and corners[0] != corners[1] != corners[2]
     assert saved == {"styles": styles, "themes": themes, "motions": motions,
-                     "details": details, "finishes": finishes}
+                     "details": details, "finishes": finishes, "headers": headers,
+                     "corners": corners}
 
 
 def test_style_history_keeps_the_last_ten():
@@ -136,7 +140,7 @@ def test_style_history_keeps_the_last_ten():
     for style in names:
         agent._remember_poster_style(f'<svg data-style="{style}" data-theme="ocean"/>')
     assert agent._recent_poster_styles() == {"styles": names[-10:], "themes": ["ocean"] * 10,
-                                             "motions": [], "details": [], "finishes": []}
+                                             "motions": [], "details": [], "finishes": [], "headers": [], "corners": []}
 
 
 def test_style_history_reads_the_older_single_value_file():
@@ -144,10 +148,10 @@ def test_style_history_reads_the_older_single_value_file():
     path.parent.mkdir(parents=True)
     path.write_text('{"style": "guide", "theme": "ocean"}')
     assert agent._recent_poster_styles() == {"styles": ["guide"], "themes": ["ocean"], "motions": [],
-                                             "details": [], "finishes": []}
+                                             "details": [], "finishes": [], "headers": [], "corners": []}
     path.write_text('{"styles": "guide", "themes": ["ocean"]}')
     assert agent._recent_poster_styles() == {"styles": [], "themes": ["ocean"], "motions": [],
-                                             "details": [], "finishes": []}
+                                             "details": [], "finishes": [], "headers": [], "corners": []}
 
 
 def test_draw_poster_runs_the_rendered_layout_check_on_the_structured_poster(monkeypatch, tmp_path):
@@ -165,12 +169,12 @@ def test_last_poster_style_ignores_a_damaged_file(content):
     path.parent.mkdir(parents=True)
     path.write_text(content)
     assert agent._recent_poster_styles() == {"styles": [], "themes": [], "motions": [], "details": [],
-                                             "finishes": []}
+                                             "finishes": [], "headers": [], "corners": []}
 
 
 def test_last_poster_style_is_empty_before_the_first_poster():
     assert agent._recent_poster_styles() == {"styles": [], "themes": [], "motions": [], "details": [],
-                                             "finishes": []}
+                                             "finishes": [], "headers": [], "corners": []}
 
 
 def test_remember_poster_style_skips_drawings_without_a_style():

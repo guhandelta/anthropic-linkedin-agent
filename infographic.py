@@ -368,20 +368,83 @@ def render_svg(svg: str, path: Path) -> Path:
     return path
 
 
-# How a poster's GIF moves: one step at a time, back and forth, building up, or all breathing.
-MOTIONS = ("flow", "wave", "build", "pulse")
+# How a poster's GIF moves. The first four light the diagram's steps: one at a time (flow), back and
+# forth (wave), building up (build) or all breathing (pulse). The rest each suit a kind of layout:
+#   draw   - connectors and spines draw themselves in, one after another, and steps light as reached
+#   slide  - the two halves of a comparison glide in from the sides and meet in the middle
+#   count  - numbers count up from zero and bars grow to their length
+#   ripple - rings spread out from the headline (or a hub) and light each card as they pass it
+#   sweep  - a diagonal band of light sweeps across the cards
+MOTIONS = ("flow", "wave", "build", "pulse", "draw", "slide", "count", "ripple", "sweep")
+# Frames per loop. The reveal motions need a longer loop so the finished poster can be read.
+MOTION_FRAMES = {"draw": 18, "count": 18, "slide": 16, "ripple": 16, "sweep": 16}
+REVEAL = ("draw", "count")  # these build to the finished poster, then hold it
+_HOLD_MS = 1200
 
 
-def gif_frame_svgs(svg: str, n_frames: int = 12) -> list[str]:
+def _motion_of(svg: str) -> str:
+    named = re.search(r'data-motion="([a-z]+)"', svg)
+    return named.group(1) if named and named.group(1) in MOTIONS else "flow"
+
+
+def _frames_for(svg: str, n_frames: int | None) -> int:
+    return n_frames or MOTION_FRAMES.get(_motion_of(svg), 12)
+
+
+def _reveal_progress(i: int, n_frames: int) -> float:
+    """0 to 1 over the first two thirds of the loop (eased), then 1 while the poster holds."""
+    import math
+
+    span = max(1, round(n_frames * 2 / 3) - 1)
+    t = min(1.0, i / span)
+    return 0.5 - 0.5 * math.cos(math.pi * t)
+
+
+def _attr(tag: str, name: str) -> float | None:
+    found = re.search(rf'\s{name}="(-?[\d.]+)"', tag)
+    return float(found.group(1)) if found else None
+
+
+def _set_attr(tag: str, name: str, value: str) -> str:
+    if re.search(rf'\s{name}="[^"]*"', tag):
+        return re.sub(rf'(\s){name}="[^"]*"', lambda m: f'{m.group(1)}{name}="{value}"', tag, count=1)
+    end = "/>" if tag.endswith("/>") else ">"
+    return tag[: -len(end)].rstrip() + f' {name}="{value}"' + end
+
+
+def _count_text(match: re.Match, t: float) -> str:
+    """A number part-way through counting up: same decimals and separators as the final value."""
+    head, inner, tail = match.groups()
+    number = re.search(r"\d[\d,]*(?:\.\d+)?", inner)
+    if not number:
+        return match.group(0)
+    raw = number.group(0)
+    value = float(raw.replace(",", ""))
+    decimals = len(raw.split(".")[1]) if "." in raw else 0
+    shown = f"{value * t:,.{decimals}f}" if "," in raw else f"{value * t:.{decimals}f}"
+    return head + inner[:number.start()] + shown + inner[number.end():] + tail
+
+
+def _step_centres(svg: str) -> dict[int, tuple[float, float]]:
+    """Centre of the first card of each motion step."""
+    centres: dict[int, tuple[float, float]] = {}
+    for tag in re.findall(r'<rect\s[^>]*data-motion-step="\d+"[^>]*>', svg):
+        step = int(re.search(r'data-motion-step="(\d+)"', tag).group(1))
+        x, y = _attr(tag, "x") or 0, _attr(tag, "y") or 0
+        w, h = _attr(tag, "width") or 0, _attr(tag, "height") or 0
+        centres.setdefault(step, (x + w / 2, y + h / 2))
+    return centres
+
+
+def gif_frame_svgs(svg: str, n_frames: int | None = None) -> list[str]:
     """Build the per-frame SVGs the animated GIF is rendered from (see render_svg_to_gif)."""
     import math
-    import io
-    from PIL import Image
 
     # Validate SVG validity before proceeding
     issues = svg_checks(svg)
     if issues:
         raise ValueError("; ".join(issues))
+    n_frames = _frames_for(svg, n_frames)
 
     # Helper: Ensure connector lines have stroke-dasharray so they animate
     def _ensure_dashed(m):
@@ -399,8 +462,14 @@ def gif_frame_svgs(svg: str, n_frames: int = 12) -> list[str]:
     # Themed posters name their highlight colour; others keep the original blue.
     themed = re.search(r'data-highlight="(#[0-9A-Fa-f]{6})"', svg)
     highlight = themed.group(1) if themed else "#3768B7"
-    named = re.search(r'data-motion="([a-z]+)"', svg)
-    motion = named.group(1) if named and named.group(1) in MOTIONS else "flow"
+    soft_found = re.search(r'data-soft="(#[0-9A-Fa-f]{6})"', svg)
+    soft = soft_found.group(1) if soft_found else None
+    motion = _motion_of(svg)
+    origin_found = re.search(r'data-origin="(-?\d+),(-?\d+)"', svg)
+    origin = (int(origin_found.group(1)), int(origin_found.group(2))) if origin_found else (540, 130)
+    centres = _step_centres(svg)
+    # The connectors the "draw" motion draws in, in the order they appear in the drawing.
+    connectors = [m.group(0) for m in re.finditer(r'<line\s[^>]*stroke-dasharray="10 10"[^>]*>', base_svg)]
 
     frame_svgs = []
     dash_period = 20  # 20 matches dash pattern "10 10" and loops seamlessly without jump cuts
@@ -412,11 +481,13 @@ def gif_frame_svgs(svg: str, n_frames: int = 12) -> list[str]:
             flow_offset = dash_period - flow_offset  # connectors flow the other way
         pulse_r_delta = 8 * (0.5 + 0.5 * math.sin(phase))
         pulse_op = round(0.85 - 0.45 * (0.5 + 0.5 * math.sin(phase)), 2)
+        progress = _reveal_progress(i, n_frames)
 
         frame_svg = base_svg
 
         # Highlight the diagram's steps; every label stays visible in every frame. The poster names
         # its motion style, so different posters move differently.
+        filled: set[int] = set()
         if motion_steps:
             count = len(motion_steps)
             position = (i * count) // n_frames
@@ -429,6 +500,22 @@ def gif_frame_svgs(svg: str, n_frames: int = 12) -> list[str]:
                 lit = set(motion_steps[:position + 1])
             elif motion == "pulse":  # every step breathes together
                 lit = set(motion_steps)
+            elif motion == "draw":  # steps light as the path reaches them
+                lit = set(motion_steps[:math.ceil(progress * count)])
+            elif motion == "count":  # all steps light once the numbers have landed
+                lit = set(motion_steps) if progress >= 1 else set()
+            elif motion == "ripple":  # a card lights while the leading ring passes over it
+                front = (i / n_frames) * 1300
+                lit = {s for s in motion_steps
+                       if abs(math.dist(origin, centres.get(s, origin)) - front) < 170}
+            elif motion == "sweep":  # a diagonal band crosses the page, its leading edge lit
+                band = -0.25 + 1.5 * (i / n_frames)
+                where = {s: (centres[s][0] / 1080 + centres[s][1] / 1350) / 2 for s in motion_steps
+                         if s in centres}
+                lit = {s for s, d in where.items() if 0 <= band - d < 0.12}
+                filled = {s for s, d in where.items() if 0 <= band - d < 0.3}
+            elif motion == "slide":  # the middle steps light in turn while the halves meet
+                lit = {motion_steps[position]}
             else:  # "flow": one step at a time
                 lit = {motion_steps[position]}
             width = 3 + round(5 * (0.5 + 0.5 * math.sin(phase))) if motion == "pulse" else 7
@@ -436,6 +523,8 @@ def gif_frame_svgs(svg: str, n_frames: int = 12) -> list[str]:
             def _highlight_node(match):
                 tag = match.group(0)
                 step = int(re.search(r'data-motion-step="(\d+)"', tag).group(1))
+                if step in filled and soft:
+                    tag = re.sub(r'fill="[^"]*"', f'fill="{soft}"', tag, count=1)
                 if step in lit:
                     tag = re.sub(r'stroke="[^"]*"', f'stroke="{highlight}"', tag)
                     tag = re.sub(r'stroke-width="[^"]*"', f'stroke-width="{width}"', tag)
@@ -462,7 +551,60 @@ def gif_frame_svgs(svg: str, n_frames: int = 12) -> list[str]:
                 attrs += f' stroke-dashoffset="{flow_offset}"'
             return f"<{tag} {attrs} />" if is_self_closing else f"<{tag} {attrs}>"
 
-        frame_svg = re.sub(r'<(path|line|polyline)\s+([^>]*stroke-dasharray="[^"]*"[^>]*)>', _shift_dash, frame_svg)
+        if motion != "draw":
+            frame_svg = re.sub(r'<(path|line|polyline)\s+([^>]*stroke-dasharray="[^"]*"[^>]*)>',
+                               _shift_dash, frame_svg)
+        else:
+            # Each connector draws itself in its own slice of the reveal; arrowheads appear when
+            # their line arrives.
+            k = max(1, len(connectors))
+
+            def _draw(m):
+                tag = m.group(0)
+                index = connectors.index(tag) if tag in connectors else 0
+                local = min(1.0, max(0.0, progress * k - index))
+                x1, y1 = _attr(tag, "x1") or 0, _attr(tag, "y1") or 0
+                x2, y2 = _attr(tag, "x2") or 0, _attr(tag, "y2") or 0
+                length = math.hypot(x2 - x1, y2 - y1)
+                tag = _set_attr(tag, "stroke-dasharray",
+                                f"{length * local:.1f} {length + 20:.1f}")
+                tag = _set_attr(tag, "stroke-dashoffset", "0")
+                if local < 1:
+                    tag = re.sub(r'\smarker-end="[^"]*"', "", tag)
+                return tag
+
+            frame_svg = re.sub(r'<line\s[^>]*stroke-dasharray="10 10"[^>]*>', _draw, frame_svg)
+
+        if motion == "count":
+            frame_svg = re.sub(r'(<text\s[^>]*data-motion-count="1"[^>]*>)([^<]*)(</text>)',
+                               lambda m: _count_text(m, progress), frame_svg)
+
+            def _grow(m):
+                tag = m.group(0)
+                width = _attr(tag, "width") or 0
+                return _set_attr(tag, "width", f"{max(1.0, width * progress):.1f}")
+
+            frame_svg = re.sub(r'<rect\s[^>]*data-motion-grow="1"[^>]*>', _grow, frame_svg)
+
+        if motion == "slide":
+            # Apart as the loop starts and ends, gliding together for the middle half of it.
+            gap = round(40 * max(0.0, math.cos(phase)), 1)
+            frame_svg = frame_svg.replace('<g data-motion-part="left">',
+                                          f'<g data-motion-part="left" transform="translate({-gap},0)">')
+            frame_svg = frame_svg.replace('<g data-motion-part="right">',
+                                          f'<g data-motion-part="right" transform="translate({gap},0)">')
+
+        if motion == "ripple":
+            # Three rings spread out behind the content, so they show in the gutters between cards
+            # and never cross a word.
+            rings = []
+            for k in range(3):
+                share = ((i / n_frames) + k / 3) % 1
+                rings.append(f'<circle cx="{origin[0]}" cy="{origin[1]}" r="{20 + share * 1280:.0f}" '
+                             f'fill="none" stroke="{highlight}" stroke-width="14" '
+                             f'opacity="{0.45 * (1 - share):.2f}" stroke-dasharray="none"/>')
+            frame_svg = re.sub(r'(<rect x="0" y="0" width="1080" height="1350"[^>]*/>)',
+                               lambda m: m.group(1) + "".join(rings), frame_svg, count=1)
 
         # Dynamic placeholder substitutions for animated radar/pulse rings
         if "{flow_offset}" in frame_svg:
@@ -476,7 +618,7 @@ def gif_frame_svgs(svg: str, n_frames: int = 12) -> list[str]:
     return frame_svgs
 
 
-def render_svg_to_gif(svg: str, path: Path, n_frames: int = 12, fps: int = 12) -> Path:
+def render_svg_to_gif(svg: str, path: Path, n_frames: int | None = None, fps: int = 12) -> Path:
     """Render a technical SVG infographic into a smooth, seamlessly looping animated GIF."""
     import io
     from PIL import Image
@@ -485,6 +627,7 @@ def render_svg_to_gif(svg: str, path: Path, n_frames: int = 12, fps: int = 12) -
     if issues:
         raise ValueError("; ".join(issues))
     frames = []
+    n_frames = _frames_for(svg, n_frames)
     for frame_svg in gif_frame_svgs(svg, n_frames):
         png_bytes = cairosvg.svg2png(bytestring=frame_svg.encode("utf-8"), output_width=W, output_height=H)
         img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
@@ -495,7 +638,9 @@ def render_svg_to_gif(svg: str, path: Path, n_frames: int = 12, fps: int = 12) -
         path,
         save_all=True,
         append_images=frames[1:],
-        duration=int(1000 / fps),
+        # The reveal motions hold the finished poster before they start again.
+        duration=[int(1000 / fps)] * (len(frames) - 1)
+        + [int(1000 / fps) + (_HOLD_MS if _motion_of(svg) in REVEAL else 0)],
         loop=0,
         optimize=True,
     )

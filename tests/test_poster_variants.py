@@ -115,14 +115,17 @@ RICH = _plan("before_after", 4, NO_CODE, cards=CARDS[:5], table=TABLE, pros=PROS
 
 def _run_posts(n, seed):
     rng = random.Random(seed)
-    hist = {k: [] for k in ("styles", "themes", "motions", "details", "finishes")}
+    hist = {k: [] for k in ("styles", "themes", "motions", "details", "finishes", "headers",
+                            "corners")}
     for _ in range(n):
         svg = poster_from_brief(_brief(RICH), "Heading", "Footer", rng=rng,
                                 recent_styles=hist["styles"], recent_themes=hist["themes"],
                                 recent_motions=hist["motions"], recent_details=hist["details"],
-                                recent_finishes=hist["finishes"])
+                                recent_finishes=hist["finishes"], recent_headers=hist["headers"],
+                                recent_corners=hist["corners"])
         for key, attr in (("styles", "style"), ("themes", "theme"), ("motions", "motion"),
-                          ("details", "details"), ("finishes", "finish")):
+                          ("details", "details"), ("finishes", "finish"), ("headers", "header"),
+                          ("corners", "corners")):
             hist[key] = (hist[key] + [_attr(svg, attr)])[-10:]
     return hist
 
@@ -144,12 +147,14 @@ def test_themes_never_repeat_within_ten_posts_and_change_colour_family(seed):
         assert theme_family(a) != theme_family(b)
 
 
-def test_motion_details_and_finish_take_turns():
+def test_motion_details_finish_header_and_corners_take_turns():
     hist = _run_posts(6, 4)
-    for key in ("motions", "details", "finishes"):
+    for key in ("motions", "details", "finishes", "headers", "corners"):
         values = hist[key]
         assert all(a != b for a, b in zip(values, values[1:])), key
-    assert len(set(hist["finishes"][:3])) == 3 and len(set(hist["motions"][:4])) == 4
+    assert len(set(hist["finishes"][:3])) == 3 and len(set(hist["headers"][:3])) == 3
+    motions = hist["motions"]
+    assert all(len(set(motions[i:i + 3])) == 3 for i in range(len(motions) - 2))
 
 
 def test_newer_layouts_come_first_when_they_fit():
