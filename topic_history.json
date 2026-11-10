@@ -249,5 +249,38 @@
     "status": "drafted",
     "source": "v0.dev/docs",
     "recorded_at": "2026-11-07"
+  },
+  {
+    "topic": "useEffectEvent: separating events from Effects without re-synchronizing",
+    "source_urls": [
+      "https://react.dev/reference/react/useEffectEvent"
+    ],
+    "technical_takeaway": "Wrap non-reactive callback logic in useEffectEvent. The returned function always reads the latest committed props and state when it is called. It is left out of the dependency array, so a change to something like `theme` doesn't tear down and rebuild the connection. Three rules apply. First, call it only at the top level of a component or custom Hook. Second, call it only from inside Effects or other Effect Events, never during render, and never pass it to other components or Hooks. Third, don't use it to silence dependency warnings for values that should be reactive. Its identity is intentionally unstable and changes on every render, so don't put it in a dependency array. The eslint-plugin-react-hooks linter enforces these rules.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-10"
+  },
+  {
+    "topic": "CSS Container Queries: container-type and size containment",
+    "source_urls": [
+      "https://web.dev/learn/css/container-queries"
+    ],
+    "technical_takeaway": "Set container-type: inline-size on an ancestor, then style children with @container (inline-size > 30em) { ... }. You can also use range syntax such as (10em <= width <= 500px), and name containers with container-name to target a non-nearest ancestor. container-type: size applies size containment on both axes, so the container no longer sizes itself from its children and collapses unless you give it explicit dimensions (inline-size, block-size or aspect-ratio). Use inline-size for most components to avoid that collapse.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-10"
+  },
+  {
+    "topic": "Saga pattern with compensating transactions in Google Cloud Workflows",
+    "source_urls": [
+      "https://cloud.google.com/blog/topics/developers-practitioners/implementing-saga-pattern-workflows"
+    ],
+    "technical_takeaway": "When each microservice has its own database, model a multi-service transaction as a sequence of local transactions. If a step fails with an unrecoverable error, route it to a compensation step. For example, reserve_credit failing sends the flow to reject_pending_order, which calls the OrderService to undo the pending order. Retry transient errors first, and only compensate on non-retryable failures. For multi-step flows, put the rollback logic in subworkflows so that several except clauses can reuse it.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "cloud.google.com/blog",
+    "recorded_at": "2026-11-10"
   }
 ]
