@@ -36,7 +36,7 @@ infographic:
   muted: "#4B5563"
   accent: "#0A66C2"
   animated_gif: true       # Convert SVG into an animated GIF with streaming motion
-  footer: "Guha | Full Stack & GenAI"
+  footer: "Guhaprasaanth | Full Stack & GenAI"
 
 linkedin:
   api_version: "202610"   # YYYYMM; LinkedIn supports roughly the last 12 months
