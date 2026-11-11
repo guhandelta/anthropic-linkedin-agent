@@ -282,5 +282,49 @@
     "status": "suggested",
     "source": "cloud.google.com/blog",
     "recorded_at": "2026-11-10"
+  },
+  {
+    "topic": "Prevent infinite render loops with stable useSyncExternalStore snapshots",
+    "source_urls": [
+      "https://react.dev/reference/react/useSyncExternalStore"
+    ],
+    "technical_takeaway": "Keep snapshot identity stable until the store changes. Return immutable store data directly, or cache an immutable snapshot of mutable data and reuse it while that data remains unchanged. React compares successive snapshots using Object.is. ([react.dev](https://react.dev/reference/react/useSyncExternalStore))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-11"
+  },
+  {
+    "topic": "Prevent duplicate font downloads by matching preload CORS settings",
+    "source_urls": [
+      "https://web.dev/learn/performance/resource-hints"
+    ],
+    "technical_takeaway": "For a critical font discovered late, use <link rel=\"preload\" href=\"/font.woff2\" as=\"font\" crossorigin>. Font preloads require CORS mode even for same-origin URLs. Limit preloading to critical, late-discovered resources rather than preloading every font.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-11"
+  },
+  {
+    "topic": "Skip redundant cross-tab work with Web Locks and ifAvailable",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/LockManager/request"
+    ],
+    "technical_takeaway": "Use navigator.locks.request('background-sync', { ifAvailable: true }, async (lock) => { if (!lock) return; await syncData(); }). The default exclusive lock prevents participating tabs or workers from holding the same named lock simultaneously. Await the work inside the callback so the lock remains held until it finishes.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-11"
+  },
+  {
+    "topic": "Skip redundant cross-tab work with Web Locks and ifAvailable",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/LockManager/request"
+    ],
+    "technical_takeaway": "Wrap periodic sync in navigator.locks.request('background-sync', { ifAvailable: true }, async (lock) => { if (!lock) return; await syncData(); }). The default exclusive lock keeps tabs and workers from running it at once, and awaiting inside the callback keeps the lock held until the work finishes. Tradeoff: a tab that gets null skips the run and does not retry, and this is not leader election.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-11"
   }
 ]

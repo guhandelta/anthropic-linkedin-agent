@@ -254,5 +254,20 @@
     "post_urn": "direct",
     "chars": 2973,
     "sources": []
+  },
+  {
+    "date": "2026-11-11T00:30:15",
+    "draft_id": "20261111-e03483d1",
+    "source_domain": "developer.mozilla.org/en-US/docs/Web/API",
+    "headline": "Skip redundant cross-tab work with Web Locks and ifAvailable",
+    "post_urn": "urn:li:share:7526078798589497344",
+    "chars": 2877,
+    "sources": [
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/LockManager/request",
+        "publication_date": "2025-11-03",
+        "claim": "If true , the lock request will only be granted if it is not already held. If it cannot be granted, the callback will be invoked with null instead of a Lock instance.; Usually the callback is an async function, which causes the lock to be released only when the async function has completely finished.; Thrown if name starts with a hyphen ( - ), both options steal and ifAvailable are true , or if option signal exists and either option steal or ifAvailable is true ."
+      }
+    ]
   }
 ]
