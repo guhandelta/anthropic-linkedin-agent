@@ -184,6 +184,17 @@ def test_inbox_ignores_strangers_and_old_messages():
     assert _plan(_msg(1, "/topic X", age=telegram_inbox.MAX_AGE_S + 5))["run"] is None
 
 
+def test_inbox_tells_the_owner_about_messages_it_waited_too_long_for():
+    old = telegram_inbox.MAX_AGE_S + 3 * 3600
+    plan = _plan(_msg(1, "📝 Direct Post", age=old), _msg(2, "/status"))
+    assert plan["run"] is None
+    assert "GitHub only ran my inbox check now" in plan["replies"][0]
+    assert "'📝 Direct Post'" in plan["replies"][0] and "6 hours ago" in plan["replies"][0]
+    assert "Posts" in plan["replies"][1] or "No posts" in plan["replies"][1]
+    assert _plan(_msg(1, "/topic X", sender="99", age=old))["replies"] == []
+    assert _plan(_msg(1, "/help"))["replies"][0].startswith("🤖")
+
+
 def test_inbox_starts_only_the_latest_request():
     plan = _plan(_msg(1, "/topic First"), _msg(2, "/topic Second"))
     assert plan["run"] == {"mode": "topic", "topic": "Second"}
