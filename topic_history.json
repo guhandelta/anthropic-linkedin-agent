@@ -326,5 +326,38 @@
     "status": "drafted",
     "source": "developer.mozilla.org/en-US/docs/Web/API",
     "recorded_at": "2026-11-11"
+  },
+  {
+    "topic": "CSS logical properties: flow-relative margin, sizing and text-align",
+    "source_urls": [
+      "https://web.dev/learn/css/logical-properties"
+    ],
+    "technical_takeaway": "Use margin-block-start in place of margin-top. Use min-inline-size and max-inline-size in place of min-width and max-width. Use text-align: start or end instead of left or right. Use the inset-block and inset-inline shorthands for positioning. These properties follow the document's writing-mode and direction, so you don't need RTL overrides. The viewport units vi and vb are also flow-relative: 1% of the viewport size in the inline or block direction.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-11"
+  },
+  {
+    "topic": "useDeferredValue: pass only stable values, not objects created during render",
+    "source_urls": [
+      "https://react.dev/reference/react/useDeferredValue"
+    ],
+    "technical_takeaway": "Pass primitives such as strings and numbers, or objects created outside rendering, to useDeferredValue. React compares values with Object.is. A new reference on every render triggers a needless background re-render each time. A correct use is `const deferredQuery = useDeferredValue(query)`, where query is a string from state. Don't use `useDeferredValue({filter: query})`. Two related behaviors: the background render is interruptible and restarts when the value changes again, and inside a Transition the hook returns the new value immediately. The optional `initialValue` argument makes the first render use that value, and a deferred render then follows.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-11"
+  },
+  {
+    "topic": "A2UI catalogs: letting agents generate native UI without executing code",
+    "source_urls": [
+      "https://daily.dev/posts/let-agents-generate-ui-in-your-android-apps-with-a2ui-qnhndburi"
+    ],
+    "technical_takeaway": "Don't let an agent return executable code or markup. Define a catalog of approved components and functions, then have a message processor parse the streamed JSON and validate each message against the catalog schema. Render only validated surfaces, and show placeholders for components that are still streaming. If a component fails validation, mark just that component as an error and keep the rest of the UI. You can also send the error back to the agent so it corrects itself. The agent can only reference pre-approved components, so it cannot run arbitrary code in the app.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "daily.dev/tags/generative-ui",
+    "recorded_at": "2026-11-11"
   }
 ]
