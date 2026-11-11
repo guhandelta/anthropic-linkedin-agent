@@ -269,5 +269,14 @@
         "claim": "If true , the lock request will only be granted if it is not already held. If it cannot be granted, the callback will be invoked with null instead of a Lock instance.; Usually the callback is an async function, which causes the lock to be released only when the async function has completely finished.; Thrown if name starts with a hyphen ( - ), both options steal and ifAvailable are true , or if option signal exists and either option steal or ifAvailable is true ."
       }
     ]
+  },
+  {
+    "date": "2026-11-11T15:27:50",
+    "draft_id": "20261111-direct-cd174a",
+    "source_domain": "Direct Post",
+    "headline": "Three.js: Bridging Browser 3D",
+    "post_urn": "direct",
+    "chars": 2981,
+    "sources": []
   }
 ]
