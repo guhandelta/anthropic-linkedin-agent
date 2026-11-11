@@ -100,12 +100,16 @@ jobs:
       - name: Install Python Dependencies
         run: pip install -r requirements.txt
 
-      # Step 5: Install Playwright and Chromium browser binary for LinkedIn group posting
+      # Step 5: Install Playwright and Chromium browser binary for LinkedIn group posting.
+      # Only groups-check needs it: runs here post to the feed only (POST_TO_GROUPS is "false"),
+      # and this ~200 MB apt download is the step most likely to fail on a runner network blip.
       - name: Install Playwright & Chromium
+        if: inputs.run_mode == 'groups-check'
         run: playwright install --with-deps chromium
 
       # Step 6: Execute the autonomous agent pipeline
       - name: Run LinkedIn Agent
+        id: agent
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -155,6 +159,20 @@ jobs:
               exit 2
               ;;
           esac
+
+      # If setup broke before the agent started, nothing would reach Telegram and the run you
+      # asked for would just never answer. Say so, with a link to the log.
+      - name: Tell Telegram the run could not start
+        if: failure() && steps.agent.outcome == 'skipped' && (github.event_name == 'schedule' || inputs.run_mode == 'publish' || inputs.run_mode == 'direct')
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=⚠️ The run failed while GitHub was setting it up, before any writing started. Nothing was posted. Send your request again in a few minutes. Log: ${RUN_URL}" \
+            > /dev/null || true
 
       # Step 7: Upload generated SVGs, GIFs, and review logs as build artifacts
       - name: Upload Output Artifacts
