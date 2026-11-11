@@ -35,8 +35,8 @@ ROOT = Path(__file__).parent
 
 HELP_TEXT = (
     "🤖 LinkedIn Agent (running on GitHub Actions)\n\n"
-    "I check this chat every 15 minutes, so replies can take up to about 30 minutes. "
-    "Once a run starts, I answer at once until it ends.\n\n"
+    "I check this chat every 15 minutes on paper, but GitHub often runs the check hours late, "
+    "so a reply can take a while. Once a run starts, I answer at once until it ends.\n\n"
     "• /topic <topic>: research and write a post on your topic\n"
     "• /suggest (or 💡 Suggest Topics, 🚀 Run Daily Post): I offer 3 fresh topics to pick from\n"
     "• /direct <post text>, or paste a post of 80+ characters: publish your own text\n"
@@ -104,6 +104,7 @@ def plan_linkedin(updates: list[dict], inbox: TelegramInbox, now: float | None =
     plan = {"replies": [], "callbacks": [], "run": None}
     requests_seen = 0
     awaiting = None  # a "Post from Topic" or "Direct Post" tap waits for the next text
+    stale = []       # the owner's messages too old to act on; they get one notice, not silence
 
     def start(run: dict) -> None:
         nonlocal requests_seen
@@ -125,6 +126,8 @@ def plan_linkedin(updates: list[dict], inbox: TelegramInbox, now: float | None =
                 plan["callbacks"].append((cq["id"], "That run has ended. Send /help to start a new one."))
             continue
         if now - _sent_at(up) > MAX_AGE_S:
+            if up.get("message"):
+                stale.append(up["message"])
             continue
         msg = up["message"]
         text = (msg.get("text") or msg.get("caption") or "").strip()
@@ -163,10 +166,34 @@ def plan_linkedin(updates: list[dict], inbox: TelegramInbox, now: float | None =
             start({"mode": "topic", "topic": text})
         awaiting = None
 
+    if stale:
+        plan["replies"].insert(0, stale_notice(stale, now))
     if requests_seen > 1:
         plan["replies"].append("ℹ️ You sent several requests. One run at a time, so I'm starting "
                                "only the latest one.")
     return plan
+
+
+def _ago(seconds: float) -> str:
+    hours = int(seconds // 3600)
+    if hours >= 1:
+        return f"{hours} hour{'s' if hours != 1 else ''}"
+    minutes = max(1, int(seconds // 60))
+    return f"{minutes} minute{'s' if minutes != 1 else ''}"
+
+
+def stale_notice(messages: list[dict], now: float) -> str:
+    """One reply for the owner's messages that waited too long, so a late check is never silent."""
+    oldest = min(int(m.get("date", now)) for m in messages)
+    texts = [(m.get("text") or m.get("caption") or "photo").strip() for m in messages]
+    shown = ", ".join(f"'{t[:40]}{'...' if len(t) > 40 else ''}'" for t in texts[:3])
+    if len(texts) > 3:
+        shown += f" and {len(texts) - 3} more"
+    count = "message" if len(texts) == 1 else f"{len(texts)} messages"
+    return (f"⏰ Sorry for the silence. GitHub only ran my inbox check now, so your {count} "
+            f"({shown}, sent {_ago(now - oldest)} ago) waited too long and I didn't act on "
+            f"{'it' if len(texts) == 1 else 'them'}. Nothing was started. "
+            "Tap or send it again if you still want it.")
 
 
 def status_text(log_path: Path | None = None) -> str:
