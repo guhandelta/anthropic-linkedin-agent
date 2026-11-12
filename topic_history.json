@@ -403,5 +403,49 @@
     "status": "drafted",
     "source": "web.dev/learn",
     "recorded_at": "2026-11-12"
+  },
+  {
+    "topic": "useEffectEvent: read fresh state without reconnecting external systems",
+    "source_urls": [
+      "https://react.dev/reference/react/useEffectEvent"
+    ],
+    "technical_takeaway": "Move notification logic that reads muted into useEffectEvent, and invoke it from the connection's connected callback inside useEffect. Keep roomId as an Effect dependency and omit the Effect Event. Do not use this pattern to hide values that should trigger resynchronization.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-12"
+  },
+  {
+    "topic": "Prevent ResizeObserver feedback loops with an expected-size guard",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/ResizeObserver"
+    ],
+    "technical_takeaway": "Track each element’s expected size in a WeakMap. In the ResizeObserver callback, skip writes when the reported size matches that expectation; otherwise, schedule the resize with requestAnimationFrame and record the new expected size. MDN demonstrates this guard to prevent unintended resize loops. ([developer.mozilla.org](https://developer.mozilla.org/en-US/docs/Web/API/ResizeObserver))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-12"
+  },
+  {
+    "topic": "Transfer image buffers to a reusable Web Worker instead of copying them",
+    "source_urls": [
+      "https://tympanus.net/codrops/2026/10/17/image-compression-previewer/"
+    ],
+    "technical_takeaway": "Initialize the encoder inside one reusable Worker. Send input and output ArrayBuffers through postMessage with transfer lists rather than copying them. Explicitly release each Vips.Image with image.delete() after processing. These are the tutorial’s core worker-isolation and memory-management patterns. ([tympanus.net](https://tympanus.net/codrops/2026/10/17/image-compression-previewer/?utm_source=openai))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "tympanus.net/codrops",
+    "recorded_at": "2026-11-12"
+  },
+  {
+    "topic": "Stop ResizeObserver feedback loops with an expected-size guard",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/ResizeObserver"
+    ],
+    "technical_takeaway": "Track expected sizes per element in a WeakMap. Inside the scheduled resize work, skip writes when the reported size equals the stored expectation; otherwise, write and record the new size. The guard only stops matching feedback: a different reported size still follows the resize path.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-12"
   }
 ]

@@ -293,5 +293,20 @@
         "claim": "Another drawback is that style sheets loaded using an @import declaration can't be discovered by the preload scanner, and therefore become late-discovered render-blocking resources.; <link> elements allow style sheets to be downloaded concurrently and reduces overall load time, as opposed to @import declarations, which downloads style sheets consecutively .; If you need to use @import —such as for cascade layers or third-party style sheets—you can mitigate the delay by using the preload directive for the imported style sheet."
       }
     ]
+  },
+  {
+    "date": "2026-11-12T21:54:55",
+    "draft_id": "20261112-4f03646f",
+    "source_domain": "developer.mozilla.org/en-US/docs/Web/API",
+    "headline": "Stop ResizeObserver feedback loops with an expected-size guard",
+    "post_urn": "urn:li:share:7526764483621396481",
+    "chars": 2944,
+    "sources": [
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/ResizeObserver",
+        "publication_date": null,
+        "claim": "Note that this only prevents user-agent lockup, not the infinite loop itself."
+      }
+    ]
   }
 ]
