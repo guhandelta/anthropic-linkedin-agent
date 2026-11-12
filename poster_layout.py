@@ -83,7 +83,7 @@ ACCENTS = ("@a1@", "@a2@", "@a3@", "@a4@", "@a5@")
 STYLES = ("guide", "timeline", "spotlight", "comparison", "dashboard", "code_focus", "incident",
           "stack", "sidebar", "matrix", "versus", "architecture", "progression", "hub",
           "profiles", "columns", "zigzag", "playbook", "scorecard", "swimlanes", "twin",
-          "flowchart", "pipeline", "snake", "proscons", "masonry")
+          "flowchart", "pipeline", "snake", "proscons", "masonry", "diagram")
 
 
 def _clean(value: object) -> str:
@@ -1196,6 +1196,95 @@ def _layout_versus(parts: list[str], plan: dict, headline: str, accent: list[str
                 rows += 1
 
 
+def _graph(plan: dict) -> dict | None:
+    """A small acyclic diagram: 3-9 parts in 2-4 columns, each arrow joining neighbouring columns.
+
+    Arrows that skip a column, point backwards or sit in a loop are dropped, so every drawn arrow
+    stays in the gap between two columns. None when the parts or arrows do not make a diagram.
+    """
+    graph = plan.get("graph")
+    if not isinstance(graph, dict):
+        return None
+    nodes = [n for n in _items(graph.get("nodes"), 3, 9)
+             if _clean(n.get("id")) and _clean(n.get("label"))]
+    ids = [_clean(n.get("id"))[:24] for n in nodes]
+    if len(nodes) < 3 or len(set(ids)) != len(ids):
+        return None
+    known = set(ids)
+    edges = [(_clean(e.get("from"))[:24], _clean(e.get("to"))[:24])
+             for e in _items(graph.get("edges"), 2, 16)]
+    edges = [(a, b) for a, b in edges if a in known and b in known and a != b]
+    depth = {i: 0 for i in ids}
+    for _ in range(len(ids)):
+        changed = False
+        for a, b in edges:
+            if depth[a] + 1 > depth[b]:
+                depth[b], changed = depth[a] + 1, True
+        if not changed:
+            break
+    else:
+        return None  # still changing after every node was visited once: a loop
+    edges = [(a, b) for a, b in edges if depth[b] == depth[a] + 1]
+    levels = max(depth.values()) + 1
+    per_level = [sum(1 for i in ids if depth[i] == lv) for lv in range(levels)]
+    if len(edges) < 2 or not 2 <= levels <= 4 or not 2 <= max(per_level) <= 3:
+        return None
+    placed = [{**n, "id": i, "depth": depth[i]} for n, i in zip(nodes, ids)]
+    placed.sort(key=lambda n: n["depth"])  # numbered column by column, left to right
+    return {"nodes": placed, "edges": edges, "levels": levels}
+
+
+def _diagram_node(parts: list[str], node: dict, x: int, y: int, w: int, h: int, number: int,
+                  colour: str) -> None:
+    """A part of a diagram: icon, number, bold label and detail, centred vertically in its box."""
+    label = _wrap(node.get("label"), w - 40, 25, 2) or ["Part"]
+    detail = _wrap(node.get("detail"), w - 40, 22, 2)
+    block = 67 + 29 * len(label) + (14 + 29 * len(detail) if detail else 0)
+    top = y + max(18, (h - block) // 2)
+    parts.append(_rect(x, y, w, h, "@node@", stroke="@card_stroke@", radius=15)
+                 .replace("<rect ", f'<rect data-motion-step="{number}" ', 1))
+    parts.append(_rect(x, y, 6, h, colour, radius=3))
+    parts.append(_icon(node.get("icon"), x + 20, top, colour, 1.6))
+    parts.append(_text(x + 68, top + 21, str(number), size=22, fill=colour, weight="bold"))
+    for j, line in enumerate(label):
+        parts.append(_text(x + 20, top + 67 + j * 29, line, size=25, fill="@ink@", weight="bold"))
+    for j, line in enumerate(detail):
+        parts.append(_text(x + 20, top + 67 + len(label) * 29 + 14 + j * 29, line, size=22,
+                           fill="@muted@"))
+
+
+def _layout_diagram(parts: list[str], plan: dict, headline: str, accent: list[str]) -> None:
+    """A system diagram: parts in columns left to right, joined by elbow arrows (see _graph)."""
+    graph = _graph(plan)
+    _band_header(parts, plan, headline, "SYSTEM MAP", "network")
+    levels = graph["levels"]
+    gap_x, gap_y, top, bottom = 60, 40, 270, 1000  # the caption sits under the parts
+    width = (1000 - gap_x * (levels - 1)) // levels
+    tallest = max(sum(1 for n in graph["nodes"] if n["depth"] == lv) for lv in range(levels))
+    # The busiest column fills the band from top to bottom; the others are centred against it.
+    height = min(330, (bottom - top - gap_y * (tallest - 1)) // tallest)
+    pos = {}
+    for level in range(levels):
+        column = [n for n in graph["nodes"] if n["depth"] == level]
+        total = len(column) * height + (len(column) - 1) * gap_y
+        y0 = top + (bottom - top - total) // 2
+        x = 40 + level * (width + gap_x)
+        for j, node in enumerate(column):
+            pos[node["id"]] = (x, y0 + j * (height + gap_y))
+    for a, b in graph["edges"]:
+        (ax, ay), (bx, by) = pos[a], pos[b]
+        x1, y1 = ax + width, ay + height // 2
+        x2, y2 = bx, by + height // 2
+        mid = (x1 + x2) // 2  # the middle of the gap between the two columns
+        parts.append(f'<polyline points="{x1},{y1} {mid},{y1} {mid},{y2} {x2},{y2}" fill="none" '
+                     f'stroke="@primary@" stroke-width="3" stroke-dasharray="10 10" '
+                     f'marker-end="url(#arrow)"/>')
+    for number, node in enumerate(graph["nodes"], 1):
+        x, y = pos[node["id"]]
+        _diagram_node(parts, node, x, y, width, height, number, accent[node["depth"] % len(accent)])
+    _centred(parts, 540, 1050, plan["hero"].get("caption"), 980, 1, size=24, fill="@muted@", step=28)
+
+
 def _layout_architecture(parts: list[str], plan: dict, headline: str, accent: list[str]) -> None:
     """Numbered layer bands from top to bottom, each holding its components, joined by arrows."""
     layers = _layers(plan)
@@ -1843,6 +1932,7 @@ _LAYOUTS = {"guide": _layout_guide, "timeline": _layout_timeline,
             "incident": _layout_incident, "stack": _layout_stack, "sidebar": _layout_sidebar,
             "matrix": _layout_matrix, "versus": _layout_versus,
             "architecture": _layout_architecture, "progression": _layout_progression,
+            "diagram": _layout_diagram,
             "hub": _layout_hub, "profiles": _layout_profiles, "columns": _layout_columns,
             "zigzag": _layout_zigzag, "playbook": _layout_playbook,
             "scorecard": _layout_scorecard, "swimlanes": _layout_swimlanes, "twin": _layout_twin,
@@ -1876,6 +1966,7 @@ LAYOUT_HINTS = {
     "snake": "6-9 ordered steps of a build or roadmap (needs cards)",
     "proscons": "a new technology with clear pros and cons (needs pros and cons)",
     "masonry": "4-6 practical tips, each with a goal and a best practice (needs cards with fix)",
+    "diagram": "a system whose parts connect: 2-4 columns of 1-3 parts with arrows (needs graph)",
 }
 POST_TYPES = ("release", "bug_fix", "how_to", "concept", "comparison", "benchmark", "architecture")
 
@@ -1916,6 +2007,7 @@ def _eligible(plan: dict, headline: str = "") -> list[str]:
         "snake": bool(_card_list(plan, 6, 9)),
         "proscons": bool(_pros_cons(plan)[0]),
         "masonry": all(_clean(c.get("fix")) for c in _card_list(plan, 4, 6) or [{}]),
+        "diagram": _graph(plan) is not None,
     }
     return [s for s in STYLES if ok[s]]
 
@@ -1930,6 +2022,8 @@ def _style_candidates(plan: dict, headline: str = "") -> list[str]:
     order = [_clean(plan.get("layout")).lower(), "scorecard", "flowchart", "proscons", "profiles",
              "columns", "matrix", "zigzag", "playbook", "snake", "masonry", "versus", "twin",
              "architecture", "swimlanes", "progression", "pipeline"]
+    if _graph(plan) is not None:
+        order.insert(0, "diagram")  # a drawn system beats the text layouts when the planner gave one
     if form == "before_after":
         order.append("comparison")
     if post_type in ("bug_fix", "breaking_change", "incident"):

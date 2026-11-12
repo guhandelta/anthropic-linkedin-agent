@@ -15,7 +15,7 @@ SHORT = [{**c, "text": c["fix"]} for c in CARDS]
 
 
 def test_the_new_layouts_are_registered():
-    assert set(NEW) <= set(STYLES) and len(STYLES) == 26
+    assert set(NEW) <= set(STYLES) and len(STYLES) == 27
     assert set(NEW) <= set(P._LAYOUTS) and set(NEW) <= set(P.LAYOUT_HINTS)
 
 
