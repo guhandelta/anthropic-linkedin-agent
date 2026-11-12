@@ -119,6 +119,13 @@ PROS = ["Real HTML inside canvas apps", "Better accessibility", "Less custom UI 
 CONS = ["Still experimental", "Limited browser support", "Can hurt performance if overused"]
 
 # A content shape that suits each layout, so every layout is checked with every palette.
+DIAGRAM = {"nodes": [{"id": n, "label": label, "detail": "A short detail", "icon": icon}
+                     for n, label, icon in [("hook", "Webhook", "globe"), ("agent", "AI agent", "cpu"),
+                                            ("memory", "Memory", "database"), ("model", "LLM", "sparkle"),
+                                            ("tools", "Tools", "gear"), ("gate", "Approval", "shield")]],
+           "edges": [{"from": a, "to": b} for a, b in [("hook", "agent"), ("agent", "memory"),
+                                                       ("agent", "model"), ("agent", "tools"),
+                                                       ("model", "gate"), ("tools", "gate")]]}
 SHAPES = {
     "guide": _plan("flow", 3),
     "timeline": _plan("flow", 4, (CODE, CHECKS, STEPS, STATS)),
@@ -147,6 +154,7 @@ SHAPES = {
                    title="How to build an AI agent"),
     "proscons": _plan("flow", 4, pros=PROS, cons=CONS, title="HTML in canvas"),
     "masonry": _plan("flow", 3, cards=CARDS[:5], title="Your first content agent"),
+    "diagram": _plan("flow", 3, graph=DIAGRAM, title="How an agent handles one message"),
 }
 
 
@@ -202,7 +210,7 @@ def test_layouts_are_structurally_different():
     # Same theme, tags only (no coordinates or words): each layout is a different drawing.
     shapes = {style: tuple(re.findall(r"<(\w+)", _svg(SHAPES[style], style=style, theme="ocean")))
               for style in STYLES}
-    assert len(set(shapes.values())) == len(STYLES) == 26
+    assert len(set(shapes.values())) == len(STYLES) == 27
 
 
 def test_timeline_fills_spare_room_with_the_tagline_and_drops_a_long_caption():
