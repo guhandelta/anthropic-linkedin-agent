@@ -431,7 +431,23 @@ Run completely free on GitHub's infrastructure without maintaining a dedicated s
 
 #### Starting a run from Telegram (Inbox check)
 
-[`.github/workflows/inbox-check.yml`](.github/workflows/inbox-check.yml) runs [`telegram_inbox.py`](telegram_inbox.py) every 15 minutes. It reads what you sent the bot since the last check:
+[`.github/workflows/inbox-check.yml`](.github/workflows/inbox-check.yml) runs [`telegram_inbox.py`](telegram_inbox.py) each time it is triggered. It reads what you sent the bot since the last check.
+
+**How it is triggered (cron-job.org):** GitHub's own `schedule` trigger runs late and sometimes skips runs, so the inbox check is started by an external timer instead. [cron-job.org](https://cron-job.org) calls GitHub's `workflow_dispatch` API every 5 minutes. Setup:
+
+1. Create a fine-grained GitHub token at [github.com/settings/personal-access-tokens](https://github.com/settings/personal-access-tokens/new). Limit it to this repository, and set **Actions** to *Read and write*. Store it only in cron-job.org. Never commit it.
+2. In cron-job.org, create a cronjob with:
+   - URL: `https://api.github.com/repos/<owner>/<repo>/actions/workflows/inbox-check.yml/dispatches`
+   - Schedule: every 5 minutes
+   - Method: `POST`, body `{"ref":"main"}`
+   - Headers: `Authorization: Bearer <token>`, `Accept: application/vnd.github+json`, `Content-Type: application/json`
+3. Use *Test run*. A `204` response means GitHub accepted the start.
+
+The GitHub `schedule:` trigger stays in `inbox-check.yml` as a backup. Both can start the check, and the job skips quietly if nothing is waiting.
+
+**Which time controls the daily post:** the scheduled run time is not in `config.yaml`. It is the `cron:` line in [`.github/workflows/daily-post.yml`](.github/workflows/daily-post.yml), currently `0 10 * * *` with `timezone: America/New_York` (10:00 AM New York time, following daylight saving). Change it there. The Telegram inbox check does not decide when the daily post runs.
+
+What you send the bot:
 
 | You send | What happens |
 | --- | --- |
@@ -440,7 +456,7 @@ Run completely free on GitHub's infrastructure without maintaining a dedicated s
 | `/direct <text>`, 📝 Direct Post, or a pasted post (80+ characters) | Starts a run that publishes your text (infographic or text only) |
 | `/status`, `/help` | Answered directly |
 
-Replies come within about 15 to 30 minutes, because GitHub's 15-minute schedule is not exact. Once a run starts, it answers immediately. The inbox check does nothing while a posting run is active, because that run is reading your taps. **If you run the Mac bot (`agent.py --listen`) again, disable the inbox check first.** Both read the same Telegram messages.
+Replies usually come within about 5 minutes with the cron-job.org timer. Without it, GitHub's own schedule can be hours late. Once a run starts, it answers immediately. The inbox check does nothing while a posting run is active, because that run is reading your taps. **If you run the Mac bot (`agent.py --listen`) again, disable the inbox check first.** Both read the same Telegram messages.
 
 `TelegramInbox` in `telegram_inbox.py` has no LinkedIn code in it, so another Telegram project can reuse it with its own `plan_*` function.
 
