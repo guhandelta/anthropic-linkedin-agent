@@ -359,5 +359,49 @@
     "status": "suggested",
     "source": "daily.dev/tags/generative-ui",
     "recorded_at": "2026-11-11"
+  },
+  {
+    "topic": "React portal clicks still bubble through the React tree",
+    "source_urls": [
+      "https://react.dev/reference/react-dom/createPortal"
+    ],
+    "technical_takeaway": "Moving modal content into document.body with createPortal changes its DOM placement, not its React ancestry. If clicks trigger an unwanted ancestor handler, stop propagation inside the portal or move the portal higher in the React tree.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-12"
+  },
+  {
+    "topic": "Combine user cancellation and request timeouts with AbortSignal.any()",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal/any_static"
+    ],
+    "technical_takeaway": "Pass AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]) as fetch's signal. The combined signal aborts when either input aborts and preserves the first abort reason. Already-aborted inputs produce an already-aborted combined signal. Cancellation does not propagate back to the other input signals or cancel their timeouts. ([developer.mozilla.org](https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal/any_static))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-12"
+  },
+  {
+    "topic": "Replace runtime CSS @import chains with HTML stylesheet links",
+    "source_urls": [
+      "https://web.dev/learn/performance/optimize-resource-loading"
+    ],
+    "technical_takeaway": "Replace browser-resolved @import declarations with <link rel=\"stylesheet\" href=\"...\"> elements where possible. The browser can discover these stylesheets earlier and download them concurrently instead of waiting for a parent stylesheet to download before discovering its imports. If an import is unavoidable, preload the imported stylesheet to mitigate discovery delays.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-12"
+  },
+  {
+    "topic": "Replace runtime CSS @import chains with HTML stylesheet links",
+    "source_urls": [
+      "https://web.dev/learn/performance/optimize-resource-loading"
+    ],
+    "technical_takeaway": "Replace browser-resolved @import declarations with <link rel=\"stylesheet\" href=\"...\"> elements where possible so the browser discovers the stylesheets from the initial HTML and downloads them concurrently instead of consecutively. If an @import is unavoidable (for example for cascade layers or third-party style sheets), use the preload directive for the imported style sheet to mitigate the discovery delay. Limitation: links fix the chain but CSS stays render-blocking, so still remove unused CSS.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-12"
   }
 ]

@@ -278,5 +278,20 @@
     "post_urn": "direct",
     "chars": 2981,
     "sources": []
+  },
+  {
+    "date": "2026-11-12T02:59:11",
+    "draft_id": "20261112-ef31755e",
+    "source_domain": "web.dev/learn",
+    "headline": "Replace runtime CSS @import chains with HTML stylesheet links",
+    "post_urn": "urn:li:share:7526478661772984320",
+    "chars": 2881,
+    "sources": [
+      {
+        "url": "https://web.dev/learn/performance/optimize-resource-loading",
+        "publication_date": null,
+        "claim": "Another drawback is that style sheets loaded using an @import declaration can't be discovered by the preload scanner, and therefore become late-discovered render-blocking resources.; <link> elements allow style sheets to be downloaded concurrently and reduces overall load time, as opposed to @import declarations, which downloads style sheets consecutively .; If you need to use @import —such as for cascade layers or third-party style sheets—you can mitigate the delay by using the preload directive for the imported style sheet."
+      }
+    ]
   }
 ]
