@@ -494,5 +494,38 @@
     "status": "drafted",
     "source": "seaborn.pydata.org/whatsnew/index.html",
     "recorded_at": "2026-11-13"
+  },
+  {
+    "topic": "useDeferredValue needs a memoized slow child to keep typing responsive",
+    "source_urls": [
+      "https://react.dev/reference/react/useDeferredValue"
+    ],
+    "technical_takeaway": "Keep the input bound to immediate state, create deferredText = useDeferredValue(text), and pass deferredText to a SlowList wrapped in memo. During the urgent parent render, the deferred prop remains unchanged, allowing SlowList to skip rendering. React then attempts the expensive update in an interruptible background render. This prioritizes typing rather than making the list render faster, and it does not reduce network requests.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-13"
+  },
+  {
+    "topic": "Disambiguate shipping and billing autofill with autocomplete tokens",
+    "source_urls": [
+      "https://web.dev/learn/forms/autofill"
+    ],
+    "technical_takeaway": "Use autocomplete=\"shipping postal-code\" for the shipping ZIP/postal-code input and autocomplete=\"billing postal-code\" for its billing counterpart. The space-separated tokens identify both the address context and the field's purpose.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-13"
+  },
+  {
+    "topic": "Authorize every tool call in an MCP batch, not just the request",
+    "source_urls": [
+      "https://enpitech.dev/blog/enpilink-2-1-0"
+    ],
+    "technical_takeaway": "Check authorization separately for every tool invocation within a batched request, and fail closed on unexpected authorization errors. Enpilink lists both protections among its 2.1.0 security fixes. ([enpitech.dev](https://enpitech.dev/blog/enpilink-2-1-0))",
+    "kind": "bug_fix",
+    "status": "suggested",
+    "source": "enpitech.dev/blog",
+    "recorded_at": "2026-11-13"
   }
 ]
