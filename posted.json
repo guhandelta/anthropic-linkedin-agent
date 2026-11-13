@@ -308,5 +308,35 @@
         "claim": "Note that this only prevents user-agent lockup, not the infinite loop itself."
       }
     ]
+  },
+  {
+    "date": "2026-11-13T10:48:18",
+    "draft_id": "20261113-1ee022b0",
+    "source_domain": "seaborn.pydata.org/whatsnew/index.html",
+    "headline": "The <picture> Preload Trap: One Hero, Two Downloads",
+    "post_urn": "urn:li:share:7526959114178998272",
+    "chars": 2955,
+    "sources": [
+      {
+        "url": "https://web.dev/articles/preload-responsive-images",
+        "publication_date": "2019-09-30",
+        "claim": "The <picture> element selects the first matching source, whereas independent responsive preloads have no first-match ordering. The article recommends avoiding explicit preload when the image is quickly discoverable in HTML."
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/rel/preload",
+        "publication_date": null,
+        "claim": "Media attributes can make image preloads conditional on mutually exclusive viewport ranges. Preloading both AVIF and WebP can download both in browsers supporting both formats, even though only one is used."
+      },
+      {
+        "url": "https://web.dev/learn/design/responsive-images",
+        "publication_date": null,
+        "claim": "Important hero images should not be lazy-loaded. Fetch priority should be used sparingly because prioritizing one resource deprioritizes others; preloading is useful for images otherwise discovered through JavaScript or CSS."
+      },
+      {
+        "url": "https://web.dev/articles/optimize-lcp",
+        "publication_date": "2020-04-30",
+        "claim": "LCP optimization requires examining discovery, resource priority, loading duration and element render delay. Improving one part alone does not guarantee a meaningful improvement to LCP."
+      }
+    ]
   }
 ]

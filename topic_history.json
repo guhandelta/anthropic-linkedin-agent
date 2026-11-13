@@ -447,5 +447,52 @@
     "status": "drafted",
     "source": "developer.mozilla.org/en-US/docs/Web/API",
     "recorded_at": "2026-11-12"
+  },
+  {
+    "topic": "useSyncExternalStore: getSnapshot must return a cached, immutable snapshot",
+    "source_urls": [
+      "https://react.dev/reference/react/useSyncExternalStore"
+    ],
+    "technical_takeaway": "If the store data is immutable, return it directly from getSnapshot. If the store is mutable, keep a cached immutable snapshot. Create a new snapshot object only when the underlying data has actually changed, and return the same reference otherwise. Don't derive a fresh object, such as a filtered array or an object literal, inside getSnapshot. Do the derivation outside it, or memoize it against the store version. Pass getServerSnapshot as well when you render on the server. React uses it only during server rendering and hydration, and it must return the same value on the server and the client.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-13"
+  },
+  {
+    "topic": "Preload responsive LCP images with imagesrcset and imagesizes",
+    "source_urls": [
+      "https://web.dev/learn/design/responsive-images"
+    ],
+    "technical_takeaway": "For an LCP image that uses srcset, add <link rel=\"preload\" as=\"image\" imagesrcset=\"...\" imagesizes=\"...\"> and omit the href fallback. Browsers that don't support these attributes then skip the preload instead of downloading a mismatched image. Pair it with fetchpriority=\"high\" on the <img>. Use these hints sparingly, because overusing them overrides the browser's prioritization heuristics and can hurt performance.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-13"
+  },
+  {
+    "topic": "Bulma's .block: automatic 'spacing between siblings' via a shared Sass placeholder",
+    "source_urls": [
+      "https://versions.bulma.io/0.9.2/2021/01/23/the-block-probably-bulmas-most-important-feature/"
+    ],
+    "technical_takeaway": "Define the spacing once as a placeholder, for example %block { &:not(:last-child) { margin-bottom: 1.5rem } }. Then @extend %block in each component (box, notification, table, title, tabs and so on). Margin appears only between siblings, so you don't get trailing space at the end of a container. You also don't need wrapper divs or one-off margin classes, and changing the one variable re-spaces the whole UI. The same idea works in plain CSS with a shared selector list or a `* + *` stacking rule.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "bulma.io/blog",
+    "recorded_at": "2026-11-13"
+  },
+  {
+    "topic": "The <picture> Preload Trap: One Hero, Two Downloads",
+    "source_urls": [
+      "https://web.dev/articles/preload-responsive-images",
+      "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/rel/preload",
+      "https://web.dev/learn/design/responsive-images",
+      "https://web.dev/articles/optimize-lcp"
+    ],
+    "technical_takeaway": "Audit art-directed LCP image preloads for overlapping media conditions and redundant format downloads. Use mutually exclusive crop conditions only when discovery is measurably delayed; prefer an early HTML <picture> with fetchpriority=\"high\" otherwise. Preloading one preferred format leaves unsupported browsers without that early-fetch benefit.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "seaborn.pydata.org/whatsnew/index.html",
+    "recorded_at": "2026-11-13"
   }
 ]
