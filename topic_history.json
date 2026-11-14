@@ -527,5 +527,49 @@
     "status": "suggested",
     "source": "enpitech.dev/blog",
     "recorded_at": "2026-11-13"
+  },
+  {
+    "topic": "useEffectEvent: Effect Events have intentionally unstable identity, so never put them in dependency arrays",
+    "source_urls": [
+      "https://react.dev/reference/react/useEffectEvent"
+    ],
+    "technical_takeaway": "Wrap the non-reactive part of an Effect, such as showNotification(theme), in useEffectEvent. The Effect then re-synchronizes only when roomId changes, not when theme or muted changes. The Effect Event always sees the latest committed render values. Its identity changes on every render by design, so adding it to the dependency array is wrong and the linter warns about it. Call it only from inside Effects or other Effect Events. Don't call it during render, and don't pass it to child components or other Hooks. Don't use it to hide real dependencies, because that hides bugs.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-14"
+  },
+  {
+    "topic": "Container queries: container-type inline-size vs size, and the collapse gotcha",
+    "source_urls": [
+      "https://web.dev/learn/css/container-queries"
+    ],
+    "technical_takeaway": "Use container-type: inline-size for most components. It lets you query only the inline axis and prevents descendants from affecting inline-size. container-type: size contains both axes. In that case, give the container an explicit inline-size, block-size or aspect-ratio, or place it in an explicitly sized layout. Otherwise it collapses. Then write @container (inline-size > 30em) { ... } rules for child elements. The styles respond to the nearest container's size, not the viewport.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-14"
+  },
+  {
+    "topic": "Cloud Run's container contract: stateless, HTTP-driven containers with Knative portability",
+    "source_urls": [
+      "https://cloud.google.com/blog/products/serverless/announcing-cloud-run-the-newest-member-of-our-serverless-compute-stack"
+    ],
+    "technical_takeaway": "Package the workload as a stateless container that serves HTTP requests. Keep durable state in external services. Don't depend on platform-specific APIs. Because Cloud Run implements the open Knative API, the same image and service definition can move between managed Cloud Run and a Kubernetes cluster you run. The post also mentions an open-sourced Functions Framework for function-style code and second-generation runtimes. Check current Cloud Run docs before relying on those details, because this post is from the launch announcement.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "cloud.google.com/blog",
+    "recorded_at": "2026-11-14"
+  },
+  {
+    "topic": "Cloud Run portability: make HTTP the boundary",
+    "source_urls": [
+      "https://cloud.google.com/blog/products/serverless/announcing-cloud-run-the-newest-member-of-our-serverless-compute-stack"
+    ],
+    "technical_takeaway": "Package the application as a stateless HTTP-serving container, make durable-state dependencies explicit, and test the same image against the same HTTP checks in each intended environment. Treat the 2019 announcement as an architectural foundation, not evidence that every current service definition migrates unchanged.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "cloud.google.com/blog",
+    "recorded_at": "2026-11-14"
   }
 ]

@@ -338,5 +338,20 @@
         "claim": "LCP optimization requires examining discovery, resource priority, loading duration and element render delay. Improving one part alone does not guarantee a meaningful improvement to LCP."
       }
     ]
+  },
+  {
+    "date": "2026-11-14T19:44:46",
+    "draft_id": "20261114-4eb9ac72",
+    "source_domain": "cloud.google.com/blog",
+    "headline": "Cloud Run portability: make HTTP the boundary",
+    "post_urn": "urn:li:share:7527456502681518081",
+    "chars": 2929,
+    "sources": [
+      {
+        "url": "https://cloud.google.com/blog/products/serverless/announcing-cloud-run-the-newest-member-of-our-serverless-compute-stack",
+        "publication_date": "2019-04-09",
+        "claim": "By using Knative as the underlying platform, you can move your workloads across platforms, substantially reducing switching costs."
+      }
+    ]
   }
 ]
