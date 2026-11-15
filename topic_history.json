@@ -618,5 +618,38 @@
     "status": "drafted",
     "source": "v0.app/docs/shopify",
     "recorded_at": "2026-11-15"
+  },
+  {
+    "topic": "Navigation API: call event.scroll() to restore scroll early in an intercepted navigation",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/Navigation_API"
+    ],
+    "technical_takeaway": "In a navigate listener, return early when !event.canIntercept, event.hashChange or event.downloadRequest is set. Otherwise call event.intercept({ async handler() {...} }). Inside the handler, fetch and render the critical content first, then call event.scroll(). After that, await the secondary content and append it. The scroll position is then restored or reset once the primary content exists, and the later content doesn't hold it up or cause the page to jump. Use the same listener for link clicks, back/forward and programmatic navigations, which replaces hand-written History API pushState and popstate code.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-15"
+  },
+  {
+    "topic": "useEffectEvent: Effect Event identity is deliberately unstable",
+    "source_urls": [
+      "https://react.dev/reference/react/useEffectEvent"
+    ],
+    "technical_takeaway": "Use useEffectEvent only for logic that is genuinely an event fired from an Effect, such as showing a notification with the latest theme after a connection. Never add the returned function to the dependency array, never pass it to other components or Hooks, and never call it during render. Don't use it to silence exhaustive-deps warnings for real reactive values, because that hides bugs. Keep roomId in the Effect's dependencies, and read theme or muted inside the Effect Event so a theme change doesn't reconnect the chat.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-15"
+  },
+  {
+    "topic": "Container queries: container-type: size collapses the container unless you give it an explicit size",
+    "source_urls": [
+      "https://web.dev/learn/css/container-queries"
+    ],
+    "technical_takeaway": "Use `container-type: inline-size` for most width-based components. It only applies inline-size containment, so the block axis still sizes to its content. Use `container-type: size` only when the container has an explicit size, such as `inline-size`, `block-size` or `aspect-ratio`, or sits in an explicitly sized layout. Otherwise it collapses. You can name a container and set its type in one line with `container: main-sidebar / inline-size;`. Then target it with `@container main-sidebar (inline-size > 20em)`. The named container must be an ancestor of the elements you style.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-15"
   }
 ]
