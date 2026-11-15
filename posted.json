@@ -353,5 +353,35 @@
         "claim": "By using Knative as the underlying platform, you can move your workloads across platforms, substantially reducing switching costs."
       }
     ]
+  },
+  {
+    "date": "2026-11-15T11:53:35",
+    "draft_id": "20261115-c591321e",
+    "source_domain": "v0.app/docs/shopify",
+    "headline": "Don't just yield background work. Give it a cancel path.",
+    "post_urn": "urn:li:share:7527700315110981632",
+    "chars": 2940,
+    "sources": [
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/Scheduler/postTask",
+        "publication_date": null,
+        "claim": "postTask() accepts priority and signal options. Its returned promise can reject with the signal's abort reason or an error thrown by the callback. MDN marks the method as limited availability."
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/Scheduler/yield",
+        "publication_date": null,
+        "claim": "yield() inherits priority and an abort signal from a surrounding postTask() task. Aborting that task aborts pending yields. Continuations use a boosted queue within their priority level, rather than taking precedence over every task. MDN marks the method as limited availability."
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/throw",
+        "publication_date": null,
+        "claim": "The throw keyword can be followed by any kind of expression; thrown values are not required to be Error objects."
+      },
+      {
+        "url": "https://web.dev/articles/optimize-long-tasks",
+        "publication_date": "2022-09-30",
+        "claim": "The main thread processes one task at a time. Tasks longer than 50 milliseconds are long tasks. Calling multiple synchronous helper functions within one function does not make them separate tasks."
+      }
+    ]
   }
 ]

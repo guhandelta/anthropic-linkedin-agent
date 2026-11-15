@@ -571,5 +571,52 @@
     "status": "drafted",
     "source": "cloud.google.com/blog",
     "recorded_at": "2026-11-14"
+  },
+  {
+    "topic": "scheduler.yield(): break up long tasks without losing your place in the queue",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/Prioritized_Task_Scheduling_API"
+    ],
+    "technical_takeaway": "Call `await scheduler.yield()` between chunks of heavy work to give the main thread back to the browser. It takes no arguments, and the continuation runs as a task with user-visible priority by default. If you call it inside a `scheduler.postTask()` callback, the continuation inherits that task's priority, so a background job stays background. The older `new Promise(r => setTimeout(r, 0))` helper has no priority inheritance. Use scheduler.yield() where it is supported, and fall back to setTimeout where it is not.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-15"
+  },
+  {
+    "topic": "Kiro custom agents don't load steering files unless you list them in resources",
+    "source_urls": [
+      "https://kiro.dev/docs/steering/"
+    ],
+    "technical_takeaway": "Custom agents in Kiro don't inherit steering context automatically. To restore your project conventions, add \"resources\": [\"file://.kiro/steering/**/*.md\"] to the agent config. The glob loads every markdown file under .kiro/steering/. Separately, AGENTS.md files are always included and don't support inclusion modes (always, fileMatch, manual, auto). If you want conditional loading, use front-matter steering files and not AGENTS.md. Workspace steering also overrides global steering when the two conflict.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "kiro.dev/docs",
+    "recorded_at": "2026-11-15"
+  },
+  {
+    "topic": "React 19.2 <Activity />: hide UI without losing its state",
+    "source_urls": [
+      "https://react.dev/blog/2025/10/01/react-19-2"
+    ],
+    "technical_takeaway": "Replace `{isVisible && <Page />}` with `<Activity mode={isVisible ? 'visible' : 'hidden'}><Page /></Activity>`. In hidden mode, React keeps the component's state and DOM. It unmounts effects, so subscriptions and timers stop. It defers updates until React has nothing else to do. You can also pre-render a page the user will probably visit next, so its data, CSS and images load in the background. Back navigation then restores things like form input. Audit effects that need cleanup, because they will now run their cleanup when the Activity is hidden.",
+    "kind": "update",
+    "status": "suggested",
+    "source": "react.dev/blog",
+    "recorded_at": "2026-11-15"
+  },
+  {
+    "topic": "Don't just yield background work. Give it a cancel path.",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/Scheduler/postTask",
+      "https://developer.mozilla.org/en-US/docs/Web/API/Scheduler/yield",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/throw",
+      "https://web.dev/articles/optimize-long-tasks"
+    ],
+    "technical_takeaway": "Wrap optional, chunkable work in scheduler.postTask() with a background priority and an abort signal, then yield between bounded synchronous batches. Pending yields inherit cancellation, but running synchronous work is not preempted. Log rejection values without assuming they have a name property; the example intentionally logs cancellations rather than attempting to classify them.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "v0.app/docs/shopify",
+    "recorded_at": "2026-11-15"
   }
 ]
