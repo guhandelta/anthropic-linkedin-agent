@@ -383,5 +383,20 @@
         "claim": "The main thread processes one task at a time. Tasks longer than 50 milliseconds are long tasks. Calling multiple synchronous helper functions within one function does not make them separate tasks."
       }
     ]
+  },
+  {
+    "date": "2026-11-15T21:16:24",
+    "draft_id": "20261115-716ebf50",
+    "source_domain": "web.dev/learn",
+    "headline": "Font preconnects need crossorigin, or the early connection goes unused",
+    "post_urn": "urn:li:share:7527841951245647872",
+    "chars": 2931,
+    "sources": [
+      {
+        "url": "https://web.dev/learn/performance/resource-hints",
+        "publication_date": null,
+        "claim": "If you omit the `crossorigin` attribute, the browser opens a new connection when it downloads the font files, and doesn't reuse the connection opened with the `preconnect` hints.; When using the preconnect hint, if the resource being downloaded from the origin uses CORS—such as font files—then you need to add the crossorigin attribute to the preconnect hint."
+      }
+    ]
   }
 ]

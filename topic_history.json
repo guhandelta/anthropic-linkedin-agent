@@ -651,5 +651,49 @@
     "status": "suggested",
     "source": "web.dev/learn",
     "recorded_at": "2026-11-15"
+  },
+  {
+    "topic": "Font preconnects need crossorigin to avoid wasting the connection",
+    "source_urls": [
+      "https://web.dev/learn/performance/resource-hints"
+    ],
+    "technical_takeaway": "For a critical font origin, use <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>. Font requests use CORS, so their preconnect hint needs the crossorigin attribute. ([web.dev](https://web.dev/learn/performance/resource-hints))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-15"
+  },
+  {
+    "topic": "Response.clone(): a slow reader can turn streaming into unbounded buffering",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/Response/clone"
+    ],
+    "technical_takeaway": "Avoid using Response.clone() to read very large bodies in parallel at different speeds. Backpressure follows the faster consumer, while unread data accumulates without a limit for the slower branch. If only one branch is consumed, the entire body is buffered in memory.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-15"
+  },
+  {
+    "topic": "Keep centered content reachable when it overflows with justify-center-safe",
+    "source_urls": [
+      "https://tailwindcss.com/blog/tailwindcss-v4-1"
+    ],
+    "technical_takeaway": "In Tailwind CSS v4.1+, use `justify-center-safe` instead of `justify-center`. Content stays centered when it fits, but alignment switches to start when it overflows, avoiding overflow in both directions. The release includes safe alignment utilities for both flexbox and grid. ([tailwindcss.com](https://tailwindcss.com/blog/tailwindcss-v4-1))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "tailwindcss.com/blog",
+    "recorded_at": "2026-11-15"
+  },
+  {
+    "topic": "Font preconnects need crossorigin, or the early connection goes unused",
+    "source_urls": [
+      "https://web.dev/learn/performance/resource-hints"
+    ],
+    "technical_takeaway": "For a critical font origin, use <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>. Font files use CORS, so their preconnect hint needs the crossorigin attribute. Otherwise the browser opens a new connection for the font files instead of reusing the preconnected one. Limitation: preconnect should be reserved for the most critical cross-origin resources; dns-prefetch is a cheaper alternative.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-15"
   }
 ]
