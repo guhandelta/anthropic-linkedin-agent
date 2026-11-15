@@ -398,5 +398,14 @@
         "claim": "If you omit the `crossorigin` attribute, the browser opens a new connection when it downloads the font files, and doesn't reuse the connection opened with the `preconnect` hints.; When using the preconnect hint, if the resource being downloaded from the origin uses CORS—such as font files—then you need to add the crossorigin attribute to the preconnect hint."
       }
     ]
+  },
+  {
+    "date": "2026-11-15T21:42:59",
+    "draft_id": "20261115-direct-f48440",
+    "source_domain": "Direct Post",
+    "headline": "Preconnect Needs Crossorigin",
+    "post_urn": "direct",
+    "chars": 2993,
+    "sources": []
   }
 ]
