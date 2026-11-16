@@ -425,5 +425,20 @@
     "post_urn": "direct",
     "chars": 1755,
     "sources": []
+  },
+  {
+    "date": "2026-11-16T23:58:17",
+    "draft_id": "20261116-453bfbc1",
+    "source_domain": "web.dev/learn",
+    "headline": "Your form has a visual order. Does its keyboard journey agree?",
+    "post_urn": "urn:li:share:7528245081422692352",
+    "chars": 2958,
+    "sources": [
+      {
+        "url": "https://web.dev/learn/forms/accessibility",
+        "publication_date": null,
+        "claim": "A disconnect between visual order and keyboard navigation (DOM order) is problematic for screen reader and keyboard users."
+      }
+    ]
   }
 ]

@@ -695,5 +695,27 @@
     "status": "drafted",
     "source": "web.dev/learn",
     "recorded_at": "2026-11-15"
+  },
+  {
+    "topic": "Keep CSS visual order of form controls in sync with DOM order",
+    "source_urls": [
+      "https://web.dev/learn/forms/accessibility"
+    ],
+    "technical_takeaway": "Put form controls in the DOM in the order you want them tabbed and read. If you use CSS order, flex-direction: row-reverse or grid placement, tab through the form with only the keyboard and check that focus moves in the visual order. Make the :focus style clearly different from the default state so users can see where they are. Also test at 200% zoom and with a screen reader such as NVDA or VoiceOver.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-16"
+  },
+  {
+    "topic": "Your form has a visual order. Does its keyboard journey agree?",
+    "source_urls": [
+      "https://web.dev/learn/forms/accessibility"
+    ],
+    "technical_takeaway": "Put form controls in the intended reading and keyboard order in the DOM, then verify that CSS presentation agrees. Test keyboard navigation, recognizable focus styling, 200% zoom and screen-reader use. The tradeoff is that a visual redesign may require changing markup rather than only CSS.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-16"
   }
 ]
