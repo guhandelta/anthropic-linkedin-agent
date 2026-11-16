@@ -416,5 +416,14 @@
     "post_urn": "direct",
     "chars": 2932,
     "sources": []
+  },
+  {
+    "date": "2026-11-16T16:12:12",
+    "draft_id": "20261116-direct-89dca2",
+    "source_domain": "Direct Post",
+    "headline": "From Guesswork to Grounded AI",
+    "post_urn": "direct",
+    "chars": 1755,
+    "sources": []
   }
 ]
