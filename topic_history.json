@@ -717,5 +717,38 @@
     "status": "drafted",
     "source": "web.dev/learn",
     "recorded_at": "2026-11-16"
+  },
+  {
+    "topic": "useEffectEvent: read the latest props and state in an Effect without re-running it",
+    "source_urls": [
+      "https://react.dev/reference/react/useEffectEvent"
+    ],
+    "technical_takeaway": "Wrap logic that must see the latest props or state but shouldn't trigger re-synchronization in useEffectEvent. For example, in a chat connection, `const onConnected = useEffectEvent(() => showNotification('Connected!', theme))`. Call `onConnected()` inside the Effect and keep the dependency array as `[roomId]`. Changing `theme` then no longer reconnects the chat. Effect Events are excluded from dependencies. You can only call the hook at the top level of a component or custom Hook, not in loops or conditions. Call the returned function from useEffect, useLayoutEffect, useInsertionEffect, or another Effect Event in the same component. Don't pass it to other components or Hooks. Use it only for the lines that shouldn't be reactive, not as a general way to silence dependency warnings.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-17"
+  },
+  {
+    "topic": "Animating popovers with @starting-style and transition-behavior: allow-discrete",
+    "source_urls": [
+      "https://web.dev/learn/css/popover-and-dialog"
+    ],
+    "technical_takeaway": "Animate a [popover] in three parts. (1) Put the entry state in @starting-style { [popover]:popover-open { ... } }. (2) Put the open state in [popover]:popover-open { ... }. (3) Put the exit state in the base [popover] rule. Then add transition-behavior: allow-discrete and list display (and overlay, if you want) in the transition property. This lets display flip only after the animation finishes. The @starting-style block must come after the :popover-open rule in the stylesheet. Popovers sit in the top layer but are non-modal, so the page behind stays interactive. You can open and close them declaratively with popovertarget and popovertargetaction=\"show\" or \"hide\".",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-17"
+  },
+  {
+    "topic": "SvelteKit 3: replace the $lib alias with native #lib subpath imports",
+    "source_urls": [
+      "https://svelte.dev/blog/sveltekit-3-release-candidate"
+    ],
+    "technical_takeaway": "Run `npx sv migrate sveltekit-3 --tasks all --confirm` to rewrite `$lib/...` imports to `#lib/...`. Then check that every import path is unambiguous. Node and TypeScript don't resolve extensionless or directory-only subpath imports, so `#lib/foo` must become `#lib/foo.ts` or `#lib/foo/index.ts`. Related changes in the same release: config moves from svelte.config.js to vite.config.ts, tsconfig extends `$app/tsconfig` instead of `.svelte-kit/tsconfig.json`, and the `$service-worker` module is replaced by `$app/env`, `$app/paths` and `$app/manifest`.",
+    "kind": "upgrade",
+    "status": "suggested",
+    "source": "svelte.dev/blog",
+    "recorded_at": "2026-11-17"
   }
 ]
