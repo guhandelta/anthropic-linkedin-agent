@@ -475,5 +475,14 @@
         "claim": "The no-cors mode restricts methods to HEAD, GET or POST and produces an opaque response whose headers and body are unavailable to JavaScript."
       }
     ]
+  },
+  {
+    "date": "2026-11-17T18:00:53",
+    "draft_id": "20261117-direct-c7a3bb",
+    "source_domain": "Direct Post",
+    "headline": "Complex Queries, Leaner Stack",
+    "post_urn": "direct",
+    "chars": 2144,
+    "sources": []
   }
 ]
