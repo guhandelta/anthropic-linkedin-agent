@@ -750,5 +750,20 @@
     "status": "suggested",
     "source": "svelte.dev/blog",
     "recorded_at": "2026-11-17"
+  },
+  {
+    "topic": "HTTP QUERY: Better Read Semantics, Not Automatic Architecture Simplification",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods/QUERY",
+      "https://developer.mozilla.org/en-US/docs/Glossary/Cacheable",
+      "https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch",
+      "https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS",
+      "https://developer.mozilla.org/en-US/docs/Web/API/RequestInit"
+    ],
+    "technical_takeaway": "Pilot HTTP QUERY on one bounded complex-read endpoint. Verify cross-origin preflight and body-aware cache behavior explicitly; cacheability does not establish that your deployed cache supports it.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "palletsprojects.com/blog",
+    "recorded_at": "2026-11-17"
   }
 ]

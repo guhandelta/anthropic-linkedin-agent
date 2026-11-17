@@ -440,5 +440,40 @@
         "claim": "A disconnect between visual order and keyboard navigation (DOM order) is problematic for screen reader and keyboard users."
       }
     ]
+  },
+  {
+    "date": "2026-11-17T13:17:19",
+    "draft_id": "20261117-6947d582",
+    "source_domain": "palletsprojects.com/blog",
+    "headline": "HTTP QUERY: Better Read Semantics, Not Automatic Architecture Simplification",
+    "post_urn": "urn:li:share:7528446164090871809",
+    "chars": 2931,
+    "sources": [
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods/QUERY",
+        "publication_date": null,
+        "claim": "QUERY supports safe, idempotent operations with request content. Cross-origin requests trigger a CORS preflight, and cache keys must incorporate request content and associated metadata."
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Glossary/Cacheable",
+        "publication_date": null,
+        "claim": "Responses to POST or PATCH can be cached if freshness is indicated and Content-Location is set, but this is rarely implemented."
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch",
+        "publication_date": null,
+        "claim": "fetch fulfills with a Response when a server returns an HTTP error such as 404, so applications must check the response status."
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS",
+        "publication_date": null,
+        "claim": "Preflight responses use Access-Control-Allow-Origin, Access-Control-Allow-Methods and Access-Control-Allow-Headers to communicate permitted cross-origin access."
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/RequestInit",
+        "publication_date": null,
+        "claim": "The no-cors mode restricts methods to HEAD, GET or POST and produces an opaque response whose headers and body are unavailable to JavaScript."
+      }
+    ]
   }
 ]
