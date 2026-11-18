@@ -798,5 +798,49 @@
     "status": "suggested",
     "source": "react.dev/reference",
     "recorded_at": "2026-11-17"
+  },
+  {
+    "topic": "Audit webpack chunk settings before trusting lazy imports",
+    "source_urls": [
+      "https://web.dev/learn/performance/code-split-javascript"
+    ],
+    "technical_takeaway": "Check SplitChunksPlugin's chunks option when auditing lazy-loaded features. The lesson distinguishes async chunks from initial chunks and explains that chunks: all covers both. It also warns that disabling splitChunks can duplicate a shared dependency across initial and dynamically imported bundles.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-18"
+  },
+  {
+    "topic": "Don't show “Saved” until the IndexedDB transaction completes",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/IDBTransaction/complete_event"
+    ],
+    "technical_takeaway": "Attach a complete listener to the IDBTransaction and update the saved-state UI there. A request's success handler can still enqueue additional requests, so it is not the transaction's commit boundary. ([developer.mozilla.org](https://developer.mozilla.org/en-US/docs/Web/API/IDBTransaction/complete_event))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-18"
+  },
+  {
+    "topic": "Read fresh state without restarting React timers",
+    "source_urls": [
+      "https://react.dev/reference/react/useEffectEvent"
+    ],
+    "technical_takeaway": "Wrap the tick logic in useEffectEvent, then invoke it from an interval created inside useEffect. The callback reads the latest committed props and state without restarting the interval. Keep genuine lifecycle dependencies, such as a configurable delay, in the Effect dependency array, and clear the interval during cleanup. Do not use Effect Events merely to hide dependencies.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-18"
+  },
+  {
+    "topic": "Audit webpack chunk settings before trusting lazy imports",
+    "source_urls": [
+      "https://web.dev/learn/performance/code-split-javascript"
+    ],
+    "technical_takeaway": "Audit SplitChunksPlugin's chunks option and check whether splitChunks is disabled. The lesson distinguishes async and initial chunks, explains that 'all' covers both, and warns that splitChunks: false duplicates ./my-function.js across its main.js and form-validation.js bundles. Verify the output rather than treating 'all' or smaller chunks as universal performance fixes.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-18"
   }
 ]

@@ -502,5 +502,20 @@
     "post_urn": "direct",
     "chars": 2576,
     "sources": []
+  },
+  {
+    "date": "2026-11-18T22:34:32",
+    "draft_id": "20261118-71cd431d",
+    "source_domain": "web.dev/learn",
+    "headline": "Audit webpack chunk settings before trusting lazy imports",
+    "post_urn": "urn:li:share:7528948779631222784",
+    "chars": 2948,
+    "sources": [
+      {
+        "url": "https://web.dev/learn/performance/code-split-javascript",
+        "publication_date": null,
+        "claim": "Caution: If you disable SplitChunksPlugin by specifying splitChunks: false in your application's webpack configuration, then ./my-function.js gets bundled in both main.js and form-validation.js."
+      }
+    ]
   }
 ]
