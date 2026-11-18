@@ -493,5 +493,14 @@
     "post_urn": "direct",
     "chars": 2905,
     "sources": []
+  },
+  {
+    "date": "2026-11-18T12:13:24",
+    "draft_id": "20261118-direct-460ef9",
+    "source_domain": "Direct Post",
+    "headline": "HTTP QUERY Bridges the Gap",
+    "post_urn": "direct",
+    "chars": 2576,
+    "sources": []
   }
 ]
