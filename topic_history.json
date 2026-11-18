@@ -765,5 +765,38 @@
     "status": "drafted",
     "source": "palletsprojects.com/blog",
     "recorded_at": "2026-11-17"
+  },
+  {
+    "topic": "Use a facade to load third-party video embeds only after interaction",
+    "source_urls": [
+      "https://web.dev/learn/performance/lazy-load-images-and-iframe-elements"
+    ],
+    "technical_takeaway": "Render a lightweight preview in place of the video iframe, then replace it with the actual embed on interaction. If the user never plays the video, its embed resources are never downloaded. ([web.dev](https://web.dev/learn/performance/lazy-load-images-and-iframe-elements))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-17"
+  },
+  {
+    "topic": "Use requestSubmit() to preserve native form validation",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/HTMLFormElement/requestSubmit"
+    ],
+    "technical_takeaway": "Use form.requestSubmit() when triggering submission from JavaScript. Pass a specific submit button to preserve its form-method overrides and include its name/value in the submitted data.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-17"
+  },
+  {
+    "topic": "Stop reconnecting chat sessions when notification preferences change",
+    "source_urls": [
+      "https://react.dev/reference/react/useEffectEvent"
+    ],
+    "technical_takeaway": "Move notification logic that reads muted into useEffectEvent, then invoke it from the connection callback registered by the Effect. Keep roomId in the Effect dependency array so room changes reconnect, while mute changes do not. Do not use Effect Events to hide values that genuinely require resynchronization. ([react.dev](https://react.dev/reference/react/useEffectEvent))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-17"
   }
 ]
