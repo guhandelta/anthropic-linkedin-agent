@@ -886,5 +886,49 @@
     "status": "drafted",
     "source": "developer.mozilla.org/en-US/docs/Web/API",
     "recorded_at": "2026-11-19"
+  },
+  {
+    "topic": "Keep React timers fresh without restarting them",
+    "source_urls": [
+      "https://react.dev/reference/react/useEffectEvent"
+    ],
+    "technical_takeaway": "In a custom useInterval(callback, delay) Hook, wrap callback with useEffectEvent, invoke the resulting function from the interval callback, and make the setup Effect depend on delay. Return clearInterval cleanup. Keep genuine synchronization dependencies; Effect Events are not a shortcut for hiding them. ([react.dev](https://react.dev/reference/react/useEffectEvent))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-19"
+  },
+  {
+    "topic": "Use :user-invalid to avoid premature form errors",
+    "source_urls": [
+      "https://web.dev/learn/forms/validation"
+    ],
+    "technical_takeaway": "Use input:user-invalid instead of input:invalid for error styling that should appear only after user interaction. Include error text or an icon rather than relying on a red border alone. ([web.dev](https://web.dev/learn/forms/validation))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-19"
+  },
+  {
+    "topic": "Stop hand-maintaining Sass variable documentation",
+    "source_urls": [
+      "https://versions.bulma.io/0.9.4/2018/06/20/automatic-variables-documentation/"
+    ],
+    "technical_takeaway": "Parse Sass source files into JSON and use that data to generate variable reference tables, including each variable’s type and computed value where applicable, instead of maintaining those tables manually. ([versions.bulma.io](https://versions.bulma.io/0.9.4/2018/06/20/automatic-variables-documentation/))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "bulma.io/blog",
+    "recorded_at": "2026-11-19"
+  },
+  {
+    "topic": "Use :user-invalid to avoid premature form errors",
+    "source_urls": [
+      "https://web.dev/learn/forms/validation"
+    ],
+    "technical_takeaway": "Replace input:invalid with input:user-invalid where error styling should appear only after user interaction. Retain HTML constraints and communicate errors with text or an icon, not color alone; the selector change does not replace custom messaging or backend validation.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-19"
   }
 ]
