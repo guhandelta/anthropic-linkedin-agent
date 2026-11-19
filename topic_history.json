@@ -1,1 +1,846 @@
-[]
+[
+  {
+    "topic": "Integrating Slack with v0: Streamlining Team Collaboration",
+    "source_urls": [
+      "https://v0.app/docs/slack",
+      "https://v0.app/docs/slack",
+      "https://v0.app/docs/slack",
+      "https://v0.app/docs/slack"
+    ],
+    "technical_takeaway": "{'action': 'Implement the v0 Slack integration to enable your team to request and review code changes directly within Slack, enhancing collaboration and efficiency.', 'limitation': \"While v0 automates many processes, it's crucial to review pull requests before merging to ensure code quality and maintainability.\"}",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-10-31"
+  },
+  {
+    "topic": "React useOptimistic Hook",
+    "source_urls": [
+      "https://react.dev/reference/react/useOptimistic"
+    ],
+    "technical_takeaway": "Call useOptimistic(value, reducer) to provide immediate UI feedback during asynchronous Actions. It provides a temporary state that is applied instantly but is automatically discarded and reverted to the true underlying value once the pending Transition or Action completes, eliminating the need to manually implement error recovery or state rollback logic.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-01"
+  },
+  {
+    "topic": "Web Locks API",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/Web_Locks_API"
+    ],
+    "technical_takeaway": "Developers can use navigator.locks.request() to acquire exclusive or shared locks asynchronously, enabling safe coordination of shared resources across multiple tabs or workers within the same origin.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-01"
+  },
+  {
+    "topic": "HTML autocomplete=\"one-time-code\"",
+    "source_urls": [
+      "https://web.dev/learn/forms/autofill"
+    ],
+    "technical_takeaway": "Apply autocomplete=\"one-time-code\" to verification inputs so browsers like Safari (14+) can parse SMS codes and suggest them directly on the user's virtual keyboard.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-01"
+  },
+  {
+    "topic": "View Transition API",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/View_Transition_API"
+    ],
+    "technical_takeaway": "The View Transition API drastically simplifies complex transition logic by taking visual snapshots of old and new DOM states and automatically animating between them, rather than requiring manual loading and repositioning logic via CSS/JS.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-02"
+  },
+  {
+    "topic": "v0 Shopify Integration Architecture",
+    "source_urls": [
+      "https://v0.app/docs/shopify"
+    ],
+    "technical_takeaway": "v0's Shopify integration avoids hardcoding product data by leveraging the Shopify Admin API to dynamically create products and upload AI-generated images into the store, then wiring the generated application to fetch this live catalog data at runtime via the Shopify Storefront API.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "v0.app/docs/shopify",
+    "recorded_at": "2026-11-02"
+  },
+  {
+    "topic": "Custom Elements in Micro-Frontends",
+    "source_urls": [
+      "https://micro-frontends.org/"
+    ],
+    "technical_takeaway": "Architect micro-frontends using Custom Elements to hide implementation details and provide a framework-neutral interface. This allows independent teams to choose or upgrade their technology stack without coordinating with others. Maintain strict isolation by avoiding shared runtimes or global states, and instead namespace CSS, events, and Local Storage to prevent collisions.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "micro-frontends.org",
+    "recorded_at": "2026-11-02"
+  },
+  {
+    "topic": "Audio Session API",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/Audio_Session_API"
+    ],
+    "technical_takeaway": "Utilize the Audio Session API to declare the type of audio your web app produces (e.g., 'playback', 'transient', or 'ambient'), enabling the OS to automatically mix, pause, or duck (lower the volume of) competing audio sources.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-02"
+  },
+  {
+    "topic": "HTML Dialog Element",
+    "source_urls": [
+      "https://web.dev/learn/html/dialog"
+    ],
+    "technical_takeaway": "Developers can close a native HTML <dialog> element without writing custom JavaScript event listeners by setting formmethod=\"dialog\" on a form's submit button.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-02"
+  },
+  {
+    "topic": "CSS Container Queries with JS Fallback",
+    "source_urls": [
+      "https://web.dev/blog/how-to-use-container-queries-now"
+    ],
+    "technical_takeaway": "Enable container queries natively by setting `container-type: inline-size` on parent elements. For unsupported older browsers, implement a custom `<responsive-container>` web component that uses a ResizeObserver to manually trigger scoped breakpoint classes, avoiding the performance penalty of a full CSS polyfill.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/blog",
+    "recorded_at": "2026-11-02"
+  },
+  {
+    "topic": "Fetch Priority API",
+    "source_urls": [
+      "https://web.dev/learn/performance/resource-hints"
+    ],
+    "technical_takeaway": "Apply fetchpriority=\"high\" to critical above-the-fold assets, such as the LCP image, to bypass the browser's default low-priority queue and trigger an immediate high-priority download before the layout phase.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-03"
+  },
+  {
+    "topic": "High-Contrast \"Terminal-First\" Brutalist UI",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/CSS/@media/forced-colors",
+      "https://developer.mozilla.org/en-US/docs/Web/CSS/system-color",
+      "https://developer.mozilla.org/en-US/docs/Web/CSS/forced-color-adjust"
+    ],
+    "technical_takeaway": "Action: Use @media (forced-colors: active) and <system-color> keywords to natively theme high-contrast UIs without JS. Limitation: Forced-colors forces box-shadow to none and overrides custom borders, requiring reliance on structure over CSS tricks.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-03"
+  },
+  {
+    "topic": "HTML Focus Management and the autofocus Attribute",
+    "source_urls": [
+      "https://web.dev/learn/html/focus"
+    ],
+    "technical_takeaway": "Avoid using the autofocus attribute globally, as it scrolls the element into view but skips prior elements in the document's sequential focus navigation order, disrupting accessibility. The primary safe exception is within <dialog> elements, where autofocus can be used to explicitly target which interactive element receives focus upon opening, overriding the default behavior of focusing the first focusable element.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-06"
+  },
+  {
+    "topic": "Broadcast Channel API",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/Broadcast_Channel_API"
+    ],
+    "technical_takeaway": "The Broadcast Channel API enables seamless bi-directional messaging between tabs, windows, iframes, and Web Workers of the same origin. By instantiating a BroadcastChannel with a shared name, developers can sync state across contexts without needing to manage window or worker references.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-06"
+  },
+  {
+    "topic": "v0 Database Integrations and AI SQL Execution",
+    "source_urls": [
+      "https://v0.app/docs/databases"
+    ],
+    "technical_takeaway": "v0 provides one-click integrations for databases like Supabase, Neon, Snowflake, and Upstash directly from the chat UI, automatically provisioning user accounts and environment variables, and enabling the AI to natively generate and execute SQL to manage tables.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "v0.app/docs/databases",
+    "recorded_at": "2026-11-06"
+  },
+  {
+    "topic": "CSS Anchor Positioning",
+    "source_urls": [
+      "https://web.dev/learn/css/anchor-positioning"
+    ],
+    "technical_takeaway": "Designate a reference element using the `anchor-name` property (e.g., `--my-anchor`), and link an absolutely or fixed-positioned element to it using properties like `position-area` or the `anchor()` function. This native CSS approach eliminates the need for JavaScript-based positioning libraries to manage tooltips and popovers, and includes a built-in system for robust overflow fallbacks.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-07"
+  },
+  {
+    "topic": "Resize Observer API",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/Resize_Observer_API"
+    ],
+    "technical_takeaway": "Replaces inefficient polling of getBoundingClientRect() and window resize listeners by allowing developers to asynchronously observe size changes of specific elements (content or border box), serving as a performant JavaScript-based solution for element queries.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-07"
+  },
+  {
+    "topic": "Azure Maia 300 Architecture",
+    "source_urls": [
+      "https://azure.microsoft.com/en-us/blog/deep-dive-into-azure-maia-300-architecture/"
+    ],
+    "technical_takeaway": "The Azure Maia 300 utilizes a software-defined dataflow architecture (SDLA) and a two-tier scale-up network, increasing rack-scale token throughput by 7x and improving performance-per-watt by more than 2.5x compared to the Maia 200.",
+    "kind": "upgrade",
+    "status": "suggested",
+    "source": "azure.microsoft.com/en-us/blog",
+    "recorded_at": "2026-11-07"
+  },
+  {
+    "topic": "v0 SDK AI Tools Adapter: Autonomous Agent Workflows via @v0-sdk/ai-tools",
+    "source_urls": [
+      "https://v0.dev/docs/api/platform/packages/ai-tools"
+    ],
+    "technical_takeaway": "Import `v0ToolsByCategory` from `@v0-sdk/ai-tools` and pass only the specific tool category your agent needs (e.g. `tools.chat` or `tools.hook`) to `generateText`. The package exposes 20+ tools across categories; loading all of them adds significant context overhead to every AI call, so selective loading is a first-class design choice baked into the API. Each category maps to a clean CRUD surface: `createChat / sendMessage / getChat / findChats / deleteChat` for chat tools, and a parallel set for webhooks. Combine with `stopWhen` step limits and try-catch error boundaries for production-safe autonomous loops.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "v0.dev/docs",
+    "recorded_at": "2026-11-07"
+  },
+  {
+    "topic": "Bulma's CSS-Variable-Driven Dark Mode with data-theme and Sass Mixins",
+    "source_urls": [
+      "https://bulma.io/documentation/features/dark-mode/"
+    ],
+    "technical_takeaway": "Bulma exposes every theme token as a namespaced CSS variable (e.g. --bulma-scheme-main-l, --bulma-text-l). Dark mode is applied by redefining those lightness values inside a [data-theme=dark] selector or a @media (prefers-color-scheme: dark) block via the cv.bulma-theme() / cv.system-theme() Sass mixins. Because hue and saturation are preserved and only lightness is flipped, all 7 primary colors and their 21 generated shades stay coherent across both themes without any extra colour overrides. Developers can create a fully custom theme by writing a single Sass mixin that calls register-vars() with their own lightness map.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "bulma.io/blog",
+    "recorded_at": "2026-11-07"
+  },
+  {
+    "topic": "Builder.io Fusion: Parallel AI Agents on Production Codebases",
+    "source_urls": [
+      "https://www.builder.io/compare/builder-vs-bolt"
+    ],
+    "technical_takeaway": "Unlike Bolt.new (single Claude Agent per project) or Figma Make (single agent per Make session), Builder.io Fusion can run hundreds of AI agents simultaneously in cloud containers, each with a full dev environment and browser preview, with output landing as reviewable PRs into your existing GitHub/GitLab/Bitbucket repo — including Azure DevOps on Enterprise. AI-powered review agents additionally flag style, security, accessibility, and performance automatically before merge.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "builder.io/compare",
+    "recorded_at": "2026-11-07"
+  },
+  {
+    "topic": "Stop Loading 20+ Tools When Your Agent Only Needs 5",
+    "source_urls": [
+      "https://v0.dev/docs/api/platform/packages/ai-tools",
+      "https://v0.dev/docs/api/platform/packages/ai-tools",
+      "https://v0.dev/docs/api/platform/packages/ai-tools",
+      "https://v0.dev/docs/api/platform/packages/ai-tools",
+      "https://v0.dev/docs/api/platform/packages/ai-tools"
+    ],
+    "technical_takeaway": "Import `v0ToolsByCategory` from `@v0-sdk/ai-tools` and spread only the specific category your agent step requires (e.g. `tools.chat` or `tools.hook`) into `generateText`. The package's own docs warn that `v0Tools` — which loads all 20+ tools — adds significant context overhead to every AI call. Add `stopWhen: stepCountIs(n)` as a circuit breaker for autonomous loops, and use separate catch branches for `V0Error` vs `AIError` to handle API failures and SDK errors independently.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "v0.dev/docs",
+    "recorded_at": "2026-11-07"
+  },
+  {
+    "topic": "useEffectEvent: separating events from Effects without re-synchronizing",
+    "source_urls": [
+      "https://react.dev/reference/react/useEffectEvent"
+    ],
+    "technical_takeaway": "Wrap non-reactive callback logic in useEffectEvent. The returned function always reads the latest committed props and state when it is called. It is left out of the dependency array, so a change to something like `theme` doesn't tear down and rebuild the connection. Three rules apply. First, call it only at the top level of a component or custom Hook. Second, call it only from inside Effects or other Effect Events, never during render, and never pass it to other components or Hooks. Third, don't use it to silence dependency warnings for values that should be reactive. Its identity is intentionally unstable and changes on every render, so don't put it in a dependency array. The eslint-plugin-react-hooks linter enforces these rules.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-10"
+  },
+  {
+    "topic": "CSS Container Queries: container-type and size containment",
+    "source_urls": [
+      "https://web.dev/learn/css/container-queries"
+    ],
+    "technical_takeaway": "Set container-type: inline-size on an ancestor, then style children with @container (inline-size > 30em) { ... }. You can also use range syntax such as (10em <= width <= 500px), and name containers with container-name to target a non-nearest ancestor. container-type: size applies size containment on both axes, so the container no longer sizes itself from its children and collapses unless you give it explicit dimensions (inline-size, block-size or aspect-ratio). Use inline-size for most components to avoid that collapse.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-10"
+  },
+  {
+    "topic": "Saga pattern with compensating transactions in Google Cloud Workflows",
+    "source_urls": [
+      "https://cloud.google.com/blog/topics/developers-practitioners/implementing-saga-pattern-workflows"
+    ],
+    "technical_takeaway": "When each microservice has its own database, model a multi-service transaction as a sequence of local transactions. If a step fails with an unrecoverable error, route it to a compensation step. For example, reserve_credit failing sends the flow to reject_pending_order, which calls the OrderService to undo the pending order. Retry transient errors first, and only compensate on non-retryable failures. For multi-step flows, put the rollback logic in subworkflows so that several except clauses can reuse it.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "cloud.google.com/blog",
+    "recorded_at": "2026-11-10"
+  },
+  {
+    "topic": "Prevent infinite render loops with stable useSyncExternalStore snapshots",
+    "source_urls": [
+      "https://react.dev/reference/react/useSyncExternalStore"
+    ],
+    "technical_takeaway": "Keep snapshot identity stable until the store changes. Return immutable store data directly, or cache an immutable snapshot of mutable data and reuse it while that data remains unchanged. React compares successive snapshots using Object.is. ([react.dev](https://react.dev/reference/react/useSyncExternalStore))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-11"
+  },
+  {
+    "topic": "Prevent duplicate font downloads by matching preload CORS settings",
+    "source_urls": [
+      "https://web.dev/learn/performance/resource-hints"
+    ],
+    "technical_takeaway": "For a critical font discovered late, use <link rel=\"preload\" href=\"/font.woff2\" as=\"font\" crossorigin>. Font preloads require CORS mode even for same-origin URLs. Limit preloading to critical, late-discovered resources rather than preloading every font.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-11"
+  },
+  {
+    "topic": "Skip redundant cross-tab work with Web Locks and ifAvailable",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/LockManager/request"
+    ],
+    "technical_takeaway": "Use navigator.locks.request('background-sync', { ifAvailable: true }, async (lock) => { if (!lock) return; await syncData(); }). The default exclusive lock prevents participating tabs or workers from holding the same named lock simultaneously. Await the work inside the callback so the lock remains held until it finishes.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-11"
+  },
+  {
+    "topic": "Skip redundant cross-tab work with Web Locks and ifAvailable",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/LockManager/request"
+    ],
+    "technical_takeaway": "Wrap periodic sync in navigator.locks.request('background-sync', { ifAvailable: true }, async (lock) => { if (!lock) return; await syncData(); }). The default exclusive lock keeps tabs and workers from running it at once, and awaiting inside the callback keeps the lock held until the work finishes. Tradeoff: a tab that gets null skips the run and does not retry, and this is not leader election.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-11"
+  },
+  {
+    "topic": "CSS logical properties: flow-relative margin, sizing and text-align",
+    "source_urls": [
+      "https://web.dev/learn/css/logical-properties"
+    ],
+    "technical_takeaway": "Use margin-block-start in place of margin-top. Use min-inline-size and max-inline-size in place of min-width and max-width. Use text-align: start or end instead of left or right. Use the inset-block and inset-inline shorthands for positioning. These properties follow the document's writing-mode and direction, so you don't need RTL overrides. The viewport units vi and vb are also flow-relative: 1% of the viewport size in the inline or block direction.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-11"
+  },
+  {
+    "topic": "useDeferredValue: pass only stable values, not objects created during render",
+    "source_urls": [
+      "https://react.dev/reference/react/useDeferredValue"
+    ],
+    "technical_takeaway": "Pass primitives such as strings and numbers, or objects created outside rendering, to useDeferredValue. React compares values with Object.is. A new reference on every render triggers a needless background re-render each time. A correct use is `const deferredQuery = useDeferredValue(query)`, where query is a string from state. Don't use `useDeferredValue({filter: query})`. Two related behaviors: the background render is interruptible and restarts when the value changes again, and inside a Transition the hook returns the new value immediately. The optional `initialValue` argument makes the first render use that value, and a deferred render then follows.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-11"
+  },
+  {
+    "topic": "A2UI catalogs: letting agents generate native UI without executing code",
+    "source_urls": [
+      "https://daily.dev/posts/let-agents-generate-ui-in-your-android-apps-with-a2ui-qnhndburi"
+    ],
+    "technical_takeaway": "Don't let an agent return executable code or markup. Define a catalog of approved components and functions, then have a message processor parse the streamed JSON and validate each message against the catalog schema. Render only validated surfaces, and show placeholders for components that are still streaming. If a component fails validation, mark just that component as an error and keep the rest of the UI. You can also send the error back to the agent so it corrects itself. The agent can only reference pre-approved components, so it cannot run arbitrary code in the app.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "daily.dev/tags/generative-ui",
+    "recorded_at": "2026-11-11"
+  },
+  {
+    "topic": "React portal clicks still bubble through the React tree",
+    "source_urls": [
+      "https://react.dev/reference/react-dom/createPortal"
+    ],
+    "technical_takeaway": "Moving modal content into document.body with createPortal changes its DOM placement, not its React ancestry. If clicks trigger an unwanted ancestor handler, stop propagation inside the portal or move the portal higher in the React tree.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-12"
+  },
+  {
+    "topic": "Combine user cancellation and request timeouts with AbortSignal.any()",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal/any_static"
+    ],
+    "technical_takeaway": "Pass AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]) as fetch's signal. The combined signal aborts when either input aborts and preserves the first abort reason. Already-aborted inputs produce an already-aborted combined signal. Cancellation does not propagate back to the other input signals or cancel their timeouts. ([developer.mozilla.org](https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal/any_static))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-12"
+  },
+  {
+    "topic": "Replace runtime CSS @import chains with HTML stylesheet links",
+    "source_urls": [
+      "https://web.dev/learn/performance/optimize-resource-loading"
+    ],
+    "technical_takeaway": "Replace browser-resolved @import declarations with <link rel=\"stylesheet\" href=\"...\"> elements where possible. The browser can discover these stylesheets earlier and download them concurrently instead of waiting for a parent stylesheet to download before discovering its imports. If an import is unavoidable, preload the imported stylesheet to mitigate discovery delays.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-12"
+  },
+  {
+    "topic": "Replace runtime CSS @import chains with HTML stylesheet links",
+    "source_urls": [
+      "https://web.dev/learn/performance/optimize-resource-loading"
+    ],
+    "technical_takeaway": "Replace browser-resolved @import declarations with <link rel=\"stylesheet\" href=\"...\"> elements where possible so the browser discovers the stylesheets from the initial HTML and downloads them concurrently instead of consecutively. If an @import is unavoidable (for example for cascade layers or third-party style sheets), use the preload directive for the imported style sheet to mitigate the discovery delay. Limitation: links fix the chain but CSS stays render-blocking, so still remove unused CSS.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-12"
+  },
+  {
+    "topic": "useEffectEvent: read fresh state without reconnecting external systems",
+    "source_urls": [
+      "https://react.dev/reference/react/useEffectEvent"
+    ],
+    "technical_takeaway": "Move notification logic that reads muted into useEffectEvent, and invoke it from the connection's connected callback inside useEffect. Keep roomId as an Effect dependency and omit the Effect Event. Do not use this pattern to hide values that should trigger resynchronization.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-12"
+  },
+  {
+    "topic": "Prevent ResizeObserver feedback loops with an expected-size guard",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/ResizeObserver"
+    ],
+    "technical_takeaway": "Track each element’s expected size in a WeakMap. In the ResizeObserver callback, skip writes when the reported size matches that expectation; otherwise, schedule the resize with requestAnimationFrame and record the new expected size. MDN demonstrates this guard to prevent unintended resize loops. ([developer.mozilla.org](https://developer.mozilla.org/en-US/docs/Web/API/ResizeObserver))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-12"
+  },
+  {
+    "topic": "Transfer image buffers to a reusable Web Worker instead of copying them",
+    "source_urls": [
+      "https://tympanus.net/codrops/2026/10/17/image-compression-previewer/"
+    ],
+    "technical_takeaway": "Initialize the encoder inside one reusable Worker. Send input and output ArrayBuffers through postMessage with transfer lists rather than copying them. Explicitly release each Vips.Image with image.delete() after processing. These are the tutorial’s core worker-isolation and memory-management patterns. ([tympanus.net](https://tympanus.net/codrops/2026/10/17/image-compression-previewer/?utm_source=openai))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "tympanus.net/codrops",
+    "recorded_at": "2026-11-12"
+  },
+  {
+    "topic": "Stop ResizeObserver feedback loops with an expected-size guard",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/ResizeObserver"
+    ],
+    "technical_takeaway": "Track expected sizes per element in a WeakMap. Inside the scheduled resize work, skip writes when the reported size equals the stored expectation; otherwise, write and record the new size. The guard only stops matching feedback: a different reported size still follows the resize path.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-12"
+  },
+  {
+    "topic": "useSyncExternalStore: getSnapshot must return a cached, immutable snapshot",
+    "source_urls": [
+      "https://react.dev/reference/react/useSyncExternalStore"
+    ],
+    "technical_takeaway": "If the store data is immutable, return it directly from getSnapshot. If the store is mutable, keep a cached immutable snapshot. Create a new snapshot object only when the underlying data has actually changed, and return the same reference otherwise. Don't derive a fresh object, such as a filtered array or an object literal, inside getSnapshot. Do the derivation outside it, or memoize it against the store version. Pass getServerSnapshot as well when you render on the server. React uses it only during server rendering and hydration, and it must return the same value on the server and the client.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-13"
+  },
+  {
+    "topic": "Preload responsive LCP images with imagesrcset and imagesizes",
+    "source_urls": [
+      "https://web.dev/learn/design/responsive-images"
+    ],
+    "technical_takeaway": "For an LCP image that uses srcset, add <link rel=\"preload\" as=\"image\" imagesrcset=\"...\" imagesizes=\"...\"> and omit the href fallback. Browsers that don't support these attributes then skip the preload instead of downloading a mismatched image. Pair it with fetchpriority=\"high\" on the <img>. Use these hints sparingly, because overusing them overrides the browser's prioritization heuristics and can hurt performance.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-13"
+  },
+  {
+    "topic": "Bulma's .block: automatic 'spacing between siblings' via a shared Sass placeholder",
+    "source_urls": [
+      "https://versions.bulma.io/0.9.2/2021/01/23/the-block-probably-bulmas-most-important-feature/"
+    ],
+    "technical_takeaway": "Define the spacing once as a placeholder, for example %block { &:not(:last-child) { margin-bottom: 1.5rem } }. Then @extend %block in each component (box, notification, table, title, tabs and so on). Margin appears only between siblings, so you don't get trailing space at the end of a container. You also don't need wrapper divs or one-off margin classes, and changing the one variable re-spaces the whole UI. The same idea works in plain CSS with a shared selector list or a `* + *` stacking rule.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "bulma.io/blog",
+    "recorded_at": "2026-11-13"
+  },
+  {
+    "topic": "The <picture> Preload Trap: One Hero, Two Downloads",
+    "source_urls": [
+      "https://web.dev/articles/preload-responsive-images",
+      "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/rel/preload",
+      "https://web.dev/learn/design/responsive-images",
+      "https://web.dev/articles/optimize-lcp"
+    ],
+    "technical_takeaway": "Audit art-directed LCP image preloads for overlapping media conditions and redundant format downloads. Use mutually exclusive crop conditions only when discovery is measurably delayed; prefer an early HTML <picture> with fetchpriority=\"high\" otherwise. Preloading one preferred format leaves unsupported browsers without that early-fetch benefit.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "seaborn.pydata.org/whatsnew/index.html",
+    "recorded_at": "2026-11-13"
+  },
+  {
+    "topic": "useDeferredValue needs a memoized slow child to keep typing responsive",
+    "source_urls": [
+      "https://react.dev/reference/react/useDeferredValue"
+    ],
+    "technical_takeaway": "Keep the input bound to immediate state, create deferredText = useDeferredValue(text), and pass deferredText to a SlowList wrapped in memo. During the urgent parent render, the deferred prop remains unchanged, allowing SlowList to skip rendering. React then attempts the expensive update in an interruptible background render. This prioritizes typing rather than making the list render faster, and it does not reduce network requests.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-13"
+  },
+  {
+    "topic": "Disambiguate shipping and billing autofill with autocomplete tokens",
+    "source_urls": [
+      "https://web.dev/learn/forms/autofill"
+    ],
+    "technical_takeaway": "Use autocomplete=\"shipping postal-code\" for the shipping ZIP/postal-code input and autocomplete=\"billing postal-code\" for its billing counterpart. The space-separated tokens identify both the address context and the field's purpose.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-13"
+  },
+  {
+    "topic": "Authorize every tool call in an MCP batch, not just the request",
+    "source_urls": [
+      "https://enpitech.dev/blog/enpilink-2-1-0"
+    ],
+    "technical_takeaway": "Check authorization separately for every tool invocation within a batched request, and fail closed on unexpected authorization errors. Enpilink lists both protections among its 2.1.0 security fixes. ([enpitech.dev](https://enpitech.dev/blog/enpilink-2-1-0))",
+    "kind": "bug_fix",
+    "status": "suggested",
+    "source": "enpitech.dev/blog",
+    "recorded_at": "2026-11-13"
+  },
+  {
+    "topic": "useEffectEvent: Effect Events have intentionally unstable identity, so never put them in dependency arrays",
+    "source_urls": [
+      "https://react.dev/reference/react/useEffectEvent"
+    ],
+    "technical_takeaway": "Wrap the non-reactive part of an Effect, such as showNotification(theme), in useEffectEvent. The Effect then re-synchronizes only when roomId changes, not when theme or muted changes. The Effect Event always sees the latest committed render values. Its identity changes on every render by design, so adding it to the dependency array is wrong and the linter warns about it. Call it only from inside Effects or other Effect Events. Don't call it during render, and don't pass it to child components or other Hooks. Don't use it to hide real dependencies, because that hides bugs.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-14"
+  },
+  {
+    "topic": "Container queries: container-type inline-size vs size, and the collapse gotcha",
+    "source_urls": [
+      "https://web.dev/learn/css/container-queries"
+    ],
+    "technical_takeaway": "Use container-type: inline-size for most components. It lets you query only the inline axis and prevents descendants from affecting inline-size. container-type: size contains both axes. In that case, give the container an explicit inline-size, block-size or aspect-ratio, or place it in an explicitly sized layout. Otherwise it collapses. Then write @container (inline-size > 30em) { ... } rules for child elements. The styles respond to the nearest container's size, not the viewport.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-14"
+  },
+  {
+    "topic": "Cloud Run's container contract: stateless, HTTP-driven containers with Knative portability",
+    "source_urls": [
+      "https://cloud.google.com/blog/products/serverless/announcing-cloud-run-the-newest-member-of-our-serverless-compute-stack"
+    ],
+    "technical_takeaway": "Package the workload as a stateless container that serves HTTP requests. Keep durable state in external services. Don't depend on platform-specific APIs. Because Cloud Run implements the open Knative API, the same image and service definition can move between managed Cloud Run and a Kubernetes cluster you run. The post also mentions an open-sourced Functions Framework for function-style code and second-generation runtimes. Check current Cloud Run docs before relying on those details, because this post is from the launch announcement.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "cloud.google.com/blog",
+    "recorded_at": "2026-11-14"
+  },
+  {
+    "topic": "Cloud Run portability: make HTTP the boundary",
+    "source_urls": [
+      "https://cloud.google.com/blog/products/serverless/announcing-cloud-run-the-newest-member-of-our-serverless-compute-stack"
+    ],
+    "technical_takeaway": "Package the application as a stateless HTTP-serving container, make durable-state dependencies explicit, and test the same image against the same HTTP checks in each intended environment. Treat the 2019 announcement as an architectural foundation, not evidence that every current service definition migrates unchanged.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "cloud.google.com/blog",
+    "recorded_at": "2026-11-14"
+  },
+  {
+    "topic": "scheduler.yield(): break up long tasks without losing your place in the queue",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/Prioritized_Task_Scheduling_API"
+    ],
+    "technical_takeaway": "Call `await scheduler.yield()` between chunks of heavy work to give the main thread back to the browser. It takes no arguments, and the continuation runs as a task with user-visible priority by default. If you call it inside a `scheduler.postTask()` callback, the continuation inherits that task's priority, so a background job stays background. The older `new Promise(r => setTimeout(r, 0))` helper has no priority inheritance. Use scheduler.yield() where it is supported, and fall back to setTimeout where it is not.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-15"
+  },
+  {
+    "topic": "Kiro custom agents don't load steering files unless you list them in resources",
+    "source_urls": [
+      "https://kiro.dev/docs/steering/"
+    ],
+    "technical_takeaway": "Custom agents in Kiro don't inherit steering context automatically. To restore your project conventions, add \"resources\": [\"file://.kiro/steering/**/*.md\"] to the agent config. The glob loads every markdown file under .kiro/steering/. Separately, AGENTS.md files are always included and don't support inclusion modes (always, fileMatch, manual, auto). If you want conditional loading, use front-matter steering files and not AGENTS.md. Workspace steering also overrides global steering when the two conflict.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "kiro.dev/docs",
+    "recorded_at": "2026-11-15"
+  },
+  {
+    "topic": "React 19.2 <Activity />: hide UI without losing its state",
+    "source_urls": [
+      "https://react.dev/blog/2025/10/01/react-19-2"
+    ],
+    "technical_takeaway": "Replace `{isVisible && <Page />}` with `<Activity mode={isVisible ? 'visible' : 'hidden'}><Page /></Activity>`. In hidden mode, React keeps the component's state and DOM. It unmounts effects, so subscriptions and timers stop. It defers updates until React has nothing else to do. You can also pre-render a page the user will probably visit next, so its data, CSS and images load in the background. Back navigation then restores things like form input. Audit effects that need cleanup, because they will now run their cleanup when the Activity is hidden.",
+    "kind": "update",
+    "status": "suggested",
+    "source": "react.dev/blog",
+    "recorded_at": "2026-11-15"
+  },
+  {
+    "topic": "Don't just yield background work. Give it a cancel path.",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/Scheduler/postTask",
+      "https://developer.mozilla.org/en-US/docs/Web/API/Scheduler/yield",
+      "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/throw",
+      "https://web.dev/articles/optimize-long-tasks"
+    ],
+    "technical_takeaway": "Wrap optional, chunkable work in scheduler.postTask() with a background priority and an abort signal, then yield between bounded synchronous batches. Pending yields inherit cancellation, but running synchronous work is not preempted. Log rejection values without assuming they have a name property; the example intentionally logs cancellations rather than attempting to classify them.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "v0.app/docs/shopify",
+    "recorded_at": "2026-11-15"
+  },
+  {
+    "topic": "Navigation API: call event.scroll() to restore scroll early in an intercepted navigation",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/Navigation_API"
+    ],
+    "technical_takeaway": "In a navigate listener, return early when !event.canIntercept, event.hashChange or event.downloadRequest is set. Otherwise call event.intercept({ async handler() {...} }). Inside the handler, fetch and render the critical content first, then call event.scroll(). After that, await the secondary content and append it. The scroll position is then restored or reset once the primary content exists, and the later content doesn't hold it up or cause the page to jump. Use the same listener for link clicks, back/forward and programmatic navigations, which replaces hand-written History API pushState and popstate code.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-15"
+  },
+  {
+    "topic": "useEffectEvent: Effect Event identity is deliberately unstable",
+    "source_urls": [
+      "https://react.dev/reference/react/useEffectEvent"
+    ],
+    "technical_takeaway": "Use useEffectEvent only for logic that is genuinely an event fired from an Effect, such as showing a notification with the latest theme after a connection. Never add the returned function to the dependency array, never pass it to other components or Hooks, and never call it during render. Don't use it to silence exhaustive-deps warnings for real reactive values, because that hides bugs. Keep roomId in the Effect's dependencies, and read theme or muted inside the Effect Event so a theme change doesn't reconnect the chat.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-15"
+  },
+  {
+    "topic": "Container queries: container-type: size collapses the container unless you give it an explicit size",
+    "source_urls": [
+      "https://web.dev/learn/css/container-queries"
+    ],
+    "technical_takeaway": "Use `container-type: inline-size` for most width-based components. It only applies inline-size containment, so the block axis still sizes to its content. Use `container-type: size` only when the container has an explicit size, such as `inline-size`, `block-size` or `aspect-ratio`, or sits in an explicitly sized layout. Otherwise it collapses. You can name a container and set its type in one line with `container: main-sidebar / inline-size;`. Then target it with `@container main-sidebar (inline-size > 20em)`. The named container must be an ancestor of the elements you style.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-15"
+  },
+  {
+    "topic": "Font preconnects need crossorigin to avoid wasting the connection",
+    "source_urls": [
+      "https://web.dev/learn/performance/resource-hints"
+    ],
+    "technical_takeaway": "For a critical font origin, use <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>. Font requests use CORS, so their preconnect hint needs the crossorigin attribute. ([web.dev](https://web.dev/learn/performance/resource-hints))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-15"
+  },
+  {
+    "topic": "Response.clone(): a slow reader can turn streaming into unbounded buffering",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/Response/clone"
+    ],
+    "technical_takeaway": "Avoid using Response.clone() to read very large bodies in parallel at different speeds. Backpressure follows the faster consumer, while unread data accumulates without a limit for the slower branch. If only one branch is consumed, the entire body is buffered in memory.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-15"
+  },
+  {
+    "topic": "Keep centered content reachable when it overflows with justify-center-safe",
+    "source_urls": [
+      "https://tailwindcss.com/blog/tailwindcss-v4-1"
+    ],
+    "technical_takeaway": "In Tailwind CSS v4.1+, use `justify-center-safe` instead of `justify-center`. Content stays centered when it fits, but alignment switches to start when it overflows, avoiding overflow in both directions. The release includes safe alignment utilities for both flexbox and grid. ([tailwindcss.com](https://tailwindcss.com/blog/tailwindcss-v4-1))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "tailwindcss.com/blog",
+    "recorded_at": "2026-11-15"
+  },
+  {
+    "topic": "Font preconnects need crossorigin, or the early connection goes unused",
+    "source_urls": [
+      "https://web.dev/learn/performance/resource-hints"
+    ],
+    "technical_takeaway": "For a critical font origin, use <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>. Font files use CORS, so their preconnect hint needs the crossorigin attribute. Otherwise the browser opens a new connection for the font files instead of reusing the preconnected one. Limitation: preconnect should be reserved for the most critical cross-origin resources; dns-prefetch is a cheaper alternative.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-15"
+  },
+  {
+    "topic": "Keep CSS visual order of form controls in sync with DOM order",
+    "source_urls": [
+      "https://web.dev/learn/forms/accessibility"
+    ],
+    "technical_takeaway": "Put form controls in the DOM in the order you want them tabbed and read. If you use CSS order, flex-direction: row-reverse or grid placement, tab through the form with only the keyboard and check that focus moves in the visual order. Make the :focus style clearly different from the default state so users can see where they are. Also test at 200% zoom and with a screen reader such as NVDA or VoiceOver.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-16"
+  },
+  {
+    "topic": "Your form has a visual order. Does its keyboard journey agree?",
+    "source_urls": [
+      "https://web.dev/learn/forms/accessibility"
+    ],
+    "technical_takeaway": "Put form controls in the intended reading and keyboard order in the DOM, then verify that CSS presentation agrees. Test keyboard navigation, recognizable focus styling, 200% zoom and screen-reader use. The tradeoff is that a visual redesign may require changing markup rather than only CSS.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-16"
+  },
+  {
+    "topic": "useEffectEvent: read the latest props and state in an Effect without re-running it",
+    "source_urls": [
+      "https://react.dev/reference/react/useEffectEvent"
+    ],
+    "technical_takeaway": "Wrap logic that must see the latest props or state but shouldn't trigger re-synchronization in useEffectEvent. For example, in a chat connection, `const onConnected = useEffectEvent(() => showNotification('Connected!', theme))`. Call `onConnected()` inside the Effect and keep the dependency array as `[roomId]`. Changing `theme` then no longer reconnects the chat. Effect Events are excluded from dependencies. You can only call the hook at the top level of a component or custom Hook, not in loops or conditions. Call the returned function from useEffect, useLayoutEffect, useInsertionEffect, or another Effect Event in the same component. Don't pass it to other components or Hooks. Use it only for the lines that shouldn't be reactive, not as a general way to silence dependency warnings.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-17"
+  },
+  {
+    "topic": "Animating popovers with @starting-style and transition-behavior: allow-discrete",
+    "source_urls": [
+      "https://web.dev/learn/css/popover-and-dialog"
+    ],
+    "technical_takeaway": "Animate a [popover] in three parts. (1) Put the entry state in @starting-style { [popover]:popover-open { ... } }. (2) Put the open state in [popover]:popover-open { ... }. (3) Put the exit state in the base [popover] rule. Then add transition-behavior: allow-discrete and list display (and overlay, if you want) in the transition property. This lets display flip only after the animation finishes. The @starting-style block must come after the :popover-open rule in the stylesheet. Popovers sit in the top layer but are non-modal, so the page behind stays interactive. You can open and close them declaratively with popovertarget and popovertargetaction=\"show\" or \"hide\".",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-17"
+  },
+  {
+    "topic": "SvelteKit 3: replace the $lib alias with native #lib subpath imports",
+    "source_urls": [
+      "https://svelte.dev/blog/sveltekit-3-release-candidate"
+    ],
+    "technical_takeaway": "Run `npx sv migrate sveltekit-3 --tasks all --confirm` to rewrite `$lib/...` imports to `#lib/...`. Then check that every import path is unambiguous. Node and TypeScript don't resolve extensionless or directory-only subpath imports, so `#lib/foo` must become `#lib/foo.ts` or `#lib/foo/index.ts`. Related changes in the same release: config moves from svelte.config.js to vite.config.ts, tsconfig extends `$app/tsconfig` instead of `.svelte-kit/tsconfig.json`, and the `$service-worker` module is replaced by `$app/env`, `$app/paths` and `$app/manifest`.",
+    "kind": "upgrade",
+    "status": "suggested",
+    "source": "svelte.dev/blog",
+    "recorded_at": "2026-11-17"
+  },
+  {
+    "topic": "HTTP QUERY: Better Read Semantics, Not Automatic Architecture Simplification",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods/QUERY",
+      "https://developer.mozilla.org/en-US/docs/Glossary/Cacheable",
+      "https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch",
+      "https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS",
+      "https://developer.mozilla.org/en-US/docs/Web/API/RequestInit"
+    ],
+    "technical_takeaway": "Pilot HTTP QUERY on one bounded complex-read endpoint. Verify cross-origin preflight and body-aware cache behavior explicitly; cacheability does not establish that your deployed cache supports it.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "palletsprojects.com/blog",
+    "recorded_at": "2026-11-17"
+  },
+  {
+    "topic": "Use a facade to load third-party video embeds only after interaction",
+    "source_urls": [
+      "https://web.dev/learn/performance/lazy-load-images-and-iframe-elements"
+    ],
+    "technical_takeaway": "Render a lightweight preview in place of the video iframe, then replace it with the actual embed on interaction. If the user never plays the video, its embed resources are never downloaded. ([web.dev](https://web.dev/learn/performance/lazy-load-images-and-iframe-elements))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-17"
+  },
+  {
+    "topic": "Use requestSubmit() to preserve native form validation",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/HTMLFormElement/requestSubmit"
+    ],
+    "technical_takeaway": "Use form.requestSubmit() when triggering submission from JavaScript. Pass a specific submit button to preserve its form-method overrides and include its name/value in the submitted data.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-17"
+  },
+  {
+    "topic": "Stop reconnecting chat sessions when notification preferences change",
+    "source_urls": [
+      "https://react.dev/reference/react/useEffectEvent"
+    ],
+    "technical_takeaway": "Move notification logic that reads muted into useEffectEvent, then invoke it from the connection callback registered by the Effect. Keep roomId in the Effect dependency array so room changes reconnect, while mute changes do not. Do not use Effect Events to hide values that genuinely require resynchronization. ([react.dev](https://react.dev/reference/react/useEffectEvent))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-17"
+  },
+  {
+    "topic": "Audit webpack chunk settings before trusting lazy imports",
+    "source_urls": [
+      "https://web.dev/learn/performance/code-split-javascript"
+    ],
+    "technical_takeaway": "Check SplitChunksPlugin's chunks option when auditing lazy-loaded features. The lesson distinguishes async chunks from initial chunks and explains that chunks: all covers both. It also warns that disabling splitChunks can duplicate a shared dependency across initial and dynamically imported bundles.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-18"
+  },
+  {
+    "topic": "Don't show “Saved” until the IndexedDB transaction completes",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/IDBTransaction/complete_event"
+    ],
+    "technical_takeaway": "Attach a complete listener to the IDBTransaction and update the saved-state UI there. A request's success handler can still enqueue additional requests, so it is not the transaction's commit boundary. ([developer.mozilla.org](https://developer.mozilla.org/en-US/docs/Web/API/IDBTransaction/complete_event))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-18"
+  },
+  {
+    "topic": "Read fresh state without restarting React timers",
+    "source_urls": [
+      "https://react.dev/reference/react/useEffectEvent"
+    ],
+    "technical_takeaway": "Wrap the tick logic in useEffectEvent, then invoke it from an interval created inside useEffect. The callback reads the latest committed props and state without restarting the interval. Keep genuine lifecycle dependencies, such as a configurable delay, in the Effect dependency array, and clear the interval during cleanup. Do not use Effect Events merely to hide dependencies.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-18"
+  },
+  {
+    "topic": "Audit webpack chunk settings before trusting lazy imports",
+    "source_urls": [
+      "https://web.dev/learn/performance/code-split-javascript"
+    ],
+    "technical_takeaway": "Audit SplitChunksPlugin's chunks option and check whether splitChunks is disabled. The lesson distinguishes async and initial chunks, explains that 'all' covers both, and warns that splitChunks: false duplicates ./my-function.js across its main.js and form-validation.js bundles. Verify the output rather than treating 'all' or smaller chunks as universal performance fixes.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-18"
+  }
+]

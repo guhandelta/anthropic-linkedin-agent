@@ -196,6 +196,7 @@ Review and command your agent directly from your mobile device via Telegram:
 * **Personal LinkedIn Wall:** Uses the official LinkedIn REST API (Restli 2.0) with direct image upload (`images?action=initializeUpload`) and structured text payloads.
 * **Source Attribution:** Automatically posts cited documentation URLs as the first comment on your publication to keep the main post clean and boost feed reach.
 * **Target LinkedIn Groups:** Uses headless Playwright browser automation with persistent session authentication, navigating to each group in your config, entering the text, attaching the image, and publishing with anti-bot delays.
+* **Checking group access without posting:** run the *Daily LinkedIn post* workflow with run mode `groups-check`. It opens your feed and the first group with the `LI_AT` cookie, says whether the post box is there, and saves screenshots to the run's `output` download (`group_debug/`). A real run that hits LinkedIn's sign-in wall stops after two groups and explains why on Telegram.
 
 ---
 
@@ -247,9 +248,14 @@ author:
 # AI MODEL CONFIGURATION
 # -----------------------------------------------------------------------------
 model_strategy: "random"          # Options: 'random' | 'anthropic' | 'openai'
-model: "claude-3-5-sonnet-20241022" # Primary Anthropic model
-openai_fallback_model: "gpt-4o"  # Fallback/alternative OpenAI model
-reasoning_effort: "medium"        # Reasoning effort for o1/o3 models ('low' | 'medium' | 'high')
+model: "claude-sonnet-5-5"         # Primary Anthropic model
+openai_fallback_model: "gpt-6.1-sol"  # Fallback/alternative OpenAI model
+gemini_fallback_model: "gemini-3.8-flash"  # Last-resort Gemini model
+reasoning_effort: "medium"        # Effort sent to every provider ('low' | 'medium' | 'high')
+model_fallbacks:                  # Lower models tried when a model itself fails, before switching AI
+  anthropic: ["claude-sonnet-4-6"]
+  openai: ["gpt-6-sol"]
+  gemini: ["gemini-3.1-pro-preview"]
 
 # -----------------------------------------------------------------------------
 # RESEARCH & CURATED SOURCES
@@ -414,12 +420,49 @@ Run completely free on GitHub's infrastructure without maintaining a dedicated s
    * `TELEGRAM_BOT_TOKEN`
    * `TELEGRAM_CHAT_ID`
    * `LI_AT`
-3. The included workflow [`.github/workflows/daily-post.yml`](file:///.github/workflows/daily-post.yml) automatically triggers every morning at **9:15 AM America/New_York**.
-4. The GitHub Actions runner generates the post, sends the review card to Telegram, and waits up to **4 hours** for your approval before publishing and committing the logs.
+3. The included workflow [`.github/workflows/daily-post.yml`](file:///.github/workflows/daily-post.yml) automatically triggers every morning at **10:00 AM America/New_York**.
+4. Each run talks to you on Telegram from start to finish:
+   1. It offers **3 fresh topics**. Tap one, or type your own topic (60 minutes to pick).
+   2. It writes and fact-checks the post, then sends **the text alone** for approval (120 minutes). **Revise** rewrites it from your notes.
+   3. Only after you approve the text does it draw the infographic. Text and picture then come back for a **final OK** (60 minutes).
+   4. It publishes to your feed and the groups, then commits the post and poster history.
+
+   A run that ends without an approved draft sends a Telegram notice and shows as failed on GitHub. A topic you don't pick, or a draft you reject, simply posts nothing.
+
+#### Starting a run from Telegram (Inbox check)
+
+[`.github/workflows/inbox-check.yml`](.github/workflows/inbox-check.yml) runs [`telegram_inbox.py`](telegram_inbox.py) each time it is triggered. It reads what you sent the bot since the last check.
+
+**How it is triggered (cron-job.org):** GitHub's own `schedule` trigger runs late and sometimes skips runs, so the inbox check is started by an external timer instead. [cron-job.org](https://cron-job.org) calls GitHub's `workflow_dispatch` API every 5 minutes. Setup:
+
+1. Create a fine-grained GitHub token at [github.com/settings/personal-access-tokens](https://github.com/settings/personal-access-tokens/new). Limit it to this repository, and set **Actions** to *Read and write*. Store it only in cron-job.org. Never commit it.
+2. In cron-job.org, create a cronjob with:
+   - URL: `https://api.github.com/repos/<owner>/<repo>/actions/workflows/inbox-check.yml/dispatches`
+   - Schedule: every 5 minutes
+   - Method: `POST`, body `{"ref":"main"}`
+   - Headers: `Authorization: Bearer <token>`, `Accept: application/vnd.github+json`, `Content-Type: application/json`
+3. Use *Test run*. A `204` response means GitHub accepted the start.
+
+The GitHub `schedule:` trigger stays in `inbox-check.yml` as a backup. Both can start the check, and the job skips quietly if nothing is waiting.
+
+**Which time controls the daily post:** the scheduled run time is not in `config.yaml`. It is the `cron:` line in [`.github/workflows/daily-post.yml`](.github/workflows/daily-post.yml), currently `0 10 * * *` with `timezone: America/New_York` (10:00 AM New York time, following daylight saving). Change it there. The Telegram inbox check does not decide when the daily post runs.
+
+What you send the bot:
+
+| You send | What happens |
+| --- | --- |
+| `/topic <topic>`, ✍️ Post from Topic, or any short text | Starts a run on that topic |
+| `/suggest`, 💡 Suggest Topics, 🚀 Run Daily Post | Starts a run that offers 3 topics |
+| `/direct <text>`, 📝 Direct Post, or a pasted post (80+ characters) | Starts a run that publishes your text (infographic or text only) |
+| `/status`, `/help` | Answered directly |
+
+Replies usually come within about 5 minutes with the cron-job.org timer. Without it, GitHub's own schedule can be hours late. Once a run starts, it answers immediately. The inbox check does nothing while a posting run is active, because that run is reading your taps. **If you run the Mac bot (`agent.py --listen`) again, disable the inbox check first.** Both read the same Telegram messages.
+
+`TelegramInbox` in `telegram_inbox.py` has no LinkedIn code in it, so another Telegram project can reuse it with its own `plan_*` function.
 
 To check both fallbacks safely, open **Actions → Daily LinkedIn post → Run workflow** and leave **Run mode** at `fallback-check`. It simulates an Anthropic failure and verifies a real OpenAI response, then simulates both Anthropic and OpenAI failures and verifies a real Gemini response. Look for both `1/2 passed` and `2/2 passed` in the **Run LinkedIn Agent** log. It does not contact Telegram or LinkedIn. Set `OPENAI_API_KEY` and `GOOGLE_API_KEY` (or their supported alternate names) as repository secrets with working API access.
 
-For a full generation check without publishing, select `dry-run`; the resulting files are uploaded as a workflow artifact. Select `publish` only when you want the Telegram approval flow. Scheduled runs always use the normal publish flow at 9:15 AM America/New_York, including daylight saving changes.
+For a full generation check without publishing, select `dry-run`; the resulting files are uploaded as a workflow artifact. Select `publish` for the Telegram flow above (leave **topic** empty to get 3 suggestions), or `direct` with **post_text** to publish your own text. Scheduled runs always use the normal publish flow at 10:00 AM America/New_York, including daylight saving changes.
 
 ### Option B: Native macOS LaunchAgent Daemon
 
@@ -480,3 +523,7 @@ pytest --cov=. tests/
 <div align="center">
   <sub>Engineered with precision for modern engineering leaders, developer advocates, and technical writers.</sub>
 </div>
+
+## Checking which AI models your keys can use
+
+Run the **Check available AI models** workflow from the Actions tab. It lists the models each stored key can reach and makes a tiny test call to the main and lower models (it prints model names and pass/fail only, never keys). A model that is listed but fails with "insufficient_quota" or "credit" needs a top-up on that provider's billing page.

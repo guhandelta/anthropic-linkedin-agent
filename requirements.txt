@@ -1,10 +1,13 @@
-anthropic
-openai
-google-genai
-python-dotenv
-pyyaml
-requests
-cairosvg
-playwright
-pytest
-pytest-cov
+# Pinned to the versions the bot runs with, so a new release can't change behaviour on the
+# GitHub Actions runner (google-genai 3.0 dropped the preview Gemini model from its default API).
+anthropic==2.3.0
+openai==3.41.0
+google-genai==2.34.0
+python-dotenv==1.2.4
+pyyaml==6.0.3
+requests==2.34.2
+cairosvg==2.9.1
+pillow==13.0.0
+playwright==1.64.1
+pytest==9.2.0
+pytest-cov==7.1.0

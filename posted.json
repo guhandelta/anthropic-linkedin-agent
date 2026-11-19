@@ -92,5 +92,430 @@
         "claim": "Industry best practices and guidelines"
       }
     ]
+  },
+  {
+    "date": "2026-10-31T22:28:01",
+    "draft_id": "20261031-0a53e3f6",
+    "source_domain": "react.dev/reference",
+    "headline": "Integrating Slack with v0: Streamlining Team Collaboration",
+    "post_urn": "urn:li:share:7522483154079772674",
+    "chars": 2907,
+    "sources": [
+      {
+        "url": "https://v0.app/docs/slack",
+        "publication_date": null,
+        "claim": "The v0 bot for Slack lets anyone on your team contribute to production by mentioning `@v0` in a Slack channel. v0 reads the conversation thread for context, writes the code changes, creates a branch, and opens a pull request -- all without leaving Slack."
+      },
+      {
+        "url": "https://v0.app/docs/slack",
+        "publication_date": null,
+        "claim": "To target a specific repository or branch, use structured syntax: `@v0 [repo=acme/dashboard] Add a chart to the analytics page` or `@v0 [repo=acme/dashboard branch=feature-x] Fix the broken tooltip`."
+      },
+      {
+        "url": "https://v0.app/docs/slack",
+        "publication_date": null,
+        "claim": "Access channel settings by using the command `@v0 settings` to configure default repository and branch for the channel."
+      },
+      {
+        "url": "https://v0.app/docs/slack",
+        "publication_date": null,
+        "claim": "Once v0 opens a pull request, Vercel generates a preview deployment on every commit pushed to that branch, allowing your team to view and QA changes directly in the browser."
+      }
+    ]
+  },
+  {
+    "date": "2026-11-01T08:41:17",
+    "draft_id": "20261101-direct-af8f78",
+    "source_domain": "Direct Post",
+    "headline": "The End of Client Caching",
+    "post_urn": "direct",
+    "chars": 82,
+    "sources": []
+  },
+  {
+    "date": "2026-11-01T10:11:30",
+    "draft_id": "20261101-direct-2d6411",
+    "source_domain": "Direct Post",
+    "headline": "Death of Client-Side Caching",
+    "post_urn": "direct",
+    "chars": 2679,
+    "sources": []
+  },
+  {
+    "date": "2026-11-03T23:15:07",
+    "draft_id": "20261103-b26b8179",
+    "source_domain": "developer.mozilla.org/en-US/docs/Web/API",
+    "headline": "High-Contrast \"Terminal-First\" Brutalist UI",
+    "post_urn": "urn:li:share:7523597543390244864",
+    "chars": 2899,
+    "sources": [
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/@media/forced-colors",
+        "publication_date": "2026-04-20",
+        "claim": "In forced colors mode, properties like box-shadow are forced to 'none'."
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/system-color",
+        "publication_date": "2026-08-12",
+        "claim": "The <system-color> keywords expose colors chosen by forced colors mode, such as Canvas and CanvasText, allowing pages to integrate seamlessly."
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/forced-color-adjust",
+        "publication_date": "2026-08-27",
+        "claim": "The forced-color-adjust CSS property allows authors to opt specific elements out of forced colors mode."
+      }
+    ]
+  },
+  {
+    "date": "2026-11-04T15:07:45",
+    "draft_id": "20261104-direct-c8f4f2",
+    "source_domain": "Direct Post",
+    "headline": "Generative UX for Microfrontends",
+    "post_urn": "direct",
+    "chars": 1612,
+    "sources": []
+  },
+  {
+    "date": "2026-11-05T11:44:24",
+    "draft_id": "20261105-direct-fcddc8",
+    "source_domain": "Direct Post",
+    "headline": "Astro Islands vs Module Federation",
+    "post_urn": "direct",
+    "chars": 2637,
+    "sources": []
+  },
+  {
+    "date": "2026-11-05T19:43:13",
+    "draft_id": "20261105-direct-b3ed95",
+    "source_domain": "Direct Post",
+    "headline": "Micro-Frontends: Architecture or Complexity?",
+    "post_urn": "direct",
+    "chars": 2814,
+    "sources": []
+  },
+  {
+    "date": "2026-11-06T08:38:28",
+    "draft_id": "20261106-direct-71352c",
+    "source_domain": "Direct Post",
+    "headline": "GraphQL Federation vs BFF",
+    "post_urn": "direct",
+    "chars": 3681,
+    "sources": []
+  },
+  {
+    "date": "2026-11-06T15:38:21",
+    "draft_id": "20261106-direct-acc0c3",
+    "source_domain": "Direct Post",
+    "headline": "Sync Tabs With Broadcast Channel",
+    "post_urn": "direct",
+    "chars": 3035,
+    "sources": []
+  },
+  {
+    "date": "2026-11-07T18:21:22",
+    "draft_id": "20261107-695fbe62",
+    "source_domain": "v0.dev/docs",
+    "headline": "Stop Loading 20+ Tools When Your Agent Only Needs 5",
+    "post_urn": "urn:li:share:7524898284776255488",
+    "chars": 2986,
+    "sources": [
+      {
+        "url": "https://v0.dev/docs/api/platform/packages/ai-tools",
+        "publication_date": null,
+        "claim": "Includes 20+ tools which adds significant context to AI calls."
+      },
+      {
+        "url": "https://v0.dev/docs/api/platform/packages/ai-tools",
+        "publication_date": null,
+        "claim": "Choose specific tool categories for better performance using v0ToolsByCategory."
+      },
+      {
+        "url": "https://v0.dev/docs/api/platform/packages/ai-tools",
+        "publication_date": null,
+        "claim": "Chat tools: createChat, sendMessage, getChat, findChats, deleteChat. Hook tools: createHook, getHook, findHooks, updateHook, deleteHook."
+      },
+      {
+        "url": "https://v0.dev/docs/api/platform/packages/ai-tools",
+        "publication_date": null,
+        "claim": "Use stopWhen to control execution. Wrap calls in try-catch blocks handling V0Error and AIError separately."
+      },
+      {
+        "url": "https://v0.dev/docs/api/platform/packages/ai-tools",
+        "publication_date": null,
+        "claim": "Requirements: Node.js 22+, AI SDK 5.0+."
+      }
+    ]
+  },
+  {
+    "date": "2026-11-08T01:53:20",
+    "draft_id": "20261108-direct-64f1a4",
+    "source_domain": "Direct Post",
+    "headline": "Sync Tabs Natively Now",
+    "post_urn": "direct",
+    "chars": 2973,
+    "sources": []
+  },
+  {
+    "date": "2026-11-11T00:30:15",
+    "draft_id": "20261111-e03483d1",
+    "source_domain": "developer.mozilla.org/en-US/docs/Web/API",
+    "headline": "Skip redundant cross-tab work with Web Locks and ifAvailable",
+    "post_urn": "urn:li:share:7526078798589497344",
+    "chars": 2877,
+    "sources": [
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/LockManager/request",
+        "publication_date": "2025-11-03",
+        "claim": "If true , the lock request will only be granted if it is not already held. If it cannot be granted, the callback will be invoked with null instead of a Lock instance.; Usually the callback is an async function, which causes the lock to be released only when the async function has completely finished.; Thrown if name starts with a hyphen ( - ), both options steal and ifAvailable are true , or if option signal exists and either option steal or ifAvailable is true ."
+      }
+    ]
+  },
+  {
+    "date": "2026-11-11T15:27:50",
+    "draft_id": "20261111-direct-cd174a",
+    "source_domain": "Direct Post",
+    "headline": "Three.js: Bridging Browser 3D",
+    "post_urn": "direct",
+    "chars": 2981,
+    "sources": []
+  },
+  {
+    "date": "2026-11-12T02:59:11",
+    "draft_id": "20261112-ef31755e",
+    "source_domain": "web.dev/learn",
+    "headline": "Replace runtime CSS @import chains with HTML stylesheet links",
+    "post_urn": "urn:li:share:7526478661772984320",
+    "chars": 2881,
+    "sources": [
+      {
+        "url": "https://web.dev/learn/performance/optimize-resource-loading",
+        "publication_date": null,
+        "claim": "Another drawback is that style sheets loaded using an @import declaration can't be discovered by the preload scanner, and therefore become late-discovered render-blocking resources.; <link> elements allow style sheets to be downloaded concurrently and reduces overall load time, as opposed to @import declarations, which downloads style sheets consecutively .; If you need to use @import —such as for cascade layers or third-party style sheets—you can mitigate the delay by using the preload directive for the imported style sheet."
+      }
+    ]
+  },
+  {
+    "date": "2026-11-12T21:54:55",
+    "draft_id": "20261112-4f03646f",
+    "source_domain": "developer.mozilla.org/en-US/docs/Web/API",
+    "headline": "Stop ResizeObserver feedback loops with an expected-size guard",
+    "post_urn": "urn:li:share:7526764483621396481",
+    "chars": 2944,
+    "sources": [
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/ResizeObserver",
+        "publication_date": null,
+        "claim": "Note that this only prevents user-agent lockup, not the infinite loop itself."
+      }
+    ]
+  },
+  {
+    "date": "2026-11-13T10:48:18",
+    "draft_id": "20261113-1ee022b0",
+    "source_domain": "seaborn.pydata.org/whatsnew/index.html",
+    "headline": "The <picture> Preload Trap: One Hero, Two Downloads",
+    "post_urn": "urn:li:share:7526959114178998272",
+    "chars": 2955,
+    "sources": [
+      {
+        "url": "https://web.dev/articles/preload-responsive-images",
+        "publication_date": "2019-09-30",
+        "claim": "The <picture> element selects the first matching source, whereas independent responsive preloads have no first-match ordering. The article recommends avoiding explicit preload when the image is quickly discoverable in HTML."
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/rel/preload",
+        "publication_date": null,
+        "claim": "Media attributes can make image preloads conditional on mutually exclusive viewport ranges. Preloading both AVIF and WebP can download both in browsers supporting both formats, even though only one is used."
+      },
+      {
+        "url": "https://web.dev/learn/design/responsive-images",
+        "publication_date": null,
+        "claim": "Important hero images should not be lazy-loaded. Fetch priority should be used sparingly because prioritizing one resource deprioritizes others; preloading is useful for images otherwise discovered through JavaScript or CSS."
+      },
+      {
+        "url": "https://web.dev/articles/optimize-lcp",
+        "publication_date": "2020-04-30",
+        "claim": "LCP optimization requires examining discovery, resource priority, loading duration and element render delay. Improving one part alone does not guarantee a meaningful improvement to LCP."
+      }
+    ]
+  },
+  {
+    "date": "2026-11-14T19:44:46",
+    "draft_id": "20261114-4eb9ac72",
+    "source_domain": "cloud.google.com/blog",
+    "headline": "Cloud Run portability: make HTTP the boundary",
+    "post_urn": "urn:li:share:7527456502681518081",
+    "chars": 2929,
+    "sources": [
+      {
+        "url": "https://cloud.google.com/blog/products/serverless/announcing-cloud-run-the-newest-member-of-our-serverless-compute-stack",
+        "publication_date": "2019-04-09",
+        "claim": "By using Knative as the underlying platform, you can move your workloads across platforms, substantially reducing switching costs."
+      }
+    ]
+  },
+  {
+    "date": "2026-11-15T11:53:35",
+    "draft_id": "20261115-c591321e",
+    "source_domain": "v0.app/docs/shopify",
+    "headline": "Don't just yield background work. Give it a cancel path.",
+    "post_urn": "urn:li:share:7527700315110981632",
+    "chars": 2940,
+    "sources": [
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/Scheduler/postTask",
+        "publication_date": null,
+        "claim": "postTask() accepts priority and signal options. Its returned promise can reject with the signal's abort reason or an error thrown by the callback. MDN marks the method as limited availability."
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/Scheduler/yield",
+        "publication_date": null,
+        "claim": "yield() inherits priority and an abort signal from a surrounding postTask() task. Aborting that task aborts pending yields. Continuations use a boosted queue within their priority level, rather than taking precedence over every task. MDN marks the method as limited availability."
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/throw",
+        "publication_date": null,
+        "claim": "The throw keyword can be followed by any kind of expression; thrown values are not required to be Error objects."
+      },
+      {
+        "url": "https://web.dev/articles/optimize-long-tasks",
+        "publication_date": "2022-09-30",
+        "claim": "The main thread processes one task at a time. Tasks longer than 50 milliseconds are long tasks. Calling multiple synchronous helper functions within one function does not make them separate tasks."
+      }
+    ]
+  },
+  {
+    "date": "2026-11-15T21:16:24",
+    "draft_id": "20261115-716ebf50",
+    "source_domain": "web.dev/learn",
+    "headline": "Font preconnects need crossorigin, or the early connection goes unused",
+    "post_urn": "urn:li:share:7527841951245647872",
+    "chars": 2931,
+    "sources": [
+      {
+        "url": "https://web.dev/learn/performance/resource-hints",
+        "publication_date": null,
+        "claim": "If you omit the `crossorigin` attribute, the browser opens a new connection when it downloads the font files, and doesn't reuse the connection opened with the `preconnect` hints.; When using the preconnect hint, if the resource being downloaded from the origin uses CORS—such as font files—then you need to add the crossorigin attribute to the preconnect hint."
+      }
+    ]
+  },
+  {
+    "date": "2026-11-15T21:42:59",
+    "draft_id": "20261115-direct-f48440",
+    "source_domain": "Direct Post",
+    "headline": "Preconnect Needs Crossorigin",
+    "post_urn": "direct",
+    "chars": 2993,
+    "sources": []
+  },
+  {
+    "date": "2026-11-16T14:29:50",
+    "draft_id": "20261116-direct-0d0419",
+    "source_domain": "Direct Post",
+    "headline": "The Missing Font Connection",
+    "post_urn": "direct",
+    "chars": 2932,
+    "sources": []
+  },
+  {
+    "date": "2026-11-16T16:12:12",
+    "draft_id": "20261116-direct-89dca2",
+    "source_domain": "Direct Post",
+    "headline": "From Guesswork to Grounded AI",
+    "post_urn": "direct",
+    "chars": 1755,
+    "sources": []
+  },
+  {
+    "date": "2026-11-16T23:58:17",
+    "draft_id": "20261116-453bfbc1",
+    "source_domain": "web.dev/learn",
+    "headline": "Your form has a visual order. Does its keyboard journey agree?",
+    "post_urn": "urn:li:share:7528245081422692352",
+    "chars": 2958,
+    "sources": [
+      {
+        "url": "https://web.dev/learn/forms/accessibility",
+        "publication_date": null,
+        "claim": "A disconnect between visual order and keyboard navigation (DOM order) is problematic for screen reader and keyboard users."
+      }
+    ]
+  },
+  {
+    "date": "2026-11-17T13:17:19",
+    "draft_id": "20261117-6947d582",
+    "source_domain": "palletsprojects.com/blog",
+    "headline": "HTTP QUERY: Better Read Semantics, Not Automatic Architecture Simplification",
+    "post_urn": "urn:li:share:7528446164090871809",
+    "chars": 2931,
+    "sources": [
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods/QUERY",
+        "publication_date": null,
+        "claim": "QUERY supports safe, idempotent operations with request content. Cross-origin requests trigger a CORS preflight, and cache keys must incorporate request content and associated metadata."
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Glossary/Cacheable",
+        "publication_date": null,
+        "claim": "Responses to POST or PATCH can be cached if freshness is indicated and Content-Location is set, but this is rarely implemented."
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch",
+        "publication_date": null,
+        "claim": "fetch fulfills with a Response when a server returns an HTTP error such as 404, so applications must check the response status."
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS",
+        "publication_date": null,
+        "claim": "Preflight responses use Access-Control-Allow-Origin, Access-Control-Allow-Methods and Access-Control-Allow-Headers to communicate permitted cross-origin access."
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/RequestInit",
+        "publication_date": null,
+        "claim": "The no-cors mode restricts methods to HEAD, GET or POST and produces an opaque response whose headers and body are unavailable to JavaScript."
+      }
+    ]
+  },
+  {
+    "date": "2026-11-17T18:00:53",
+    "draft_id": "20261117-direct-c7a3bb",
+    "source_domain": "Direct Post",
+    "headline": "Complex Queries, Leaner Stack",
+    "post_urn": "direct",
+    "chars": 2144,
+    "sources": []
+  },
+  {
+    "date": "2026-11-17T18:22:18",
+    "draft_id": "20261117-direct-286925",
+    "source_domain": "Direct Post",
+    "headline": "Rethinking Complex API Reads",
+    "post_urn": "direct",
+    "chars": 2905,
+    "sources": []
+  },
+  {
+    "date": "2026-11-18T12:13:24",
+    "draft_id": "20261118-direct-460ef9",
+    "source_domain": "Direct Post",
+    "headline": "HTTP QUERY Bridges the Gap",
+    "post_urn": "direct",
+    "chars": 2576,
+    "sources": []
+  },
+  {
+    "date": "2026-11-18T22:34:32",
+    "draft_id": "20261118-71cd431d",
+    "source_domain": "web.dev/learn",
+    "headline": "Audit webpack chunk settings before trusting lazy imports",
+    "post_urn": "urn:li:share:7528948779631222784",
+    "chars": 2948,
+    "sources": [
+      {
+        "url": "https://web.dev/learn/performance/code-split-javascript",
+        "publication_date": null,
+        "claim": "Caution: If you disable SplitChunksPlugin by specifying splitChunks: false in your application's webpack configuration, then ./my-function.js gets bundled in both main.js and form-validation.js."
+      }
+    ]
   }
 ]

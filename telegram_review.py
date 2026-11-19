@@ -33,6 +33,9 @@ import requests
 
 # Base endpoint for Telegram Bot API calls
 API = "https://api.telegram.org/bot{token}/{method}"
+# A connection attempt that gets no answer fails after this many seconds, so the next address
+# (IPv4 after a stalled IPv6 one) or the next poll is tried instead of waiting the full 70s.
+CONNECT_TIMEOUT_S = 5
 
 # Persistent state file tracking each draft's review lifecycle (pending, approved, rejected, expired, posted, failed)
 STATE = Path(__file__).parent / "state" / "drafts.json"
@@ -186,6 +189,21 @@ def record_commit_reminder_sent(days: int, state_file: Path | None = None):
         print(f"[Commit Reminder] Could not persist reminder state: {e}")
 
 
+LINKEDIN_LIMIT = 3000  # characters LinkedIn accepts in a post; groups refuse anything longer
+MENU_TEXTS = {"✍️ Post from Topic", "📝 Direct Post", "💡 Suggest Topics", "🚀 Run Daily Post",
+              "📊 Status & History", "❓ Help & Commands"}
+MENU_COMMANDS = {"/start", "/help", "/status", "/suggest", "/daily", "/topic", "/direct", "/publish"}
+
+
+def _duration(seconds: float) -> str:
+    """Say a wait in words: '3 hours', '1 hour', '45 minutes'."""
+    minutes = int(round(seconds / 60))
+    if minutes >= 60 and minutes % 60 == 0:
+        hours = minutes // 60
+        return f"{hours} hour" + ("s" if hours != 1 else "")
+    return f"{minutes} minute" + ("s" if minutes != 1 else "")
+
+
 class TelegramReviewer:
     """Client for managing human editorial reviews and conversational bot interactions via Telegram."""
     
@@ -196,20 +214,39 @@ class TelegramReviewer:
         self.timeout_s = timeout_s          # Max seconds to wait for owner approval (default 3 hours)
         self.remind_every_s = remind_every_s  # Reminder frequency (default 20 minutes)
         self.offset = None                  # Telegram update_id offset for long polling
+        # Menu taps that arrived while a topic list was open; the listener handles them next.
+        self.deferred: list[dict] = []
+        # The Mac listener runs a menu tap that closes an open topic list. A GitHub Actions run
+        # has no listener, so there a tap must leave the list open instead of ending the run.
+        self.menu_closes_lists = True
+
+    @staticmethod
+    def _is_menu(text: str) -> bool:
+        """A main-menu button or a menu command: never a topic, feedback or post text."""
+        return text in MENU_TEXTS or text.split(" ", 1)[0] in MENU_COMMANDS and " " not in text
 
     def _call(self, method: str, files=None, **params):
         """Execute a raw HTTP request to Telegram's Bot API with error handling."""
         url = API.format(token=self.token, method=method)
         if files:
             # Multipart form-data for media file uploads (photos, animations)
-            r = requests.post(url, data=params, files=files, timeout=70)
+            r = requests.post(url, data=params, files=files, timeout=(CONNECT_TIMEOUT_S, 70))
         else:
             # Standard JSON payload for text messages and inline markup
-            r = requests.post(url, json=params, timeout=70)
+            r = requests.post(url, json=params, timeout=(CONNECT_TIMEOUT_S, 70))
         body = r.json()
         if not body.get("ok"):
             raise RuntimeError(f"Telegram {method} failed: {body}")
         return body["result"]
+
+    def _poll_updates(self, params: dict) -> list:
+        """Fetch new updates; a dropped connection returns no updates so the caller keeps waiting."""
+        try:
+            return self._call("getUpdates", **params)
+        except Exception as e:
+            print(f"Telegram polling error: {e}")
+            time.sleep(2)
+            return []
 
     @staticmethod
     def _buttons(*rows):
@@ -266,7 +303,8 @@ class TelegramReviewer:
         except Exception:
             pass
 
-    def _send_review_text(self, text: str, draft_id: str) -> int:
+    def _send_review_text(self, text: str, draft_id: str,
+                          approve_label: str = "✅ Approve & Post") -> int:
         """Send draft text, splitting into 4000-character chunks to adhere to Telegram's 4096 limit.
         
         Places the interactive [✅ Approve & Post] and [❌ Reject] buttons on the final message chunk.
@@ -276,7 +314,7 @@ class TelegramReviewer:
             self._call("sendMessage", chat_id=self.chat_id, text=chunk)
         msg = self._call(
             "sendMessage", chat_id=self.chat_id, text=chunks[-1],
-            reply_markup=self._buttons([("✅ Approve & Post", f"approve:{draft_id}"),
+            reply_markup=self._buttons([(approve_label, f"approve:{draft_id}"),
                                         ("❌ Reject", f"reject:{draft_id}")]))
         return msg["message_id"]
 
@@ -317,29 +355,57 @@ class TelegramReviewer:
         set_status(draft_id, "pending", topic=topic, message_id=message_id)
         return message_id
 
-    def send_text_draft(self, draft_id: str, topic: str, post: str) -> int:
+    def send_text_draft(self, draft_id: str, topic: str, post: str,
+                        title: str = "📝 LinkedIn Direct Draft (Text Only)",
+                        approve_label: str = "✅ Approve & Post") -> int:
         """Deliver a text-only draft to Telegram with review buttons attached."""
         self._skip_old_updates()
         banner = self._notify_commit_inactivity_if_due()
         header = f"{banner}\n\n" if banner else ""
-        text = (f"{header}📝 LinkedIn Direct Draft (Text Only)\n📌 {topic}\n"
+        text = (f"{header}{title}\n📌 {topic}\n"
                 f"📏 {len(post)} characters\n🆔 {draft_id}\n\n{post}")
-        message_id = self._send_review_text(text, draft_id)
+        message_id = self._send_review_text(text, draft_id, approve_label=approve_label)
         set_status(draft_id, "pending", topic=topic, message_id=message_id)
         return message_id
+
+    def _handle_direct_text(self, text: str, on_direct_callback) -> None:
+        """Ask how to publish a pasted post, then run it; an error is reported, never fatal to the listener."""
+        try:
+            choice = self.prompt_direct_choice(text)
+            if choice == "infographic":
+                on_direct_callback(text, custom_image_path=None, generate_infographic=True)
+            elif choice == "text_only":
+                on_direct_callback(text, custom_image_path=None, generate_infographic=False)
+        except Exception as e:
+            print(f"Direct post failed: {e}")
+            try:
+                self._call("sendMessage", chat_id=self.chat_id, text=f"⚠️ Error: {str(e)[:1000]}")
+            except Exception:
+                pass
 
     def prompt_direct_choice(self, text: str, timeout_s: int = 300) -> str:
         """Prompt user whether to auto-design an infographic or publish text-only for direct posts."""
         choice_id = uuid.uuid4().hex[:8]
         preview = (text[:280] + "...") if len(text) > 280 else text
+        too_long = len(text) > LINKEDIN_LIMIT
+        if too_long:
+            # LinkedIn groups refuse a post over 3,000 characters, so offer to trim it first.
+            question = (f"⚠️ This is {len(text)} characters, {len(text) - LINKEDIN_LIMIT} over "
+                        f"LinkedIn's {LINKEDIN_LIMIT:,} limit, so the groups would reject it. "
+                        "Trim it to fit (facts, code and hashtags kept), or cancel and paste a "
+                        "shorter version.")
+            buttons = [[("✂️ Trim to fit + Infographic", f"direct_info:{choice_id}")],
+                       [("✂️ Trim to fit (Text Only)", f"direct_text:{choice_id}")],
+                       [("❌ Cancel", f"direct_cancel:{choice_id}")]]
+        else:
+            question = "How would you like to publish?"
+            buttons = [[("🎨 Auto-Design Infographic & Review", f"direct_info:{choice_id}")],
+                       [("⚡ Post As-Is (Text Only)", f"direct_text:{choice_id}")],
+                       [("❌ Cancel", f"direct_cancel:{choice_id}")]]
         msg = self._call(
             "sendMessage", chat_id=self.chat_id,
-            text=f"📝 Direct post received ({len(text)} chars):\n\n\"{preview}\"\n\nHow would you like to publish?",
-            reply_markup=self._buttons(
-                [("🎨 Auto-Design Infographic & Review", f"direct_info:{choice_id}")],
-                [("⚡ Post As-Is (Text Only)", f"direct_text:{choice_id}")],
-                [("❌ Cancel", f"direct_cancel:{choice_id}")]
-            )
+            text=f"📝 Direct post received ({len(text)} chars):\n\n\"{preview}\"\n\n{question}",
+            reply_markup=self._buttons(*buttons)
         )
         message_id = msg["message_id"]
         start = time.time()
@@ -348,7 +414,7 @@ class TelegramReviewer:
             params = {"timeout": 20, "allowed_updates": ["callback_query"]}
             if self.offset is not None:
                 params["offset"] = self.offset
-            for up in self._call("getUpdates", **params):
+            for up in self._poll_updates(params):
                 self.offset = up["update_id"] + 1
                 cq = up.get("callback_query")
                 if not cq:
@@ -376,7 +442,8 @@ class TelegramReviewer:
                     return "cancel"
         return "cancel"
 
-    def wait_for_decision(self, draft_id: str, message_id: int) -> dict:
+    def wait_for_decision(self, draft_id: str, message_id: int, timeout_s: float | None = None,
+                          stage: str = "post") -> dict:
         """Poll Telegram for the user's decision on a pending draft.
         
         Returns one of:
@@ -387,6 +454,9 @@ class TelegramReviewer:
         - {'action': 'rejected'}
         - {'action': 'expired'}
         """
+        # stage "text": the text is approved first and the infographic is drawn afterwards.
+        text_stage = stage == "text"
+        limit_s = self.timeout_s if timeout_s is None else timeout_s
         start = time.time()
         next_ping = start + self.remind_every_s
         awaiting_feedback = False
@@ -394,12 +464,12 @@ class TelegramReviewer:
         while True:
             now = time.time()
             # 1. Check expiration
-            if now - start >= self.timeout_s:
+            if now - start >= limit_s:
                 self._set_button(message_id, "⌛ Expired — not posted", draft_id)
                 try:
                     self._call("sendMessage", chat_id=self.chat_id,
                                reply_to_message_id=message_id,
-                               text="⌛ No answer within 3 hours, so this draft was NOT posted.")
+                               text=f"⌛ No answer within {_duration(limit_s)}, so this draft was NOT posted.")
                 except Exception:
                     pass
                 set_status(draft_id, "expired")
@@ -407,7 +477,7 @@ class TelegramReviewer:
 
             # 2. Check periodic reminder interval
             if now >= next_ping and not awaiting_feedback:
-                left = int((self.timeout_s - (now - start)) // 60)
+                left = int((limit_s - (now - start)) // 60)
                 try:
                     self._call("sendMessage", chat_id=self.chat_id, reply_to_message_id=message_id,
                                text=f"⏰ Reminder: today's LinkedIn draft is waiting for you. "
@@ -417,12 +487,12 @@ class TelegramReviewer:
                 next_ping += self.remind_every_s
 
             # 3. Poll Telegram for incoming actions or messages
-            wait = int(max(1, min(40, next_ping - time.time(), self.timeout_s - (time.time() - start))))
+            wait = int(max(1, min(40, next_ping - time.time(), limit_s - (time.time() - start))))
             params = {"timeout": wait, "allowed_updates": ["callback_query", "message"]}
             if self.offset is not None:
                 params["offset"] = self.offset
 
-            for up in self._call("getUpdates", **params):
+            for up in self._poll_updates(params):
                 self.offset = up["update_id"] + 1
 
                 # Handle text messages (corrections, feedback, or /topic switches)
@@ -433,6 +503,13 @@ class TelegramReviewer:
                     text = (msg.get("text") or "").strip()
 
                     if sender == self.chat_id and chat == self.chat_id:
+                        if self._is_menu(text):
+                            # The draft keeps waiting; a menu tap is never taken as feedback.
+                            self._call("sendMessage", chat_id=self.chat_id,
+                                       reply_to_message_id=message_id,
+                                       text=f"⏳ This draft is still waiting for Approve or Reject. "
+                                            f"Answer it first, then tap {text} again.")
+                            continue
                         if text.startswith(("/topic ", "/post ")):
                             custom_topic = text.split(" ", 1)[1].strip()
                             self._call("sendMessage", chat_id=self.chat_id,
@@ -441,7 +518,9 @@ class TelegramReviewer:
 
                         if awaiting_feedback and text:
                             self._call("sendMessage", chat_id=self.chat_id, reply_to_message_id=msg["message_id"],
-                                       text=f"✍️ Feedback received:\n\"{text}\"\n\nRegenerating post & infographic...")
+                                       text=f"✍️ Feedback received:\n\"{text}\"\n\n"
+                                            + ("Rewriting the post..." if text_stage
+                                               else "Regenerating post & infographic..."))
                             return {"action": "revise", "feedback": text}
 
                 # Handle inline button callbacks
@@ -465,8 +544,12 @@ class TelegramReviewer:
                 # Approved: proceed to publish to Wall and Groups
                 if action == "approve" and cb_draft == draft_id:
                     set_status(draft_id, "approved")
-                    self._answer_cq(cq["id"], text="🚀 Posting to LinkedIn & groups…")
-                    self._set_button(message_id, "⏳ Posting…", draft_id)
+                    if text_stage:
+                        self._answer_cq(cq["id"], text="🎨 Drawing the infographic…")
+                        self._set_button(message_id, "✅ Text approved", draft_id)
+                    else:
+                        self._answer_cq(cq["id"], text="🚀 Posting to LinkedIn & groups…")
+                        self._set_button(message_id, "⏳ Posting…", draft_id)
                     return {"action": "approved"}
 
                 # Rejected: provide secondary options (Revise, Suggest Topics, Skip)
@@ -487,7 +570,8 @@ class TelegramReviewer:
                     self._answer_cq(cq["id"], text="Awaiting your feedback...")
                     awaiting_feedback = True
                     self._call("sendMessage", chat_id=self.chat_id,
-                               text="✍️ Please send your corrections or notes as a reply message. The agent will rewrite the draft and redraw the infographic.")
+                               text="✍️ Please send your corrections or notes as a reply message. The agent will rewrite the draft"
+                                    + ("." if text_stage else " and redraw the infographic."))
                     continue
 
                 if action == "opt_suggest" and cb_draft == draft_id:
@@ -543,7 +627,7 @@ class TelegramReviewer:
             if self.offset is not None:
                 params["offset"] = self.offset
 
-            for up in self._call("getUpdates", **params):
+            for up in self._poll_updates(params):
                 self.offset = up["update_id"] + 1
 
                 # Handle custom topic reply as text
@@ -553,6 +637,17 @@ class TelegramReviewer:
                     text = (msg_obj.get("text") or "").strip()
                     chat = str(msg_obj.get("chat", {}).get("id"))
                     if sender == self.chat_id and chat == self.chat_id and text:
+                        if self._is_menu(text) and not self.menu_closes_lists:
+                            self._call("sendMessage", chat_id=self.chat_id,
+                                       text="⏳ The topic list is still open. Pick a topic above, type "
+                                            "your own, or tap Skip Today.")
+                            continue
+                        if self._is_menu(text):
+                            # A menu tap closes the list and runs that action, never a topic search.
+                            self.deferred.append(up)
+                            self._call("sendMessage", chat_id=self.chat_id,
+                                       text="⏹️ Topic list closed.")
+                            return {"action": "rejected"}
                         if text.startswith(("/topic ", "/post ")):
                             text = text.split(" ", 1)[1].strip()
                         self._call("sendMessage", chat_id=self.chat_id,
@@ -571,6 +666,10 @@ class TelegramReviewer:
 
                 data = cq.get("data", "")
                 action, _, rest = data.partition(":")
+                if action in ("pick_topic", "opt_custom", "opt_skip") and rest.rpartition(":")[2] != draft_id:
+                    # A button on an older topic list: never act on it (its numbers mean other topics).
+                    self._answer_cq(cq["id"], text="That list has closed. Use the newest one below.")
+                    continue
 
                 if action == "pick_topic":
                     idx_str, _, cb_draft = rest.partition(":")
@@ -579,7 +678,8 @@ class TelegramReviewer:
                     self._answer_cq(cq["id"], text="Selected!")
                     self._call("sendMessage", chat_id=self.chat_id,
                                text=f"🎯 You selected:\n**{chosen['topic']}**\n(Source: {chosen.get('source')})\nDrafting post...")
-                    return {"action": "new_topic", "topic": chosen["topic"], "source": chosen.get("source")}
+                    return {"action": "new_topic", "topic": chosen["topic"], "source": chosen.get("source"),
+                            "item": chosen}
 
                 if action == "opt_custom":
                     self._answer_cq(cq["id"], text="Type your custom topic...")
@@ -592,7 +692,13 @@ class TelegramReviewer:
                     self._answer_cq(cq["id"], text="Skipped.")
                     return {"action": "rejected"}
 
-        return {"action": "rejected"}
+        self._set_button(msg["message_id"], "⌛ Expired", draft_id)
+        try:
+            self._call("sendMessage", chat_id=self.chat_id,
+                       text=f"⌛ No topic picked within {_duration(timeout_s)}, so nothing will be posted from this list.")
+        except Exception:
+            pass
+        return {"action": "expired"}
 
     @staticmethod
     def _main_menu_keyboard():
@@ -674,14 +780,15 @@ class TelegramReviewer:
                 params["offset"] = self.offset
 
             try:
-                updates = self._call("getUpdates", **params)
+                updates = self.deferred + self._call("getUpdates", **params)
+                self.deferred = []
             except Exception as e:
                 print(f"Telegram polling error: {e}")
                 time.sleep(poll_interval_s)
                 continue
 
             for up in updates:
-                self.offset = up["update_id"] + 1
+                self.offset = max(self.offset or 0, up["update_id"] + 1)
                 msg = up.get("message")
                 cq = up.get("callback_query")
                 if cq:
@@ -788,11 +895,7 @@ class TelegramReviewer:
 
                 if user_state == "waiting_for_direct":
                     user_state = None
-                    choice = self.prompt_direct_choice(text)
-                    if choice == "infographic":
-                        on_direct_callback(text, custom_image_path=None, generate_infographic=True)
-                    elif choice == "text_only":
-                        on_direct_callback(text, custom_image_path=None, generate_infographic=False)
+                    self._handle_direct_text(text, on_direct_callback)
                     continue
 
                 # 9. Slash command syntax: /topic <topic text>
@@ -809,20 +912,12 @@ class TelegramReviewer:
                 # 10. Slash command syntax: /direct <post text>
                 if text.startswith(("/direct ", "/publish ")):
                     direct_text = text.split(" ", 1)[1].strip()
-                    choice = self.prompt_direct_choice(direct_text)
-                    if choice == "infographic":
-                        on_direct_callback(direct_text, custom_image_path=None, generate_infographic=True)
-                    elif choice == "text_only":
-                        on_direct_callback(direct_text, custom_image_path=None, generate_infographic=False)
+                    self._handle_direct_text(direct_text, on_direct_callback)
                     continue
 
                 # 11. Free-form text input heuristic
                 if len(text) >= 80:
-                    choice = self.prompt_direct_choice(text)
-                    if choice == "infographic":
-                        on_direct_callback(text, custom_image_path=None, generate_infographic=True)
-                    elif choice == "text_only":
-                        on_direct_callback(text, custom_image_path=None, generate_infographic=False)
+                    self._handle_direct_text(text, on_direct_callback)
                 else:
                     self._call("sendMessage", chat_id=self.chat_id,
                                text=f"🎯 Researching & drafting on topic:\n'{text}'\nI will send the draft + infographic for your approval.")

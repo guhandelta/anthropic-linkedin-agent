@@ -73,6 +73,9 @@ def test_each_provider_can_fail_over_to_both_others(monkeypatch, start, expected
     monkeypatch.setattr(agent, "call_gemini_json", provider_call("gemini"))
     monkeypatch.setattr(agent, "CURRENT_TELEGRAM_REVIEWER", None)
     monkeypatch.setattr(agent, "publish_after_approval", MagicMock())
+    # This test is about switching AI; lower models of the same AI are covered in
+    # test_lower_model_fallback.py, so none are configured here.
+    monkeypatch.setitem(agent.CFG, "model_fallbacks", {})
     agent.ACTIVE_LLM_PROVIDER = start
     agent.DISABLED_PROVIDERS.clear()
     try:

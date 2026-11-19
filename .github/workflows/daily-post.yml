@@ -15,19 +15,20 @@ name: Daily LinkedIn post
 
 on:
   schedule:
-    # Run daily at 09:15 New York (EDT). Scheduled runs always publish, even if a post already went out that day.
-    - cron: "15 13 * * *"
-      # GitHub cron runs in UTC: 13:15 UTC is 09:15 New York (EDT)
+    # Run daily at 10:00 New York time. Scheduled runs always publish, even if a post already went out that day.
+    # The timezone key makes GitHub follow New York time, so the run stays at 10:00 through EST/EDT changes.
+    - cron: "0 10 * * *"
+      timezone: "America/New_York"
 
   # Manual on-demand execution via GitHub Web UI
   workflow_dispatch:
     inputs:
       topic:
-        description: "Optional custom topic (leave empty for autonomous AI research)"
+        description: "Optional custom topic (leave empty to pick from 3 suggested topics on Telegram)"
         required: false
         default: ""
       run_mode:
-        description: "Manual runs: check fallback, generate without publishing, or publish"
+        description: "Manual runs: check fallback, generate without publishing, publish, or publish your own text"
         required: true
         type: choice
         default: fallback-check
@@ -35,6 +36,12 @@ on:
           - fallback-check
           - dry-run
           - publish
+          - direct
+          - groups-check
+      post_text:
+        description: "direct mode only: the post text to publish (the Telegram inbox check fills this)"
+        required: false
+        default: ""
 
 permissions:
   contents: write            # Required to commit updated posted.json and topic_history.json
@@ -47,15 +54,19 @@ concurrency:
 jobs:
   post:
     runs-on: ubuntu-latest
-    timeout-minutes: 240     # Holds runner up to 4 hours while waiting for user's Telegram decision
+    # Waits on Telegram: topic pick 60 min + text approval 120 min + final OK 60 min, plus the
+    # work in between. GitHub-hosted jobs are capped at 360 minutes.
+    timeout-minutes: 350
 
     steps:
       # Step 1: Check out repository code
       - name: Checkout Code
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0       # full history so the history commit can rebase onto newer main
 
       - name: Validate publish credentials
-        if: github.event_name == 'schedule' || inputs.run_mode == 'publish'
+        if: github.event_name == 'schedule' || inputs.run_mode == 'publish' || inputs.run_mode == 'direct'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -89,12 +100,16 @@ jobs:
       - name: Install Python Dependencies
         run: pip install -r requirements.txt
 
-      # Step 5: Install Playwright and Chromium browser binary for LinkedIn group posting
+      # Step 5: Install Playwright and Chromium browser binary for LinkedIn group posting.
+      # Only groups-check needs it: runs here post to the feed only (POST_TO_GROUPS is "false"),
+      # and this ~200 MB apt download is the step most likely to fail on a runner network blip.
       - name: Install Playwright & Chromium
+        if: inputs.run_mode == 'groups-check'
         run: playwright install --with-deps chromium
 
       # Step 6: Execute the autonomous agent pipeline
       - name: Run LinkedIn Agent
+        id: agent
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -107,6 +122,14 @@ jobs:
           LI_AT: ${{ secrets.LI_AT }}
           TOPIC: ${{ inputs.topic }}
           RUN_MODE: ${{ inputs.run_mode }}
+          POST_TEXT: ${{ inputs.post_text }}
+          PYTHONUNBUFFERED: "1"         # log lines with their real times
+          # LinkedIn logs the owner out when LI_AT is used from a GitHub server, so groups are skipped here.
+          POST_TO_GROUPS: "false"
+          # The three waits must fit the job's 350-minute timeout with time left for the work.
+          TELEGRAM_TOPIC_WAIT_MINUTES: "60"
+          TELEGRAM_TEXT_WAIT_MINUTES: "120"
+          TELEGRAM_TIMEOUT_HOURS: "1"
         run: |
           case "${RUN_MODE:-publish}" in
             fallback-check)
@@ -118,15 +141,38 @@ jobs:
               python agent.py "${args[@]}"
               ;;
             publish)
-              args=()
+              # Topic picked on Telegram (or given), text approved, then infographic, then posted
+              args=(--interactive)
               if [ -n "$TOPIC" ]; then args+=(--topic "$TOPIC"); fi
               python agent.py "${args[@]}"
+              ;;
+            direct)
+              if [ -z "$POST_TEXT" ]; then echo "direct mode needs post_text" >&2; exit 2; fi
+              python agent.py --interactive --direct "$POST_TEXT"
+              ;;
+            groups-check)
+              # Posts nothing: checks that LinkedIn accepts LI_AT and shows the first group's post box
+              python linkedin_groups.py --check-groups
               ;;
             *)
               echo "Unknown run mode: $RUN_MODE" >&2
               exit 2
               ;;
           esac
+
+      # If setup broke before the agent started, nothing would reach Telegram and the run you
+      # asked for would just never answer. Say so, with a link to the log.
+      - name: Tell Telegram the run could not start
+        if: failure() && steps.agent.outcome == 'skipped' && (github.event_name == 'schedule' || inputs.run_mode == 'publish' || inputs.run_mode == 'direct')
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=⚠️ The run failed while GitHub was setting it up, before any writing started. Nothing was posted. Send your request again in a few minutes. Log: ${RUN_URL}" \
+            > /dev/null || true
 
       # Step 7: Upload generated SVGs, GIFs, and review logs as build artifacts
       - name: Upload Output Artifacts
@@ -139,10 +185,29 @@ jobs:
 
       # Step 8: Commit updated publication logs and topic history back to remote git repo
       - name: Commit Post & Topic History
-        if: success() && (github.event_name == 'schedule' || inputs.run_mode == 'publish')
+        if: success() && (github.event_name == 'schedule' || inputs.run_mode == 'publish' || inputs.run_mode == 'direct')
         run: |
           git config user.name "linkedin-agent"
           git config user.email "agent@users.noreply.github.com"
-          git add posted.json topic_history.json
-          git commit -m "Log editorial activity [skip ci]" || echo "nothing to commit"
-          git push
+          # Save only the history files onto the latest main. A run started from a PR branch must
+          # never push that branch's code to main, and main may have moved during the approval wait.
+          keep="$RUNNER_TEMP/history"
+          mkdir -p "$keep/state"
+          cp posted.json topic_history.json scripts/merge_history.py "$keep/"
+          if [ -f state/poster_style.json ]; then cp state/poster_style.json "$keep/state/"; fi
+          for attempt in 1 2 3 4; do
+            git fetch origin main && git checkout -f -B history-update origin/main
+            # Keep main's entries and add this run's new ones (a git merge of two lists conflicts)
+            python "$keep/merge_history.py" "$keep" .
+            git add posted.json topic_history.json
+            # Poster history keeps every post's layout and colours different across runs
+            if [ -f "$keep/state/poster_style.json" ]; then
+              mkdir -p state && cp "$keep/state/poster_style.json" state/ && git add state/poster_style.json
+            fi
+            if git diff --cached --quiet; then echo "nothing to commit"; exit 0; fi
+            git commit -m "Log editorial activity [skip ci]"
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 5))
+          done
+          echo "Could not push the post history after 4 attempts." >&2
+          exit 1

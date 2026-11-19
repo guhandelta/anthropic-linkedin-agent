@@ -155,7 +155,7 @@ def test_suggest_topics(tmp_path, monkeypatch):
     monkeypatch.setattr(agent, "load_log", MagicMock(return_value=[]))
     monkeypatch.setattr(agent.random, "sample", lambda values, count: ["react.dev/reference"])
     monkeypatch.setattr(agent, "verify_sources", MagicMock(return_value=[
-        {"url": "https://react.dev/reference",
+        {"url": "https://react.dev/reference/react/useEffect",
          "text": "React effects synchronize components with external systems when needed.",
          "published_dates": []}
     ]))
@@ -163,7 +163,7 @@ def test_suggest_topics(tmp_path, monkeypatch):
         "topic": "Use React effects only for external synchronization",
         "angle": "Avoid unnecessary effects in local state calculations",
         "technical_takeaway": "Move derived values into render and reserve effects for external systems",
-        "topic_kind": "evergreen", "source_url": "https://react.dev/reference",
+        "topic_kind": "evergreen", "source_url": "https://react.dev/reference/react/useEffect",
         "published": None, "source_claim": "Effects synchronize React components with external systems"
     }
     mock_call = MagicMock(side_effect=[candidate, {
@@ -313,12 +313,14 @@ def test_run_dry_run_success(tmp_path: Path, monkeypatch):
         "infographic_idea": "Diagram showing the compilation steps clearly."
     }
     monkeypatch.setattr(agent, "write_draft", MagicMock(return_value=mock_draft))
-    monkeypatch.setattr(agent, "design_svg", MagicMock(return_value=f"<svg viewBox='0 0 1080 1350'><text font-size='24'>Title</text><text font-size='22'>A</text><text font-size='22'>B</text></svg>"))
+    monkeypatch.setattr(agent, "design_svg", MagicMock(return_value=f"<svg viewBox='0 0 1080 1350'><rect width='1080' height='1350' fill='#ffffff'/><text x='60' y='120' font-size='40' fill='#111111'>Title</text><text x='60' y='400' font-size='36' fill='#111111'>Alpha step</text><text x='60' y='680' font-size='36' fill='#111111'>Beta step</text></svg>"))
     monkeypatch.setattr(agent, "render_svg", MagicMock())
     monkeypatch.setattr(agent, "render_svg_to_gif", MagicMock())
     monkeypatch.setattr(agent, "plan_infographic", MagicMock(side_effect=lambda post, headline, idea: idea))
     monkeypatch.setattr(agent, "design_quality_checks", MagicMock(return_value=[]))
-    monkeypatch.setattr(agent, "review_all", MagicMock(return_value=(True, [], {"scores": {}})))
+    monkeypatch.setattr(agent, "review_text", MagicMock(return_value=(True, [], {"reviews": []})))
+    monkeypatch.setattr(agent, "review_image", MagicMock(return_value=(True, [], {})))
+    monkeypatch.setattr(agent, "call_json", MagicMock(side_effect=RuntimeError("offline")))
 
     mock_tg = MagicMock()
     # Execute dry run pipeline
@@ -337,6 +339,7 @@ def test_run_dry_run_success(tmp_path: Path, monkeypatch):
 def test_draw_poster_publishes_best_valid_drawing_when_every_try_has_a_soft_issue(tmp_path, monkeypatch):
     # A valid but sparse drawing: passes the hard checks, always fails the richness checks.
     sparse = ('<svg viewBox="0 0 1080 1350" xmlns="http://www.w3.org/2000/svg">'
+              '<rect width="1080" height="1350" fill="#ffffff"/>'
               '<text x="60" y="100" font-size="40">One</text>'
               '<text x="60" y="180" font-size="40">Two</text>'
               '<text x="60" y="260" font-size="40">Three</text></svg>')
@@ -399,3 +402,104 @@ def test_unsourced_rejection_moves_to_another_source(tmp_path, monkeypatch):
     second_source, second_feedback = writer.call_args_list[1][0][0], writer.call_args_list[1][0][1]
     assert second_source == "react.dev/blog"   # moved to the next source
     assert second_feedback is None              # no retry on the thin page
+def test_review_all_flags_a_404_source_page_as_unavailable(monkeypatch):
+    import requests
+
+    monkeypatch.setattr(agent, "editorial_review",
+                        lambda *a, **k: {"approved": True, "scores": {}, "issues": []})
+
+    response = MagicMock(status_code=404)
+    error = requests.HTTPError("404 Client Error: Not Found", response=response)
+    monkeypatch.setattr(agent, "fact_check", MagicMock(side_effect=error))
+
+    ok, issues, detail = agent.review_all("Headline", "post text", [{"url": "https://web.dev/gone"}], None)
+    assert ok is False
+    assert detail["fact_check"]["source_unavailable"] is True
+    assert any("404" in issue for issue in issues)
+
+
+def test_run_moves_to_another_source_when_cited_page_is_gone(tmp_path, monkeypatch, capsys):
+    from datetime import datetime, timedelta
+    recent_date = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+    mock_draft = {
+        "post": "🚀 Check modern frontend rendering tradeoffs before choosing a large library. " + "Real detail about bundles. " * 40 + "#Tech #Dev #Coding",
+        "headline": "Modern frontend rendering tradeoffs",
+        "topic_kind": "evergreen",
+        "technical_takeaway": "Check modern frontend rendering tradeoffs before choosing a large library",
+        "sources": [{"url": "https://react.dev/blog/item", "published": recent_date, "claim": "Fast builds"}],
+        "infographic_idea": "Diagram showing the compilation steps clearly."
+    }
+    monkeypatch.setattr(agent, "ROOT", tmp_path)
+    monkeypatch.setattr(agent, "load_log", MagicMock(return_value=[]))
+    pick = MagicMock(side_effect=["web.dev/blog", "react.dev/blog"])
+    monkeypatch.setattr(agent, "pick_source", pick)
+    monkeypatch.setattr(agent, "write_draft", MagicMock(return_value=mock_draft))
+    monkeypatch.setattr(agent, "design_svg", MagicMock(return_value="<svg viewBox='0 0 1080 1350'><rect width='1080' height='1350' fill='#ffffff'/><text x='60' y='120' font-size='40' fill='#111111'>Title</text><text x='60' y='400' font-size='36' fill='#111111'>Alpha step</text><text x='60' y='680' font-size='36' fill='#111111'>Beta step</text></svg>"))
+    monkeypatch.setattr(agent, "render_svg", MagicMock())
+    monkeypatch.setattr(agent, "render_svg_to_gif", MagicMock())
+    monkeypatch.setattr(agent, "plan_infographic", MagicMock(side_effect=lambda post, headline, idea: idea))
+    monkeypatch.setattr(agent, "design_quality_checks", MagicMock(return_value=[]))
+    review = MagicMock(side_effect=[
+        (False, ["[fact-check] Source page not found (404)"], {"fact_check": {"source_unavailable": True}}),
+        (True, [], {"scores": {}}),
+    ])
+    monkeypatch.setattr(agent, "review_text", review)
+    monkeypatch.setattr(agent, "review_image", MagicMock(return_value=(True, [], {})))
+    monkeypatch.setattr(agent, "repair_length", lambda post, tries=3: post)
+    monkeypatch.setattr(agent, "hard_checks", MagicMock(return_value=[]))
+    monkeypatch.setattr(agent, "source_checks", MagicMock(return_value=[]))
+
+    agent.run(dry_run=True, tg=MagicMock(), tracker_id=1)
+
+    assert pick.call_count == 2
+    assert review.call_count == 2
+    assert "Trying another source" in capsys.readouterr().out
+
+
+def test_workflow_can_shorten_the_approval_wait():
+    import subprocess, sys
+    out = subprocess.run([sys.executable, "-c", "import agent; print(agent.CFG['telegram']['timeout_hours'])"],
+                         env={**__import__("os").environ, "TELEGRAM_TIMEOUT_HOURS": "3"},
+                         capture_output=True, text=True, cwd=Path(agent.__file__).parent)
+    assert out.stdout.strip().splitlines()[-1] == "3.0"
+    text = (Path(agent.__file__).parent / ".github/workflows/daily-post.yml").read_text()
+    assert 'TELEGRAM_TIMEOUT_HOURS: "1"' in text and "timeout-minutes: 350" in text
+
+
+def test_workflow_keeps_poster_history_and_rebases_before_push():
+    root = Path(agent.__file__).parent
+    text = (root / ".github/workflows/daily-post.yml").read_text()
+    assert "git add state/poster_style.json" in text
+    assert "git checkout -f -B history-update origin/main" in text and "fetch-depth: 0" in text
+    assert "git push origin HEAD:main" in text and "git pull --rebase" not in text
+    import subprocess
+    ignored = subprocess.run(["git", "check-ignore", "-q", "state/poster_style.json"], cwd=root)
+    assert ignored.returncode == 1  # tracked, so Actions remembers recent posters
+    other = subprocess.run(["git", "check-ignore", "-q", "state/other.json"], cwd=root)
+    assert other.returncode == 0
+
+
+def test_run_without_post_notifies_on_telegram(monkeypatch):
+    sent = []
+
+    class FakeTG:
+        def __init__(self, token, chat):
+            pass
+
+        def _call(self, method, **params):
+            sent.append((method, params["text"]))
+
+    monkeypatch.setattr(agent, "TelegramReviewer", FakeTG)
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "t")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "1")
+    agent.notify_run_without_post(dry_run=True)
+    assert sent == []  # dry runs only fail the job
+    agent.notify_run_without_post()
+    assert sent and sent[0][0] == "sendMessage" and "Nothing was posted" in sent[0][1]
+
+
+def test_command_line_run_fails_when_no_draft_is_approved():
+    text = (Path(agent.__file__).parent / "agent.py").read_text()
+    tail = text[text.index('if __name__ == "__main__":'):]
+    assert "outcome = run(args.source, args.dry_run, topic_arg=args.topic)" in tail
+    assert "notify_run_without_post(dry_run=args.dry_run)" in tail and "sys.exit(1)" in tail

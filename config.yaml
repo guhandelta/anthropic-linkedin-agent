@@ -1,11 +1,17 @@
-model: claude-sonnet-4-6
-openai_fallback_model: gpt-4o
-gemini_fallback_model: gemini-3.1-pro-preview
+model: claude-sonnet-5-5
+openai_fallback_model: gpt-6.1-sol
+gemini_fallback_model: gemini-3.8-flash
+# Lower models tried, in order, when a model itself fails (overloaded, unavailable, bad output),
+# before switching to another AI. Credit, key and network problems skip straight to the next AI.
+model_fallbacks:
+  anthropic: [claude-sonnet-4-6]
+  openai: [gpt-6-sol]
+  gemini: [gemini-3.1-pro-preview]
 model_strategy: random   # "random" | "anthropic" | "openai" | "gemini"
 reasoning_effort: medium # "low" | "medium" | "high" for supported models
 
 author:
-  name: Guha
+  name: Guhaprasaanth Nandagopal
   role: Senior Full Stack Developer (React, TypeScript, Next.js, Python, GenAI)
   voice: >
     Practical, clear and friendly. Shares hands-on lessons from building real products.
@@ -30,7 +36,7 @@ infographic:
   muted: "#4B5563"
   accent: "#0A66C2"
   animated_gif: true       # Convert SVG into an animated GIF with streaming motion
-  footer: "Guha | Full Stack & GenAI"
+  footer: "Guhaprasaanth | Full Stack & GenAI"
 
 linkedin:
   api_version: "202610"   # YYYYMM; LinkedIn supports roughly the last 12 months
@@ -46,7 +52,7 @@ linkedin:
     - https://www.linkedin.com/groups/121615/
 
 telegram:
-  timeout_hours: 3          # wait this long for your Approve/Reject, then skip the day
+  timeout_hours: 3          # wait this long for your Approve/Reject, then skip the day (fits the 4-hour Actions job)
   remind_every_minutes: 20  # ping you on Telegram until you answer
   commit_inactivity:
     interval_days: 20       # remind every 20 days (e.g. day 20, day 40)
@@ -54,7 +60,7 @@ telegram:
     github_limit_days: 60   # GitHub Actions scheduled workflow inactivity limit
 
 research:
-  search_tool: web_search_20250305   # Anthropic web search tool version
+  search_tool: web_search_20260209   # Anthropic web search tool version
   pick: random_source       # choose one approved source per run
   evergreen_share: 0.4      # sometimes start from Web API and standards references
   evergreen_sources:
