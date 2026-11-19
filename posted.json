@@ -541,5 +541,14 @@
     "post_urn": "direct",
     "chars": 2934,
     "sources": []
+  },
+  {
+    "date": "2026-11-19T16:33:08",
+    "draft_id": "20261119-direct-b33a79",
+    "source_domain": "Direct Post",
+    "headline": "Preserve Submit Button Behavior",
+    "post_urn": "direct",
+    "chars": 2664,
+    "sources": []
   }
 ]
