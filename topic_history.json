@@ -842,5 +842,49 @@
     "status": "drafted",
     "source": "web.dev/learn",
     "recorded_at": "2026-11-18"
+  },
+  {
+    "topic": "Keep browser autofill from tripping your honeypot",
+    "source_urls": [
+      "https://web.dev/learn/forms/autofill"
+    ],
+    "technical_takeaway": "Add autocomplete=\"off\" to honeypot inputs to discourage browsers from filling them alongside legitimate fields. Keep autofill enabled on ordinary user-facing fields. ([web.dev](https://web.dev/learn/forms/autofill))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-19"
+  },
+  {
+    "topic": "Stop reconnecting React subscriptions when notification settings change",
+    "source_urls": [
+      "https://react.dev/reference/react/useEffectEvent"
+    ],
+    "technical_takeaway": "Keep connection-defining values such as roomId in the Effect dependencies. Move notification logic that reads muted into useEffectEvent, then invoke it from the connection callback registered by the Effect. The callback reads the latest committed values without making preference changes reconnect the subscription. Exclude the Effect Event from dependencies, and do not use it to hide values that genuinely require resynchronization. ([react.dev](https://react.dev/reference/react/useEffectEvent))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-19"
+  },
+  {
+    "topic": "Use requestSubmit() instead of submit() to preserve form behavior",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/HTMLFormElement/requestSubmit"
+    ],
+    "technical_takeaway": "Use form.requestSubmit() when triggering submission from JavaScript. Pass a specific submit button to include its name/value and honor its form-level overrides, such as formmethod. Unlike submit(), requestSubmit() performs constraint validation and fires the submit event when validation succeeds. ([developer.mozilla.org](https://developer.mozilla.org/en-US/docs/Web/API/HTMLFormElement/requestSubmit))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-19"
+  },
+  {
+    "topic": "Use requestSubmit() to preserve your form's submission behavior",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/HTMLFormElement/requestSubmit"
+    ],
+    "technical_takeaway": "Audit JavaScript-triggered submissions and use form.requestSubmit() when validation and the submit event should follow the submit-button path. Pass the intended submit button to include its name/value and honor overrides such as formmethod; the argument must be a submit button belonging to that form.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-19"
   }
 ]

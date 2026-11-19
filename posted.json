@@ -517,5 +517,20 @@
         "claim": "Caution: If you disable SplitChunksPlugin by specifying splitChunks: false in your application's webpack configuration, then ./my-function.js gets bundled in both main.js and form-validation.js."
       }
     ]
+  },
+  {
+    "date": "2026-11-19T14:30:04",
+    "draft_id": "20261119-301dcd98",
+    "source_domain": "developer.mozilla.org/en-US/docs/Web/API",
+    "headline": "Use requestSubmit() to preserve your form's submission behavior",
+    "post_urn": "urn:li:share:7529189241885560832",
+    "chars": 2927,
+    "sources": [
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/HTMLFormElement/requestSubmit",
+        "publication_date": null,
+        "claim": "The form's content is validated, and the form is submitted only if validation succeeds."
+      }
+    ]
   }
 ]
