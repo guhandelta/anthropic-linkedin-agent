@@ -2373,6 +2373,8 @@ def publish_after_approval(headline, source, post, sources, image_path,
 # -----------------------------------------------------------------------------
 # Main Autonomous Pipeline Orchestrator
 # -----------------------------------------------------------------------------
+# Reviewer wording that means the source itself is too thin for the claims in the post.
+THIN_SOURCE_MARKERS = ("unsourced", "not supported by the provided sources", "not supported by the sources")
 LENGTH_EDITOR_SYSTEM = """You are a careful copy editor. Rewrite the LinkedIn post so that its
 total length is between {lo} and {hi} characters, counting every character including spaces,
 line breaks, emojis and hashtags. It is {n} characters now: {action} about {delta} characters.
