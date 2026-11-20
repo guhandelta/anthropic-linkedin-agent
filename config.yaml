@@ -50,6 +50,18 @@ linkedin:
     - https://www.linkedin.com/groups/6519652/
     - https://www.linkedin.com/groups/4314060/
     - https://www.linkedin.com/groups/121615/
+    - https://www.linkedin.com/groups/10319900/ 
+    - https://www.linkedin.com/groups/13982625/ 
+    - https://www.linkedin.com/groups/14270729/ 
+    - https://www.linkedin.com/groups/13987522/
+    - https://www.linkedin.com/groups/12785207/
+    - https://www.linkedin.com/groups/10351856/
+    - https://www.linkedin.com/groups/10356709/
+    - https://www.linkedin.com/groups/8267511/
+    - https://www.linkedin.com/groups/4314060/
+    - https://www.linkedin.com/groups/13982625/
+    - https://www.linkedin.com/groups/10319900/
+    - https://www.linkedin.com/groups/3998994/
 
 telegram:
   timeout_hours: 3          # wait this long for your Approve/Reject, then skip the day (fits the 4-hour Actions job)
