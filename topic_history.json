@@ -974,5 +974,49 @@
     "status": "drafted",
     "source": "web.dev/learn",
     "recorded_at": "2026-11-20"
+  },
+  {
+    "topic": "Stop external-store render loops by caching getSnapshot results",
+    "source_urls": [
+      "https://react.dev/reference/react/useSyncExternalStore"
+    ],
+    "technical_takeaway": "Return existing immutable store data directly. For mutable stores, cache an immutable snapshot and reuse it until the underlying data changes; do not construct a new wrapper object on every getSnapshot call. React compares snapshots using Object.is. ([react.dev](https://react.dev/reference/react/useSyncExternalStore))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-20"
+  },
+  {
+    "topic": "Associate detached form controls with HTML, not JavaScript",
+    "source_urls": [
+      "https://web.dev/learn/html/forms"
+    ],
+    "technical_takeaway": "Give the form an id, such as id=\"checkout\", and add form=\"checkout\" to an external control. The attribute references the owning form's id, not its DOM position. Check these references carefully: an empty or incorrect value can disassociate a control even when it is nested inside a form.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-20"
+  },
+  {
+    "topic": "Prevent lost updates with HTTP 428 Precondition Required",
+    "source_urls": [
+      "https://httpwg.org/specs/rfc6585.html"
+    ],
+    "technical_takeaway": "For endpoints requiring conditional writes, reject unconditional requests with 428 and explain how to resubmit using If-Match. Do not cache 428 responses. Clients must not assume every server implements this optional status code. ([httpwg.org](https://httpwg.org/specs/rfc6585.html))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "httpwg.org/specs",
+    "recorded_at": "2026-11-20"
+  },
+  {
+    "topic": "Stop external-store render loops by caching getSnapshot results",
+    "source_urls": [
+      "https://react.dev/reference/react/useSyncExternalStore"
+    ],
+    "technical_takeaway": "Return existing immutable store data directly. For mutable stores, cache an immutable snapshot and reuse it until the underlying data changes. Do not construct a fresh wrapper on every getSnapshot call; React compares snapshots using Object.is. The mutable-store tradeoff is implementing store-specific change detection and snapshot creation.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-20"
   }
 ]

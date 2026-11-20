@@ -582,5 +582,20 @@
         "citation": "([web.dev](https://web.dev/learn/performance/lazy-load-images-and-iframe-elements))"
       }
     ]
+  },
+  {
+    "date": "2026-11-20T22:55:53",
+    "draft_id": "20261120-2fdecf40",
+    "source_domain": "react.dev/reference",
+    "headline": "Stop external-store render loops by caching getSnapshot results",
+    "post_urn": "urn:li:share:7529678926001111040",
+    "chars": 2952,
+    "sources": [
+      {
+        "url": "https://react.dev/reference/react/useSyncExternalStore",
+        "publication_date": null,
+        "claim": "This is why, if you always return a different value, you will enter an infinite loop and get this error."
+      }
+    ]
   }
 ]
