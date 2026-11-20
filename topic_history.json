@@ -930,5 +930,49 @@
     "status": "drafted",
     "source": "web.dev/learn",
     "recorded_at": "2026-11-19"
+  },
+  {
+    "topic": "Keep interval callbacks fresh without restarting the timer",
+    "source_urls": [
+      "https://react.dev/reference/react/useEffectEvent"
+    ],
+    "technical_takeaway": "Wrap the callback in useEffectEvent, invoke the resulting Effect Event from the interval callback, and make the setup Effect depend on delay. Clear the interval during cleanup. Keep genuine synchronization dependencies; useEffectEvent is not a shortcut for suppressing dependency warnings.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-20"
+  },
+  {
+    "topic": "Load third-party video embeds on interaction, not just on scroll",
+    "source_urls": [
+      "https://web.dev/learn/performance/lazy-load-images-and-iframe-elements"
+    ],
+    "technical_takeaway": "Show a static preview and replace it with the actual iframe when the user clicks play. Unlike loading=\"lazy\", which fetches an iframe near the viewport, this pattern avoids downloading the embed's HTML and subresources entirely if the user never interacts. ([web.dev](https://web.dev/learn/performance/lazy-load-images-and-iframe-elements))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-20"
+  },
+  {
+    "topic": "Upload only changed Three.js buffer data with addUpdateRange()",
+    "source_urls": [
+      "https://threejs.org/docs/pages/BufferAttribute.html"
+    ],
+    "technical_takeaway": "After editing an attribute's array, call attribute.addUpdateRange(start, count), then set attribute.needsUpdate = true. Ranges use scalar components, not vertices: for an XYZ position attribute, 10 consecutive vertices starting at vertex 20 correspond to addUpdateRange(60, 30).",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "threejs.org/docs",
+    "recorded_at": "2026-11-20"
+  },
+  {
+    "topic": "Load video players on intent, not proximity",
+    "source_urls": [
+      "https://web.dev/learn/performance/lazy-load-images-and-iframe-elements"
+    ],
+    "technical_takeaway": "Render a static preview and replace it with the third-party iframe on interaction. Unlike viewport-based lazy loading, this avoids downloading the embed's HTML and subresources when users never interact. The tradeoff is that those downloads only begin after interaction; this is not the right gate for a legitimate autoplay requirement.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-20"
   }
 ]

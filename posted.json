@@ -565,5 +565,22 @@
         "claim": "Invalid form fields are already marked as :invalid before user interaction, which may confuse users. The :user-invalid pseudo-class solves this issue, as the styles are only applied after user interaction.; However, to communicate error or success you should never rely only on color.; Add text or an icon to make it obvious.; Make sure all users understand your validation rules. For this, connect the form control with an element that explains the rules.; You must also make sure to validate data before storing or sharing it on your backend server: find out more."
       }
     ]
+  },
+  {
+    "date": "2026-11-20T19:36:41",
+    "draft_id": "20261120-d61dc66a",
+    "source_domain": "web.dev/learn",
+    "headline": "Load video players on intent, not proximity",
+    "post_urn": "urn:li:share:7529628800003899392",
+    "chars": 2907,
+    "sources": [
+      {
+        "id": 1,
+        "url": "https://web.dev/learn/performance/lazy-load-images-and-iframe-elements",
+        "publication_date": null,
+        "claim": "In addition to improving initial page load, another key upside is that if the user never plays the video, the resources required to deliver it are never downloaded.",
+        "citation": "([web.dev](https://web.dev/learn/performance/lazy-load-images-and-iframe-elements))"
+      }
+    ]
   }
 ]
