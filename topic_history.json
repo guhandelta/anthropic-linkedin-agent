@@ -1062,5 +1062,49 @@
     "status": "drafted",
     "source": "aiprofitboardroom.com/blog",
     "recorded_at": "2026-11-21"
+  },
+  {
+    "topic": "Prevent empty server-rendered MUI charts with explicit dimensions and skipAnimation",
+    "source_urls": [
+      "https://mui.com/blog/mui-x-v8/"
+    ],
+    "technical_takeaway": "For server-rendered MUI X v8 charts, provide explicit width and height props and set skipAnimation. The server cannot compute SVG dimensions, and leaving animations enabled can produce an empty initial render.",
+    "kind": "upgrade",
+    "status": "suggested",
+    "source": "mui.com/blog",
+    "recorded_at": "2026-11-21"
+  },
+  {
+    "topic": "Moving Three.js instances? Update their bounds, not just their matrices",
+    "source_urls": [
+      "https://threejs.org/docs/pages/InstancedMesh.html"
+    ],
+    "technical_takeaway": "After batching setMatrixAt() calls, set mesh.instanceMatrix.needsUpdate = true. If the transformations change the mesh's bounds, recompute mesh.computeBoundingSphere() for ray casting and frustum culling; recompute mesh.computeBoundingBox() when your application needs an updated bounding box.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "threejs.org/docs",
+    "recorded_at": "2026-11-21"
+  },
+  {
+    "topic": "Let AI select trusted UI components—not generate executable markup",
+    "source_urls": [
+      "https://daily.dev/posts/a-better-approach-to-generative-ui-hwpqccf9w"
+    ],
+    "technical_takeaway": "Define a discriminated union of allowed UI block types and props. Validate model output with Zod, JSON Schema, or Valibot, then map valid blocks to pre-built components through a registry. Reject unknown types or malformed props with a safe fallback. Route requested actions through a separate registry that checks authorization before execution.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "daily.dev/tags/generative-ui",
+    "recorded_at": "2026-11-21"
+  },
+  {
+    "topic": "Let AI choose the UI—not its execution authority",
+    "source_urls": [
+      "https://daily.dev/posts/a-better-approach-to-generative-ui-hwpqccf9w"
+    ],
+    "technical_takeaway": "Define a discriminated union of allowed UI block types and props, validate model output before mapping it through a trusted component registry, and use a safe fallback for unknown types or malformed props. Keep requested actions in a separate registry that checks authorization before execution; the model is limited to the application's controlled vocabulary.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "daily.dev/tags/generative-ui",
+    "recorded_at": "2026-11-21"
   }
 ]

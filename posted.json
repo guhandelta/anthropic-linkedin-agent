@@ -612,5 +612,20 @@
         "claim": "A dry run writes nothing, the real run takes a backup first, and OpenClaw keeps working until you run cleanup."
       }
     ]
+  },
+  {
+    "date": "2026-11-21T20:50:57",
+    "draft_id": "20261121-0ce7820d",
+    "source_domain": "daily.dev/tags/generative-ui",
+    "headline": "Let AI choose the UI—not its execution authority",
+    "post_urn": "urn:li:share:7530009877063114752",
+    "chars": 2954,
+    "sources": [
+      {
+        "url": "https://daily.dev/posts/a-better-approach-to-generative-ui-hwpqccf9w",
+        "publication_date": null,
+        "claim": "A discriminated union schema rejects unknown component types or malformed props, and only validated blocks get mapped to trusted components via a component registry; failed validation should trigger a safe fallback rather than an improvised render.; Actions like shutting down an instance flow through a separate action registry that checks user authorization before executing, keeping state ownership and execution authority inside the application."
+      }
+    ]
   }
 ]
