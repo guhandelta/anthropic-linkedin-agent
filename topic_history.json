@@ -1018,5 +1018,49 @@
     "status": "drafted",
     "source": "react.dev/reference",
     "recorded_at": "2026-11-20"
+  },
+  {
+    "topic": "Read live input values, not their initial HTML attributes",
+    "source_urls": [
+      "https://web.dev/learn/forms/attributes"
+    ],
+    "technical_takeaway": "Use input.value when reading user-edited text, rather than input.getAttribute('value'). For collecting form control values together, use FormData.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-21"
+  },
+  {
+    "topic": "Send analytics when the page becomes hidden—not on unload",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/Navigator/sendBeacon"
+    ],
+    "technical_takeaway": "Listen for document.visibilitychange and call navigator.sendBeacon() when document.visibilityState === 'hidden'. Check its boolean return value: true means the payload was queued, not that the server acknowledged it. Total queued data is limited to 64 KiB. ([developer.mozilla.org](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/sendBeacon))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-21"
+  },
+  {
+    "topic": "Make configuration migrations previewable, reversible, and secret-explicit",
+    "source_urls": [
+      "https://aiprofitboardroom.com/blog/migrate-openclaw-to-hermes/"
+    ],
+    "technical_takeaway": "Design migration tools with a read-only dry run, conflict detection, backup-before-write, and a separate opt-in for secrets. Delay source cleanup until the destination passes validation.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "aiprofitboardroom.com/blog",
+    "recorded_at": "2026-11-21"
+  },
+  {
+    "topic": "Configuration migrations: preview first, preserve recovery, separate secrets",
+    "source_urls": [
+      "https://aiprofitboardroom.com/blog/migrate-openclaw-to-hermes/"
+    ],
+    "technical_takeaway": "Design migration tools with a read-only dry run, explicit conflict resolution, backup-before-write, and separate consent for credential copying. Validate the destination before source cleanup; allowlisted credentials and unresolved SecretRefs still require manual review.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "aiprofitboardroom.com/blog",
+    "recorded_at": "2026-11-21"
   }
 ]

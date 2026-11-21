@@ -597,5 +597,20 @@
         "claim": "This is why, if you always return a different value, you will enter an infinite loop and get this error."
       }
     ]
+  },
+  {
+    "date": "2026-11-21T12:30:18",
+    "draft_id": "20261121-2f9b6a80",
+    "source_domain": "aiprofitboardroom.com/blog",
+    "headline": "Configuration migrations: preview first, preserve recovery, separate secrets",
+    "post_urn": "urn:li:share:7529883882062741504",
+    "chars": 2980,
+    "sources": [
+      {
+        "url": "https://aiprofitboardroom.com/blog/migrate-openclaw-to-hermes/",
+        "publication_date": "2026-10-30",
+        "claim": "A dry run writes nothing, the real run takes a backup first, and OpenClaw keeps working until you run cleanup."
+      }
+    ]
   }
 ]
