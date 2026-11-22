@@ -1106,5 +1106,49 @@
     "status": "drafted",
     "source": "daily.dev/tags/generative-ui",
     "recorded_at": "2026-11-21"
+  },
+  {
+    "topic": "Finish network work before opening an IndexedDB transaction",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/IDBTransaction"
+    ],
+    "technical_takeaway": "Practical implication of MDN's transaction lifecycle: fetch and prepare data before creating a readwrite transaction, then enqueue database operations without awaiting unrelated asynchronous work. IndexedDB transactions are not kept active merely because an async function has not returned.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-22"
+  },
+  {
+    "topic": "Call respondWith() before awaiting service worker work",
+    "source_urls": [
+      "https://web.dev/learn/pwa/serving"
+    ],
+    "technical_takeaway": "Call event.respondWith() synchronously inside the fetch event handler and pass it a Promise that resolves to a Response. Put asynchronous cache lookups and network requests inside that Promise—not before the respondWith() call. ([web.dev](https://web.dev/learn/pwa/serving))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-22"
+  },
+  {
+    "topic": "Audio look-ahead is not your streaming latency budget",
+    "source_urls": [
+      "https://huggingface.co/inworld/voice-isolator"
+    ],
+    "technical_takeaway": "The realtime checkpoint reports 63 ms algorithmic latency with 20 ms look-ahead. Its streaming API accepts 48 kHz mono audio in arbitrary-sized pieces: consume finalized samples from session.push(), then call session.flush() when input ends to retrieve the remaining audio. Budget against the documented algorithmic latency, not just the look-ahead setting.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "huggingface.co/models?sort=trending",
+    "recorded_at": "2026-11-22"
+  },
+  {
+    "topic": "Call respondWith() before awaiting service worker work",
+    "source_urls": [
+      "https://web.dev/learn/pwa/serving"
+    ],
+    "technical_takeaway": "Call event.respondWith() synchronously in the fetch event handler and pass it a Promise resolving to a Response. Perform asynchronous cache and network work inside that Promise, explicitly handle cache misses, and remember that cache-first delivery trades freshness for performance without guaranteeing offline availability.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-22"
   }
 ]
