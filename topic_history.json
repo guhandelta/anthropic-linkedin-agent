@@ -1150,5 +1150,49 @@
     "status": "drafted",
     "source": "web.dev/learn",
     "recorded_at": "2026-11-22"
+  },
+  {
+    "topic": "fetchpriority=\"high\" does not undo lazy loading",
+    "source_urls": [
+      "https://web.dev/learn/performance/lazy-load-images-and-iframe-elements"
+    ],
+    "technical_takeaway": "For a hero or likely LCP image in the initial viewport, remove loading=\"lazy\" rather than trying to compensate with fetchpriority=\"high\". Reserve lazy loading for offscreen images; use fetch priority separately to influence network scheduling.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-23"
+  },
+  {
+    "topic": "Run AI in shadow mode before letting it make decisions",
+    "source_urls": [
+      "https://www.deeplearning.ai/the-batch/how-prompting-is-changing-machine-learning-development"
+    ],
+    "technical_takeaway": "Run the model on live data, store and monitor its predictions without using them, and enable real decisions only after performance is acceptable. This is not a substitute for rigorous test sets and validation where errors could cause significant harm.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "deeplearning.ai/the-batch",
+    "recorded_at": "2026-11-23"
+  },
+  {
+    "topic": "Notify search engines on content changes, not every deployment",
+    "source_urls": [
+      "https://geotoolbox.ai/blog/bing-webmaster-tools"
+    ],
+    "technical_takeaway": "Host an IndexNow verification key in a UTF-8 text file at the site root, then submit changed URLs individually or batch up to 10,000 URLs in a JSON POST. Treat HTTP 200 as successful submission—not guaranteed indexing—and HTTP 202 as received with key validation pending. Trigger notifications from actual content changes rather than every deployment.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "geotoolbox.ai/blog",
+    "recorded_at": "2026-11-23"
+  },
+  {
+    "topic": "Deploy the model before delegating the decision",
+    "source_urls": [
+      "https://www.deeplearning.ai/the-batch/how-prompting-is-changing-machine-learning-development"
+    ],
+    "technical_takeaway": "Run the model on live inputs, store and monitor its predictions without using them, and enable real decisions only after performance is acceptable. Where errors or bias could cause significant harm, require a rigorous test set and deep validation before consequential decisions.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "deeplearning.ai/the-batch",
+    "recorded_at": "2026-11-23"
   }
 ]

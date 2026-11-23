@@ -643,5 +643,20 @@
         "claim": "You must call respondWith() synchronously and you must return a Response object. But you can't call respondWith() after the fetch event handler has finished, like within an async call. If you need to wait for the complete response, you can pass a Promise to respondWith() that resolves with a Response."
       }
     ]
+  },
+  {
+    "date": "2026-11-23T20:09:23",
+    "draft_id": "20261123-3c841d7d",
+    "source_domain": "deeplearning.ai/the-batch",
+    "headline": "Deploy the model before delegating the decision",
+    "post_urn": "urn:li:share:7530724186076532736",
+    "chars": 2971,
+    "sources": [
+      {
+        "url": "https://www.deeplearning.ai/the-batch/how-prompting-is-changing-machine-learning-development",
+        "publication_date": "2023-05-17",
+        "claim": "Deploy the model to production and run it on live data quickly but safely, perhaps by running in “shadow mode,” where the model’s inferences are stored and monitored but not yet used."
+      }
+    ]
   }
 ]
