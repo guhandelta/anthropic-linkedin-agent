@@ -1194,5 +1194,49 @@
     "status": "drafted",
     "source": "deeplearning.ai/the-batch",
     "recorded_at": "2026-11-23"
+  },
+  {
+    "topic": "Use inputmode, not type=\"number\", for numeric identifiers",
+    "source_urls": [
+      "https://web.dev/learn/forms/attributes/"
+    ],
+    "technical_takeaway": "Use type=\"text\" with inputmode=\"numeric\" for numeric identifiers. Reserve type=\"number\" for quantities that users increment or decrement. inputmode changes the on-screen keyboard without changing the input's behavior or validation rules.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-24"
+  },
+  {
+    "topic": "Authenticate agent-triggering webhooks with signed requests",
+    "source_urls": [
+      "https://aiprofitboardroom.com/blog/hermes-agent-n8n-integration/"
+    ],
+    "technical_takeaway": "The guide’s n8n-to-Hermes setup uses a dedicated webhook route and signed POST requests. Its generic signature scheme requires X-Webhook-Signature-V2 and X-Webhook-Timestamp headers signed using the route’s secret; unsigned or incorrectly signed calls are refused. For remote access, the guide recommends a tunnel or HTTPS reverse proxy rather than exposing the agent’s port directly. ([aiprofitboardroom.com](https://aiprofitboardroom.com/blog/hermes-agent-n8n-integration/))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "aiprofitboardroom.com/blog",
+    "recorded_at": "2026-11-24"
+  },
+  {
+    "topic": "Start view transitions after data loads, before the DOM changes",
+    "source_urls": [
+      "https://svelte.dev/blog/view-transitions"
+    ],
+    "technical_takeaway": "Feature-detect document.startViewTransition. In onNavigate, return a promise and start the transition. Inside its update callback, resolve that promise to release navigation, then await navigation.complete so the browser captures the new state only after the DOM updates. Unsupported browsers retain normal navigation. ([svelte.dev](https://svelte.dev/blog/view-transitions))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "svelte.dev/blog",
+    "recorded_at": "2026-11-24"
+  },
+  {
+    "topic": "Authenticate the webhook that starts your agent",
+    "source_urls": [
+      "https://aiprofitboardroom.com/blog/hermes-agent-n8n-integration/"
+    ],
+    "technical_takeaway": "Create a dedicated Hermes webhook route and configure n8n to send signed POST requests with X-Webhook-Signature-V2 and X-Webhook-Timestamp using the route's secret. Follow the referenced Hermes signing instructions rather than inventing the signing algorithm; for remote access, follow the guide's tunnel or HTTPS reverse-proxy recommendation instead of exposing the agent's port directly.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "aiprofitboardroom.com/blog",
+    "recorded_at": "2026-11-24"
   }
 ]

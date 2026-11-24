@@ -658,5 +658,20 @@
         "claim": "Deploy the model to production and run it on live data quickly but safely, perhaps by running in “shadow mode,” where the model’s inferences are stored and monitored but not yet used."
       }
     ]
+  },
+  {
+    "date": "2026-11-24T02:13:10",
+    "draft_id": "20261124-c028b874",
+    "source_domain": "aiprofitboardroom.com/blog",
+    "headline": "Authenticate the webhook that starts your agent",
+    "post_urn": "urn:li:share:7530815738232639488",
+    "chars": 2962,
+    "sources": [
+      {
+        "url": "https://aiprofitboardroom.com/blog/hermes-agent-n8n-integration/",
+        "publication_date": "2026-11-19",
+        "claim": "The generic scheme checks an X-Webhook-Signature-V2 header and an X-Webhook-Timestamp header, signed with your route's secret. Follow the signing steps in the Hermes webhooks docs so your requests are accepted. Unsigned or wrongly signed calls are refused, which is what you want."
+      }
+    ]
   }
 ]
