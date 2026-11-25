@@ -1282,5 +1282,49 @@
     "status": "drafted",
     "source": "developer.mozilla.org/en-US/docs/Web/API",
     "recorded_at": "2026-11-25"
+  },
+  {
+    "topic": "Show IndexedDB save success only after the transaction completes",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/IDBTransaction/complete_event"
+    ],
+    "technical_takeaway": "Attach a complete listener to the IDBTransaction before issuing writes, and update the saved state there. A request's success handler can enqueue additional requests within the same transaction; it is not the transaction's commit boundary.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-25"
+  },
+  {
+    "topic": "Make TypeScript type-breaking changes opt-in with module augmentation",
+    "source_urls": [
+      "https://mui.com/blog/pattern-type-only-breaking-changes-minor-versions/"
+    ],
+    "technical_takeaway": "Expose an empty feature-flag interface and use a conditional type to retain the existing default. Provide a separately imported module augmentation that adds an override property for consumers adopting the new feature. Treat this as a compatibility bridge: augmentation affects types globally, and omitting the import can leave new runtime values incorrectly typed. ([mui.com](https://mui.com/blog/pattern-type-only-breaking-changes-minor-versions/))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "mui.com/blog",
+    "recorded_at": "2026-11-25"
+  },
+  {
+    "topic": "Initialize observability before application imports",
+    "source_urls": [
+      "https://svelte.dev/blog/sveltekit-integrated-observability"
+    ],
+    "technical_takeaway": "In SvelteKit, put observability initialization in src/instrumentation.server.ts rather than ordinary application code. With a supporting adapter, this file is guaranteed to load before application code, satisfying instrumentation's startup-order requirement. ([svelte.dev](https://svelte.dev/blog/sveltekit-integrated-observability))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "svelte.dev/blog",
+    "recorded_at": "2026-11-25"
+  },
+  {
+    "topic": "IndexedDB: show “Saved” at transaction completion",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/IDBTransaction/complete_event"
+    ],
+    "technical_takeaway": "Attach a complete listener to the IDBTransaction before issuing writes, and update the saved state there. Request success handlers can enqueue additional requests in the same transaction, so even the final request's success handler is not the transaction's commit boundary. The confirmation therefore waits for the transaction's full request sequence.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-25"
   }
 ]
