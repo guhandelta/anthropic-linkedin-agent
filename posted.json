@@ -673,5 +673,20 @@
         "claim": "The generic scheme checks an X-Webhook-Signature-V2 header and an X-Webhook-Timestamp header, signed with your route's secret. Follow the signing steps in the Hermes webhooks docs so your requests are accepted. Unsigned or wrongly signed calls are refused, which is what you want."
       }
     ]
+  },
+  {
+    "date": "2026-11-25T00:01:43",
+    "draft_id": "20261125-249f7110",
+    "source_domain": "developer.mozilla.org/en-US/docs/Web/API",
+    "headline": "ReadableStream.tee(): two branches, no bounded-memory guarantee",
+    "post_urn": "urn:li:share:7531145048223027202",
+    "chars": 2940,
+    "sources": [
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/ReadableStream/tee",
+        "publication_date": null,
+        "claim": "If only one branch is consumed, then the entire body will be enqueued in memory."
+      }
+    ]
   }
 ]

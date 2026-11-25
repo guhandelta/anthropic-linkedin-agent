@@ -1238,5 +1238,49 @@
     "status": "drafted",
     "source": "aiprofitboardroom.com/blog",
     "recorded_at": "2026-11-24"
+  },
+  {
+    "topic": "ReadableStream.tee() can buffer an entire stream behind a slow consumer",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/ReadableStream/tee"
+    ],
+    "technical_takeaway": "Avoid built-in tee() for very large streams whose consumers run at different speeds. Use an implementation that applies backpressure at the slower consumer's pace. If only one branch is consumed, the entire body can be queued in memory.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-24"
+  },
+  {
+    "topic": "Replace dark-mode render branches with theme.applyStyles() to prevent SSR flicker",
+    "source_urls": [
+      "https://mui.com/blog/material-ui-v6-is-out/"
+    ],
+    "technical_takeaway": "Enable CSS theme variables with createTheme({ cssVariables: true }), then express dark-specific overrides using theme.applyStyles('dark', { ...styles }). The release post demonstrates this for borders and input backgrounds and notes that a migration codemod is available. ([mui.com](https://mui.com/blog/material-ui-v6-is-out/))",
+    "kind": "upgrade",
+    "status": "suggested",
+    "source": "mui.com/blog",
+    "recorded_at": "2026-11-24"
+  },
+  {
+    "topic": "Move product validation before final PR review—not instead of it",
+    "source_urls": [
+      "https://www.builder.io/collaborative-coding-playbook"
+    ],
+    "technical_takeaway": "Validate the working branch with product, design, and QA before final PR review. Preserve code review, security checks, and QA sign-off as merge gates; earlier validation should reduce unresolved questions, not remove safeguards.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "builder.io/guides",
+    "recorded_at": "2026-11-24"
+  },
+  {
+    "topic": "ReadableStream.tee(): two branches, no bounded-memory guarantee",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/ReadableStream/tee"
+    ],
+    "technical_takeaway": "Audit tee() calls for very large bodies, consumers running at different speeds, and branches that are never consumed. For very large streams consumed in parallel at different speeds, use an implementation that fully backpressures at the slower consumer's pace; the tradeoff is accepting that slower pace.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-25"
   }
 ]
