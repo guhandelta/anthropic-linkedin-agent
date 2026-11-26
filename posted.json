@@ -703,5 +703,14 @@
         "claim": "The complete event of the IndexedDB API is fired when the transaction has successfully committed"
       }
     ]
+  },
+  {
+    "date": "2026-11-26T23:53:18",
+    "draft_id": "20261126-direct-2a8722",
+    "source_domain": "Direct Post",
+    "headline": "Migrate Signing Without Logouts",
+    "post_urn": "direct",
+    "chars": 2694,
+    "sources": []
   }
 ]
