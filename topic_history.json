@@ -1326,5 +1326,38 @@
     "status": "drafted",
     "source": "developer.mozilla.org/en-US/docs/Web/API",
     "recorded_at": "2026-11-25"
+  },
+  {
+    "topic": "Animate by elapsed time, not frame count",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame"
+    ],
+    "technical_takeaway": "Capture the first callback's timestamp as the start time, then calculate position from elapsed milliseconds—for example, Math.min(0.1 * (timestamp - start), 200). Request another frame only while the destination has not been reached. MDN demonstrates this pattern for moving an element 200 pixels over two seconds. ([developer.mozilla.org](https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-26"
+  },
+  {
+    "topic": "Add a missing-evidence control to document-Q&A evaluations",
+    "source_urls": [
+      "https://www.anthropic.com/news/prompting-long-context"
+    ],
+    "technical_takeaway": "Pair document-grounded questions with a control run that omits the supporting passage. Compare control accuracy with the multiple-choice chance baseline before treating ordinary accuracy as evidence of successful retrieval. Anthropic used this control when evaluating long-context recall. ([anthropic.com](https://www.anthropic.com/news/prompting-long-context))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "anthropic.com/news",
+    "recorded_at": "2026-11-26"
+  },
+  {
+    "topic": "Migrate signing algorithms without invalidating existing tokens",
+    "source_urls": [
+      "https://palletsprojects.com/blog/itsdangerous-1-1-0-released"
+    ],
+    "technical_takeaway": "Use fallback verification during signing-parameter migrations so existing signatures remain valid during the transition. ItsDangerous 1.1.0 introduced this mechanism after an algorithm change in 1.0.0 invalidated existing signatures. ([palletsprojects.com](https://palletsprojects.com/blog/itsdangerous-1-1-0-released))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "palletsprojects.com/blog",
+    "recorded_at": "2026-11-26"
   }
 ]
