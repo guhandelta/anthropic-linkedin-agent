@@ -1359,5 +1359,38 @@
     "status": "suggested",
     "source": "palletsprojects.com/blog",
     "recorded_at": "2026-11-26"
+  },
+  {
+    "topic": "Use minmax(0, 1fr) when equal grid columns must stay equal",
+    "source_urls": [
+      "https://web.dev/learn/css/grid"
+    ],
+    "technical_takeaway": "For three equal columns, use grid-template-columns: repeat(3, minmax(0, 1fr)). Grid subtracts gaps and distributes the remaining container width equally, rather than letting content-based minimums determine track widths. ([web.dev](https://web.dev/learn/css/grid))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "web.dev/learn",
+    "recorded_at": "2026-11-27"
+  },
+  {
+    "topic": "Clean up abort listeners on success—not just cancellation",
+    "source_urls": [
+      "https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal"
+    ],
+    "technical_takeaway": "When combining cancellation signals with AbortSignal.any(), use a named abort handler and remove it in a finally block. Keep return await response.text() inside the try so cleanup happens after body consumption, rather than immediately after receiving headers.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "developer.mozilla.org/en-US/docs/Web/API",
+    "recorded_at": "2026-11-27"
+  },
+  {
+    "topic": "Make pull requests—not live deployments—the output of AI coding",
+    "source_urls": [
+      "https://www.builder.io/compare/builder-vs-replit"
+    ],
+    "technical_takeaway": "Route generated changes into pull requests against the production repository, run the existing test suite through CI/CD, and retain human review before merge. Treat code generation as an authoring step rather than a separate release path.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "builder.io/compare",
+    "recorded_at": "2026-11-27"
   }
 ]
