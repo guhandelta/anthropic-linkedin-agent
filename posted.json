@@ -712,5 +712,20 @@
     "post_urn": "direct",
     "chars": 2694,
     "sources": []
+  },
+  {
+    "date": "2026-11-28T00:31:41",
+    "draft_id": "20261128-d544578b",
+    "source_domain": "react.dev/reference",
+    "headline": "Keep the interval running. Let each tick read fresh state.",
+    "post_urn": "urn:li:share:7532239751878213633",
+    "chars": 2943,
+    "sources": [
+      {
+        "url": "https://react.dev/reference/react/useEffectEvent",
+        "publication_date": null,
+        "claim": "The onTick Effect Event reads the latest count and increment without causing the interval to restart:"
+      }
+    ]
   }
 ]

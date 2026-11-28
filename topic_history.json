@@ -1392,5 +1392,49 @@
     "status": "suggested",
     "source": "builder.io/compare",
     "recorded_at": "2026-11-27"
+  },
+  {
+    "topic": "Keep timers running while reading fresh state with useEffectEvent",
+    "source_urls": [
+      "https://react.dev/reference/react/useEffectEvent"
+    ],
+    "technical_takeaway": "Move tick logic into useEffectEvent, then invoke it from an interval created inside useEffect. The callback reads the latest committed props and state. Keep genuine lifecycle dependencies, such as a configurable delay, in the Effect dependency array; omit the Effect Event itself and clear the interval during cleanup. This is not a shortcut for hiding dependencies. ([react.dev](https://react.dev/reference/react/useEffectEvent))",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-28"
+  },
+  {
+    "topic": "Preserve real numeric and date spacing in seaborn categorical plots",
+    "source_urls": [
+      "https://seaborn.pydata.org/whatsnew/v0.13.0.html"
+    ],
+    "technical_takeaway": "In seaborn 0.13.0 and later, pass native_scale=True to categorical plotting functions to retain numeric or datetime coordinates. The default remains False. With native scaling enabled, element widths are derived from the minimum distance between distinct values on the categorical axis.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "seaborn.pydata.org/whatsnew/index.html",
+    "recorded_at": "2026-11-28"
+  },
+  {
+    "topic": "Use COPY --link to keep base-image updates from invalidating artifact layers",
+    "source_urls": [
+      "https://www.docker.com/blog/image-rebase-and-improved-remote-cache-support-in-new-buildkit/"
+    ],
+    "technical_takeaway": "Use COPY --from=build --link /out/myapp /bin/ to create an independent artifact layer. With reusable remote cache, BuildKit can rebase an unchanged artifact onto an updated runtime image without recompiling it. Check destination semantics first: --link does not follow destination-path symlinks, and directory destinations should be explicit.",
+    "kind": "evergreen",
+    "status": "suggested",
+    "source": "docker.com/blog",
+    "recorded_at": "2026-11-28"
+  },
+  {
+    "topic": "Keep the interval running. Let each tick read fresh state.",
+    "source_urls": [
+      "https://react.dev/reference/react/useEffectEvent"
+    ],
+    "technical_takeaway": "Move tick logic into useEffectEvent and invoke it from an interval created inside useEffect. Keep genuine lifecycle dependencies such as delay in the Effect dependency array, omit the Effect Event, and clear the interval during cleanup. Effect Events read the latest committed values but are not a shortcut for hiding dependencies or a general-purpose callback API.",
+    "kind": "evergreen",
+    "status": "drafted",
+    "source": "react.dev/reference",
+    "recorded_at": "2026-11-28"
   }
 ]
